@@ -36,7 +36,7 @@ function setup(state) {
   if (state !== 'SEEN') put('checked', 'steward', { looked: ['x'], found: [], verdict: 'build_needed' }, '1');
   if (['SPECCED', 'SENDING', 'TRYING', 'HELPS'].includes(state)) put('specced', 'steward', { must: ['x'], how_we_know: ['x'], out_of_scope: [] }, '2');
   if (['SENDING', 'TRYING', 'HELPS'].includes(state)) put('approved', 'approver', { spec_hash: store.events(item).at(-1).body_hash, cap_usd: 1, quorum: 1 }, '3');
-  if (['TRYING', 'HELPS'].includes(state)) put('tried', 'run', { artifact_hash: 'a' }, '4');
+  if (['TRYING', 'HELPS'].includes(state)) put('tried', 'run', { artifact_hash: 'a', approval: 1, spec_hash: store.read(item).context.specHash }, '4');
   if (state === 'HELPS') put('helped', 'member', { artifact_hash: 'a' }, '5');
   if (state === 'SHELVED') put('shelved', 'leader', { reason: 'x' }, '6');
   return { store, item, put };
@@ -44,11 +44,14 @@ function setup(state) {
 
 function body(type, store, item) {
   const spec = store.events(item).find(event => event.type === 'specced')?.body_hash || 'none';
+  const context = store.read(item).context;
   return {
     checked: { looked: ['x'], found: [], verdict: 'build_needed' },
     specced: { must: ['x'], how_we_know: ['x'], out_of_scope: [] },
     approved: { spec_hash: spec, cap_usd: 1, quorum: 1 }, returned: { note: 'x' },
-    charged: { usd: 0 }, tried: { artifact_hash: 'a' }, failed: {},
+    charged: { usd: 0, approval: context.approval, spec_hash: context.specHash },
+    tried: { artifact_hash: 'a', approval: context.approval, spec_hash: context.specHash },
+    failed: { approval: context.approval, spec_hash: context.specHash },
     helped: { artifact_hash: 'a' }, shelved: { reason: 'x' }, commented: {},
     steward_changed: { steward: 'member' }, erased: { body_hash: spec },
   }[type];

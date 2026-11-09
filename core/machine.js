@@ -1,9 +1,10 @@
 const open = new Set(['SEEN', 'CHECKED', 'SPECCED', 'SENDING', 'TRYING']);
 const verdicts = new Set(['already_have', 'setting', 'free', 'pay', 'build_needed']);
+const MICROS_PER_USD = 1_000_000;
 
 export const initial = () => ({
   phase: 'SEEN', steward: null, approver: null, specHash: null,
-  cap: null, quorum: 2, spent: 0, artifact: null, helpers: [],
+  capMicros: null, quorum: 2, spentMicros: 0, approval: 0, artifact: null, helpers: [],
 });
 
 const fail = refusal => ({ refusal });
@@ -13,6 +14,18 @@ const result = (context, effects = []) => ({ state: context.phase, context, effe
 const person = who => who?.kind === 'person';
 const leader = who => person(who) && who.leader === true;
 const steward = (state, event, who) => person(who) && event.actor === state.steward;
+
+export function usdToMicros(value) {
+  const micros = value * MICROS_PER_USD;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    && Number.isSafeInteger(micros) ? micros : null;
+}
+
+function currentApproval(state, event) {
+  if (event.approval !== state.approval) return fail('approval does not match current approval');
+  if (event.spec_hash !== state.specHash) return fail('spec hash does not match approved spec');
+  return null;
+}
 
 function stopsBuild(state, next, reason) {
   return state.phase === 'SENDING' && next !== 'SENDING'
@@ -54,25 +67,34 @@ export function step(state, event, who) {
   }
   if (event.type === 'approved' && context.phase === 'SPECCED' && leader(who)
       && event.actor !== context.steward && nonempty(event.spec_hash)
-      && event.spec_hash === context.specHash && Number.isFinite(event.cap_usd)
-      && event.cap_usd >= 0 && Number.isInteger(event.quorum) && event.quorum >= 1) {
+      && event.spec_hash === context.specHash && usdToMicros(event.cap_usd) !== null
+      && Number.isInteger(event.quorum) && event.quorum >= 1) {
     const next = { ...context, phase: 'SENDING', approver: event.actor,
-      cap: event.cap_usd, quorum: event.quorum, spent: 0 };
-    return result(next, [{ kind: 'build.start', spec_hash: event.spec_hash, cap_usd: event.cap_usd }]);
+      capMicros: usdToMicros(event.cap_usd), quorum: event.quorum, spentMicros: 0,
+      approval: context.approval + 1 };
+    return result(next, [{ kind: 'build.start', approval: next.approval,
+      spec_hash: event.spec_hash, cap_usd: event.cap_usd }]);
   }
   if (event.type === 'returned' && context.phase === 'SPECCED' && leader(who)
       && nonempty(event.note)) return result({ ...context, phase: 'CHECKED' });
   if (event.type === 'charged' && context.phase === 'SENDING' && who?.kind === 'gateway') {
-    if (!Number.isFinite(event.usd) || event.usd < 0) return fail('invalid usd');
-    if (context.spent + event.usd > context.cap) return fail('cap exceeded');
-    return result({ ...context, spent: context.spent + event.usd });
+    const bound = currentApproval(context, event);
+    if (bound) return bound;
+    const micros = usdToMicros(event.usd);
+    if (micros === null) return fail('invalid usd');
+    if (context.spentMicros + micros > context.capMicros) return fail('cap exceeded');
+    return result({ ...context, spentMicros: context.spentMicros + micros });
   }
   if (event.type === 'tried' && context.phase === 'SENDING' && who?.kind === 'run'
       && nonempty(event.artifact_hash)) {
+    const bound = currentApproval(context, event);
+    if (bound) return bound;
     return result({ ...context, phase: 'TRYING', artifact: event.artifact_hash, helpers: [] },
       stopsBuild(context, 'TRYING', event.type));
   }
   if (event.type === 'failed' && ['SENDING', 'TRYING'].includes(context.phase) && who?.kind === 'run') {
+    const bound = currentApproval(context, event);
+    if (bound) return bound;
     return result({ ...context, phase: 'SPECCED', artifact: null, helpers: [] },
       stopsBuild(context, 'SPECCED', event.type));
   }

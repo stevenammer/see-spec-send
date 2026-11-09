@@ -11,6 +11,7 @@ const stable = value => {
 const eventHash = (prev, seq, type, actor, bodyHash, at) =>
   digest(stable({ prev, seq, type, actor, bodyHash, at }));
 const scopedBodyHash = (item, bytes) => digest(`${item}\0${bytes}`);
+const submittedEventHash = event => digest(stable(event));
 
 function bodyOf(event) {
   const body = { ...event };
@@ -30,7 +31,7 @@ export class Store {
       );
       CREATE TABLE IF NOT EXISTS events(
         item TEXT, seq INTEGER, type TEXT, actor TEXT, body_hash TEXT,
-        prev_hash TEXT, hash TEXT, at TEXT, idem TEXT,
+        prev_hash TEXT, hash TEXT, at TEXT, idem TEXT, submitted_hash TEXT,
         PRIMARY KEY(item,seq), UNIQUE(item,idem)
       );
       CREATE TABLE IF NOT EXISTS bodies(hash TEXT PRIMARY KEY, bytes TEXT);
@@ -38,6 +39,15 @@ export class Store {
         item TEXT PRIMARY KEY, state TEXT, head TEXT, seq INTEGER, context TEXT
       );`);
     try { this.db.exec('ALTER TABLE items ADD COLUMN context TEXT'); } catch {}
+    try { this.db.exec('ALTER TABLE events ADD COLUMN submitted_hash TEXT'); } catch {}
+    this.backfillSubmittedHashes();
+  }
+
+  backfillSubmittedHashes() {
+    const rows = this.db.prepare(`SELECT e.* FROM events e
+      JOIN bodies b ON b.hash=e.body_hash WHERE e.submitted_hash IS NULL`).all();
+    const fill = this.db.prepare('UPDATE events SET submitted_hash=? WHERE item=? AND seq=?');
+    for (const row of rows) fill.run(submittedEventHash(this.submittedEventFromRow(row)), row.item, row.seq);
   }
 
   registerPerson(id, { leader = false } = {}) {
@@ -71,6 +81,12 @@ export class Store {
     const bytes = this.db.prepare('SELECT bytes FROM bodies WHERE hash=?').get(row.body_hash)?.bytes;
     return { ...(bytes ? JSON.parse(bytes) : {}), type: row.type, actor: row.actor,
       body_hash: row.body_hash, at: row.at };
+  }
+
+  submittedEventFromRow(row) {
+    const bytes = this.db.prepare('SELECT bytes FROM bodies WHERE hash=?').get(row.body_hash)?.bytes;
+    if (!bytes) return null;
+    return { ...JSON.parse(bytes), type: row.type, actor: row.actor, at: row.at };
   }
 
   events(item) { return this.eventRows(item).map(row => this.eventFromRow(row)); }
@@ -108,8 +124,21 @@ export class Store {
 
   appendInTransaction(item, event, { expectedSeq, idem }) {
     this.ensureEvent(item, event);
-    const existing = this.db.prepare('SELECT seq FROM events WHERE item=? AND idem=?').get(item, idem);
-    if (existing) return { idempotent: true, seq: existing.seq, ...this.read(item) };
+    const submittedHash = submittedEventHash(event);
+    const existing = this.db.prepare('SELECT * FROM events WHERE item=? AND idem=?').get(item, idem);
+    if (existing) {
+      const storedEvent = this.submittedEventFromRow(existing);
+      const existingHash = existing.submitted_hash || (storedEvent && submittedEventHash(storedEvent));
+      if (!existingHash) throw new Error('idempotency record cannot be compared');
+      if (existingHash !== submittedHash) {
+        throw new Error('idempotency key reused with a different event');
+      }
+      if (!existing.submitted_hash) {
+        this.db.prepare('UPDATE events SET submitted_hash=? WHERE item=? AND seq=?')
+          .run(existingHash, item, existing.seq);
+      }
+      return { idempotent: true, seq: existing.seq, ...this.read(item) };
+    }
     const cached = this.db.prepare('SELECT * FROM items WHERE item=?').get(item);
     const currentSeq = cached?.seq || 0;
     if (expectedSeq !== undefined && expectedSeq !== currentSeq) throw new Error('stale expectedSeq');
@@ -123,8 +152,9 @@ export class Store {
     const previous = cached?.head || '';
     const hash = eventHash(previous, seq, event.type, event.actor, hashOfBody, event.at);
     this.db.prepare('INSERT OR IGNORE INTO bodies(hash,bytes) VALUES(?,?)').run(hashOfBody, bytes);
-    this.db.prepare('INSERT INTO events VALUES(?,?,?,?,?,?,?,?,?)')
-      .run(item, seq, event.type, event.actor, hashOfBody, previous, hash, event.at, idem);
+    this.db.prepare(`INSERT INTO events(item,seq,type,actor,body_hash,prev_hash,hash,at,idem,submitted_hash)
+      VALUES(?,?,?,?,?,?,?,?,?,?)`)
+      .run(item, seq, event.type, event.actor, hashOfBody, previous, hash, event.at, idem, submittedHash);
     this.db.prepare(`INSERT INTO items(item,state,head,seq,context) VALUES(?,?,?,?,?)
       ON CONFLICT(item) DO UPDATE SET state=excluded.state,head=excluded.head,
       seq=excluded.seq,context=excluded.context`)
@@ -216,8 +246,12 @@ export class Store {
     }
     const existing = this.db.prepare('SELECT * FROM events WHERE item=? AND idem=?').get(row.item, row.idem);
     if (existing) {
-      const { bytes, ...stored } = row;
-      if (stable(existing) !== stable(stored)) throw new Error('conflicting import');
+      const { bytes, submitted_hash: incomingSubmittedHash, ...stored } = row;
+      const { submitted_hash: existingSubmittedHash, ...incoming } = existing;
+      const hash = incomingSubmittedHash || submittedEventHash({ ...JSON.parse(row.bytes), type: row.type, actor: row.actor, at: row.at });
+      if (stable(incoming) !== stable(stored) || (existingSubmittedHash && existingSubmittedHash !== hash)) {
+        throw new Error('conflicting import');
+      }
       return;
     }
     const head = this.db.prepare('SELECT head,seq FROM items WHERE item=?').get(row.item);
@@ -225,6 +259,9 @@ export class Store {
       throw new Error('import is not next in chain');
     }
     const event = { ...JSON.parse(row.bytes), type: row.type, actor: row.actor, at: row.at };
+    if (row.submitted_hash && row.submitted_hash !== submittedEventHash(event)) {
+      throw new Error('bad import event');
+    }
     const answer = this.appendInTransaction(row.item, event, { expectedSeq: row.seq - 1, idem: row.idem });
     if (answer.hash !== row.hash) throw new Error('import hash differs');
   }

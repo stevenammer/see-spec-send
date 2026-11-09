@@ -15,9 +15,10 @@ test('machine needs separately resolved authority', () => {
   assert.ok(spec.context);
   assert.ok(step(spec.context, { type: 'approved', actor: 's', spec_hash: 'spec', cap_usd: 1, quorum: 1 }, leader).refusal);
   const sending = step(spec.context, { type: 'approved', actor: 'l', spec_hash: 'spec', cap_usd: 1, quorum: 1 }, leader).context;
-  assert.ok(step(sending, { type: 'tried', actor: 'r', artifact_hash: 'a' }, { kind: 'run' }).context);
-  const trying = step(sending, { type: 'tried', actor: 'r', artifact_hash: 'a' }, { kind: 'run' }).context;
+  assert.ok(step(sending, { type: 'tried', actor: 'r', artifact_hash: 'a', approval: 1, spec_hash: 'spec' }, { kind: 'run' }).context);
+  const trying = step(sending, { type: 'tried', actor: 'r', artifact_hash: 'a', approval: 1, spec_hash: 'spec' }, { kind: 'run' }).context;
   assert.ok(step(trying, { type: 'helped', actor: 'm', artifact_hash: 'wrong' }, person).refusal);
+  assert.ok(step(trying, { type: 'helped', actor: 's', artifact_hash: 'a' }, person).refusal);
   assert.deepEqual(step(sending, { type: 'specced', actor: 's', must: ['x'], how_we_know: ['x'], out_of_scope: [] }, person).effects,
     [{ kind: 'build.stop', reason: 'specced' }]);
 });

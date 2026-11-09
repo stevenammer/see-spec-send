@@ -40,7 +40,7 @@ const SECRET_RULES = [
   ['claude-session-link', /claude\.ai\/code\/session_/],
 ];
 const EMAIL = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/g;
-const SAFE_EMAIL_DOMAINS = new Set(['example.com', 'example.org', 'example.net', 'example.test', 'example.invalid', 'users.noreply.github.com', 'anthropic.com']);
+const SAFE_EMAIL_DOMAINS = new Set(['example.com', 'example.org', 'example.net', 'example.test', 'example.invalid', 'users.noreply.github.com', 'anthropic.com', 'openai.com']);
 const FORBIDDEN_FILE = /(^|\/)(\.env(\..*)?|.*\.bak(-.*)?|.*\.pem|.*\.key|\.claude\/.*)$/;
 
 export function loadDenylist(path = new URL('../denylist.json', import.meta.url)) {

@@ -1,10 +1,10 @@
 // Usage: node scripts/denylist-add.mjs term [term ...]   or   --file terms.txt
-// Adds salted hashes to denylist.json. The terms themselves are never stored.
+// Adds salted hashes to the private denylist (see denylistPath in check-public.mjs). The terms themselves are never stored.
 import { randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { termHash } from './check-public.mjs';
+import { termHash, denylistPath } from './check-public.mjs';
 
-const path = new URL('../denylist.json', import.meta.url);
+const path = denylistPath();
 const j = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { salt: randomBytes(16).toString('hex'), hashes: [] };
 let terms = process.argv.slice(2);
 if (terms[0] === '--file') terms = readFileSync(terms[1], 'utf8').split('\n').map((s) => s.trim()).filter(Boolean);

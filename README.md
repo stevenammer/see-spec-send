@@ -1,12 +1,44 @@
 # See it. Spec it. Send it.
 
-Work in progress. This is the start of a free, open-source tool for any organization that wants to do AI transformation the right way:
+Everybody at work already knows the thing that's broken. The workaround has a name. Somebody has a spreadsheet for it. And nobody fixes it, because the people who feel it don't get to build anything, and the people who build things never feel it.
 
-1. **See it:** find the problem everyone already knows about and nobody has fixed.
-2. **Spec it:** write down exactly what the fix has to do, and how we'll know it worked. Check first whether something you already have solves it.
-3. **Send it:** put a working version in front of the people doing the work. Nothing counts until they say it helps.
+This is my attempt at a free, open-source way for any organization to fix that with AI, and to do it the right way:
 
-Nothing here is ready to use yet. License: Apache-2.0.
-Status: core only. The local event store now has registered actors, item-scoped
-tokens, transactional appends, replayable hash chains, and JSONL transfer. It
-has no HTTP service, authentication UI, network access, model, or builder.
+1. **See it.** Find the problem everyone already knows about and nobody has fixed. Check first whether something you already have solves it (a setting, a tool you pay for, a free one). Plenty of problems end right there.
+2. **Spec it.** Write down exactly what the fix has to do, and how we'll know it worked.
+3. **Send it.** A leader sets a budget. An agent builds a small version. It goes in front of the people doing the work, and **nothing counts until they say it helps.**
+
+That last rule isn't a policy in a handbook. The code enforces it. There's no "done" button anywhere. An item only reaches Helps when enough different people, who are neither the one who wrote the spec nor the one who approved it, confirm the current build helps. A leader can't override it.
+
+## Where this actually is
+
+I'm building this in public, and it's early. Here's the honest state:
+
+- **Works and tested:** the core. A small state machine that decides what can happen to an item, and a local store that records every step in a tamper-evident chain. Money is exact, builder events are tied to the approval they were built under, and roles come from a registry instead of from whatever an event claims to be.
+- **Not built yet:** a web UI, sign-in, the model layer, the builder, the cost-cap gateway, and the guided "Vision Quest" for working through a problem alone. Don't try to run an organization on this yet.
+
+I'm treating tests as claims. `npm test` runs them, and `npm run check:mutants` deliberately breaks the code in a dozen ways and checks that the tests notice. If a test can't fail, I don't count it.
+
+## Try it
+
+You need Node 22 or newer. There are no dependencies to install.
+
+```sh
+npm test
+npm run check:mutants
+npm run check:public
+```
+
+`check:public` is a guard that scans the files and the git history for secrets, private paths, personal emails and backup files before anything gets published.
+
+## How I'm building it
+
+I write the specs and decide what's safe to ship. AI agents write most of the code. Then I try to break what comes back, and I keep the attacks that found real bugs as permanent tests. Early on, mine found three the agent missed: a money rounding bug, a reused retry key that silently dropped an event, and a stale builder that could deliver under a newer approval.
+
+## Contributing
+
+Read-only for now. Issues and Discussions are open, and I'd love to hear what's wrong with the idea. I'm holding pull requests until the core settles, so nobody wastes effort on something that moves under them.
+
+## License
+
+Apache-2.0. Free for every organization.

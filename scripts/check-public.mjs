@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, relative } from 'node:path';
+import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 
 const sha = (s) => createHash('sha256').update(s).digest('hex');
@@ -43,7 +44,11 @@ const EMAIL = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/g;
 const SAFE_EMAIL_DOMAINS = new Set(['example.com', 'example.org', 'example.net', 'example.test', 'example.invalid', 'users.noreply.github.com', 'anthropic.com', 'openai.com']);
 const FORBIDDEN_FILE = /(^|\/)(\.env(\..*)?|.*\.bak(-.*)?|.*\.pem|.*\.key|\.claude\/.*)$/;
 
-export function loadDenylist(path = new URL('../denylist.json', import.meta.url)) {
+// The denylist is private: it lives on the maintainer's machine, never in this repo.
+// Set SSS_DENYLIST to its path, or put it at ~/.config/sss/denylist.json.
+export const denylistPath = () => process.env.SSS_DENYLIST || join(homedir(), '.config', 'sss', 'denylist.json');
+
+export function loadDenylist(path = denylistPath()) {
   if (!existsSync(path)) return { salt: '', hashes: new Set() };
   const j = JSON.parse(readFileSync(path, 'utf8'));
   return { salt: j.salt, hashes: new Set(j.hashes) };
@@ -77,7 +82,7 @@ function trackedFiles(root) {
 export function scanTree(root, denylist) {
   const findings = [];
   for (const f of trackedFiles(root)) {
-    if (f === 'denylist.json' || f === 'scripts/check-public.mjs') continue;
+    if (f === 'scripts/check-public.mjs') continue;
     let buf; try { buf = readFileSync(join(root, f)); } catch { continue; }
     if (buf.includes(0)) { findings.push(...scanText(f, '', denylist)); continue; }
     findings.push(...scanText(f, buf.toString('utf8'), denylist));
@@ -99,5 +104,5 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     for (const f of findings) console.error(`FAIL ${f.rule}: ${f.name}`);
     process.exit(1);
   }
-  console.log(`PASS: tree and history checked (${dl.hashes.size} denylisted terms, secret formats, private paths, personal emails, backup files).`);
+  console.log(`PASS: tree and history checked (${dl.hashes.size ? `${dl.hashes.size} private denylisted terms` : 'no private denylist configured'}, secret formats, private paths, personal emails, backup files).`);
 }

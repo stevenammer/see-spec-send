@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const root = new URL('..', import.meta.url).pathname;
-const suite = ['--test', 'test/auth.test.mjs'];
+const suite = ['--test', 'test/auth.test.mjs', 'test/hardening.test.mjs', 'test/store.test.mjs',
+  'test/machine.test.mjs', 'test/oracle.test.mjs'];
 const mutants = [
   ['CSRF token check', "req.headers['x-csrf-token'] !== session?.csrf", 'false'],
   ['Origin check', 'new URL(value).origin === new URL(expected).origin', 'true'],
@@ -12,7 +13,18 @@ const mutants = [
   ['SameSite attribute', 'SameSite=Strict', 'SameSite=Lax'],
   ['HttpOnly cookie', '; HttpOnly', ''],
   ['rate limit', 'return this.take(`${action}:ip:${ip}`) && this.take(`${action}:account:${account}`);', 'return true;'],
-  ['account lockout', 'Math.min(60 * minute, 1000 * 2 ** failures)', '0'],
+  ['address lockout backoff', 'Math.min(failureWindow, 1000 * 2 ** pair.n)', '0'],
+  ['lockout is per address', 'WHERE account=? AND ip=?', 'WHERE account=? AND (ip=? OR 1=1)'],
+  ['account failure ceiling', 'return account.n >= accountFailureCeiling;', 'return false;'],
+  ['bucket pruning', 'if (this.buckets.size > 10_000) this.prune();', ''],
+  ['bucket hard cap', 'while (this.buckets.size > 50_000)', 'while (false)'],
+  ['secure first password', 'randomBytes(18).toString(\'base64url\')', 'Math.random().toString(36).slice(2)'],
+  ['database file mode', 'chmodSync(file, 0o600);', 'chmodSync(file, 0o644);'],
+  ['backup file mode', 'chmodSync(target, 0o600);', 'chmodSync(target, 0o644);'],
+  ['verify submission hash', 'if (body && submittedEventHash(this.submittedEventFromRow(row), row.idem) !== row.submitted_hash) {', 'if (false) {'],
+  ['verify idempotency key', 'digest(stable({ idem, event }))', 'digest(stable({ event }))'],
+  ['verify orphaned events', "...this.db.prepare('SELECT DISTINCT item FROM events').all().map(row => row.item),", ''],
+  ['verify cache drift', "return same ? { item, ok: true } : { item, ok: false, reason: 'cache' };", 'return { item, ok: true };'],
   ['user enumeration', "throw new Error('login unavailable');", "throw new Error('unknown user');"],
   ['step-up freshness', 'row.stepup + 5 * minute < this.clock()', 'false'],
   ['step-up single use', 'AND stepup_used=0', 'AND 1=1'],
@@ -29,8 +41,7 @@ function run(cwd, args) {
   return spawnSync(process.execPath, args, { cwd, stdio: 'pipe', encoding: 'utf8' });
 }
 
-const baseline = run(root, ['--test', 'test/auth.test.mjs', 'test/check-public.test.mjs',
-  'test/machine.test.mjs', 'test/oracle.test.mjs', 'test/store.test.mjs']);
+const baseline = run(root, [...suite, 'test/check-public.test.mjs']);
 if (baseline.status !== 0 || /# skipped [^0]/.test(baseline.stdout)) {
   console.error('Baseline suite is not fully green with zero skipped tests.');
   process.stderr.write(baseline.stdout + baseline.stderr);
@@ -41,7 +52,7 @@ let failed = false;
 for (const [name, find, replace] of mutants) {
   const copy = mkdtempSync(join(tmpdir(), 'sss-mutant-'));
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
-  const files = ['app/auth.js', 'app/http.js', 'core/machine.js', 'core/store.js'];
+  const files = ['app/auth.js', 'app/http.js', 'core/machine.js', 'core/store.js', 'cli.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {
@@ -54,8 +65,7 @@ for (const [name, find, replace] of mutants) {
     break;
   }
   if (!changed) throw new Error(`mutant source missing: ${name}`);
-  const result = run(copy, changedFile.startsWith('core/')
-    ? ['--test', 'test/store.test.mjs', 'test/machine.test.mjs'] : suite);
+  const result = run(copy, suite);
   const killed = result.status !== 0;
   console.log(`${killed ? 'KILLED' : 'SURVIVED'} ${name}`);
   failed ||= !killed;

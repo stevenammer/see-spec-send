@@ -9,6 +9,8 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const token = () => randomBytes(32).toString('base64url');
 const now = () => Date.now();
 const minute = 60_000;
+const failureWindow = 15 * minute;
+const accountFailureCeiling = 30;
 
 export class Auth {
   constructor(store, options = {}) {
@@ -24,6 +26,10 @@ export class Auth {
       id TEXT PRIMARY KEY, password TEXT NOT NULL, leader INTEGER NOT NULL DEFAULT 0,
       lock_until INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0
     );
+    CREATE TABLE IF NOT EXISTS login_failures(
+      account TEXT NOT NULL, ip TEXT NOT NULL, at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS login_failures_account ON login_failures(account, at);
     CREATE TABLE IF NOT EXISTS invites(
       digest TEXT PRIMARY KEY, role TEXT NOT NULL, expires INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0
     );
@@ -84,10 +90,33 @@ export class Auth {
     const elapsed = this.clock() - state.at;
     state.tokens = Math.min(5, state.tokens + elapsed / minute);
     state.at = this.clock();
+    // Re-insert so the map stays in least-recently-used order for pruning.
+    this.buckets.delete(key);
+    this.buckets.set(key, state);
+    if (this.buckets.size > 10_000) this.prune();
     if (state.tokens < 1) return false;
     state.tokens -= 1;
-    this.buckets.set(key, state);
     return true;
+  }
+
+  prune() {
+    const cutoff = this.clock() - 5 * minute;
+    for (const [key, state] of this.buckets) if (state.at < cutoff) this.buckets.delete(key);
+    // Hard cap: attacker-chosen identities can never grow this map without bound.
+    while (this.buckets.size > 50_000) this.buckets.delete(this.buckets.keys().next().value);
+  }
+
+  loginBlocked(id, ip) {
+    const now = this.clock();
+    this.db.prepare('DELETE FROM login_failures WHERE at<?').run(now - failureWindow);
+    const pair = this.db.prepare(
+      'SELECT count(*) AS n, max(at) AS last FROM login_failures WHERE account=? AND ip=?',
+    ).get(id, ip);
+    // Lockout is per address, so a stranger's failures can never lock the owner out.
+    if (pair.n > 0 && pair.last + Math.min(failureWindow, 1000 * 2 ** pair.n) > now) return true;
+    const account = this.db.prepare('SELECT count(*) AS n FROM login_failures WHERE account=?').get(id);
+    // Spread-out guessing hits a high ceiling that expires by itself.
+    return account.n >= accountFailureCeiling;
   }
 
   allowed(ip, account, action = 'login') {
@@ -127,20 +156,16 @@ export class Auth {
   }
 
   async login(id, password, ip = 'local') {
-    if (!this.allowed(ip, id)) throw new Error('login unavailable');
+    if (!this.take(`login:ip:${ip}`) || this.loginBlocked(id, ip)) throw new Error('login unavailable');
     const user = this.db.prepare('SELECT * FROM users WHERE id=?').get(id);
     // Always run scrypt so an unknown id has comparable cost to a bad password.
     const record = user?.password || await this.passwordRecord('not-a-real-password');
     const valid = await this.matches(password, record);
-    if (!user || user.lock_until > this.clock() || !valid) {
-      if (user) {
-        const failures = user.failures + 1;
-        const until = this.clock() + Math.min(60 * minute, 1000 * 2 ** failures);
-        this.db.prepare('UPDATE users SET failures=?,lock_until=? WHERE id=?').run(failures, until, id);
-      }
+    if (!user || !valid) {
+      if (user) this.db.prepare('INSERT INTO login_failures(account,ip,at) VALUES(?,?,?)').run(id, ip, this.clock());
       throw new Error('login unavailable');
     }
-    this.db.prepare('UPDATE users SET failures=0,lock_until=0 WHERE id=?').run(id);
+    this.db.prepare('DELETE FROM login_failures WHERE account=? AND ip=?').run(id, ip);
     this.revokePerson(id);
     return this.newSession(id);
   }

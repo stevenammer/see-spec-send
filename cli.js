@@ -1,4 +1,5 @@
-import { copyFileSync, existsSync } from 'node:fs';
+import { chmodSync, constants, copyFileSync, existsSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { Store } from './core/store.js';
 import { Auth } from './app/auth.js';
 
@@ -15,7 +16,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
   const auth = new Auth(store);
   if (command === 'init') {
     if (auth.db.prepare('SELECT 1 FROM users LIMIT 1').get()) fail('already initialized');
-    const password = `Start-${Math.random().toString(36).slice(2)}-9a`;
+    const password = `Start-${randomBytes(18).toString('base64url')}-9a`;
     await auth.createUser(value('--id') || 'leader', password, true);
     write(`one-time password: ${password}`);
   } else if (command === 'invite' && args[0] === 'create') {
@@ -30,9 +31,8 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
     write(auth.createToken(value('--kind'), value('--item')));
   } else if (command === 'verify') {
     let bad = false;
-    for (const { item } of store.db.prepare('SELECT item FROM items ORDER BY item').all()) {
-      const answer = store.verify(item);
-      write(`${item}: ${answer.ok ? 'ok' : answer.reason}`);
+    for (const answer of store.verifyAll()) {
+      write(`${answer.item}: ${answer.ok ? 'ok' : answer.reason}`);
       bad ||= !answer.ok;
     }
     if (bad) process.exitCode = 1;
@@ -41,8 +41,10 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
   } else if (command === 'backup') {
     const target = value('--to') || fail('missing --to');
     if (!existsSync(file)) fail('database missing');
+    if (existsSync(target)) fail('backup target exists');
     auth.db.exec('PRAGMA wal_checkpoint(FULL)');
-    copyFileSync(file, target);
+    copyFileSync(file, target, constants.COPYFILE_EXCL);
+    chmodSync(target, 0o600);
   } else fail('unknown command');
   store.close();
 }

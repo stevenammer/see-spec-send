@@ -19,7 +19,7 @@ I'm building this in public, and it's early. Here's the honest state:
   - **Sign-in and a small HTTP API.** Invites, passwords, sessions, CSRF protection, rate limits, and a leader step-up before anything gets approved. The command line is the only admin surface. See [docs/ADMIN.md](docs/ADMIN.md) and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md), which also lists what's not covered.
 - **Not built yet:** a web UI, the model layer, the builder, the cost-cap gateway, and the guided "Vision Quest" for working through a problem alone. Don't try to run an organization on this yet.
 
-I'm treating tests as claims. `npm test` runs them, and `npm run check:mutants` deliberately breaks the code in 17 different ways and checks that the tests notice. If a test can't fail, I don't count it.
+I'm treating tests as claims. `npm test` runs them, and `npm run check:mutants` deliberately breaks the code in 28 different ways and checks that the tests notice. If a test can't fail, I don't count it.
 
 ## Try it
 
@@ -36,7 +36,7 @@ npm run test:listen
 
 ## How I'm building it
 
-I write the specs and decide what's safe to ship. AI agents write most of the code. Then I try to break what comes back, and I keep the attacks that found real bugs as permanent tests. So far, mine found four the agent missed: a money rounding bug, a reused retry key that silently dropped an event, a stale builder that could deliver under a newer approval, and a same-origin check that a lookalike address could fool.
+I write the specs and decide what's safe to ship. AI agents write most of the code. Then I try to break what comes back, and I keep the attacks that found real bugs as permanent tests. So far, attacks found a money rounding bug, a reused retry key that silently dropped an event, a stale builder that could deliver under a newer approval, and a same-origin check that a lookalike address could fool. A second AI, set loose as a hostile reviewer, found four more: world-readable database files, a verifier that said "ok" to forged metadata, a lockout that let a stranger lock you out, and a rate limiter that never forgot. All of them are fixed, and each fix has a test that fails without it.
 
 ## Contributing
 

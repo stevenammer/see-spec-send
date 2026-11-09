@@ -1,3 +1,4 @@
+import { chmodSync, closeSync, openSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { fold, initial, step } from './machine.js';
@@ -11,7 +12,8 @@ const stable = value => {
 const eventHash = (prev, seq, type, actor, bodyHash, at) =>
   digest(stable({ prev, seq, type, actor, bodyHash, at }));
 const scopedBodyHash = (item, bytes) => digest(`${item}\0${bytes}`);
-const submittedEventHash = event => digest(stable(event));
+// The idempotency key is part of the hash so a forged key is caught by verify.
+const submittedEventHash = (event, idem) => digest(stable({ idem, event }));
 
 function bodyOf(event) {
   const body = { ...event };
@@ -23,6 +25,11 @@ function bodyOf(event) {
 
 export class Store {
   constructor(file = ':memory:') {
+    if (file !== ':memory:' && file !== '') {
+      // The database holds event bodies and token digests: owner-only from the first byte.
+      closeSync(openSync(file, 'a', 0o600));
+      chmodSync(file, 0o600);
+    }
     this.db = new DatabaseSync(file);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS actors(
@@ -47,7 +54,7 @@ export class Store {
     const rows = this.db.prepare(`SELECT e.* FROM events e
       JOIN bodies b ON b.hash=e.body_hash WHERE e.submitted_hash IS NULL`).all();
     const fill = this.db.prepare('UPDATE events SET submitted_hash=? WHERE item=? AND seq=?');
-    for (const row of rows) fill.run(submittedEventHash(this.submittedEventFromRow(row)), row.item, row.seq);
+    for (const row of rows) fill.run(submittedEventHash(this.submittedEventFromRow(row), row.idem), row.item, row.seq);
   }
 
   registerPerson(id, { leader = false } = {}) {
@@ -124,11 +131,11 @@ export class Store {
 
   appendInTransaction(item, event, { expectedSeq, idem }) {
     this.ensureEvent(item, event);
-    const submittedHash = submittedEventHash(event);
+    const submittedHash = submittedEventHash(event, idem);
     const existing = this.db.prepare('SELECT * FROM events WHERE item=? AND idem=?').get(item, idem);
     if (existing) {
       const storedEvent = this.submittedEventFromRow(existing);
-      const existingHash = existing.submitted_hash || (storedEvent && submittedEventHash(storedEvent));
+      const existingHash = existing.submitted_hash || (storedEvent && submittedEventHash(storedEvent, existing.idem));
       if (!existingHash) throw new Error('idempotency record cannot be compared');
       if (existingHash !== submittedHash) {
         throw new Error('idempotency key reused with a different event');
@@ -178,6 +185,10 @@ export class Store {
         return { ok: false, seq: row.seq, reason: 'body' };
       }
       if (!body && !erased.has(row.body_hash)) return { ok: false, seq: row.seq, reason: 'body' };
+      // An erased body cannot be re-hashed, but its receipt is in the chain.
+      if (body && submittedEventHash(this.submittedEventFromRow(row), row.idem) !== row.submitted_hash) {
+        return { ok: false, seq: row.seq, reason: 'submission' };
+      }
       const hash = eventHash(previous, row.seq, row.type, row.actor, row.body_hash, row.at);
       if (row.prev_hash !== previous || row.hash !== hash) {
         return { ok: false, seq: row.seq, reason: 'chain' };
@@ -185,6 +196,27 @@ export class Store {
       previous = row.hash;
     }
     return { ok: true };
+  }
+
+  // Every item that has events or a cache row: orphaned events cannot hide, and the
+  // cache must equal a full replay.
+  verifyAll() {
+    const names = new Set([
+      ...this.db.prepare('SELECT DISTINCT item FROM events').all().map(row => row.item),
+      ...this.db.prepare('SELECT item FROM items').all().map(row => row.item),
+    ]);
+    return [...names].sort().map(item => {
+      const chain = this.verify(item);
+      if (!chain.ok) return { item, ...chain };
+      const cache = this.db.prepare('SELECT * FROM items WHERE item=?').get(item);
+      if (!cache) return { item, ok: false, reason: 'cache-missing' };
+      const replay = this.read(item);
+      if (replay.refusal) return { item, ok: false, reason: 'state' };
+      const last = this.eventRows(item).at(-1);
+      const same = cache.head === (last?.hash || '') && cache.seq === (last?.seq || 0)
+        && cache.state === replay.state && cache.context === stable(replay.context);
+      return same ? { item, ok: true } : { item, ok: false, reason: 'cache' };
+    });
   }
 
   rebuild() {
@@ -248,7 +280,7 @@ export class Store {
     if (existing) {
       const { bytes, submitted_hash: incomingSubmittedHash, ...stored } = row;
       const { submitted_hash: existingSubmittedHash, ...incoming } = existing;
-      const hash = incomingSubmittedHash || submittedEventHash({ ...JSON.parse(row.bytes), type: row.type, actor: row.actor, at: row.at });
+      const hash = incomingSubmittedHash || submittedEventHash({ ...JSON.parse(row.bytes), type: row.type, actor: row.actor, at: row.at }, row.idem);
       if (stable(incoming) !== stable(stored) || (existingSubmittedHash && existingSubmittedHash !== hash)) {
         throw new Error('conflicting import');
       }
@@ -259,7 +291,7 @@ export class Store {
       throw new Error('import is not next in chain');
     }
     const event = { ...JSON.parse(row.bytes), type: row.type, actor: row.actor, at: row.at };
-    if (row.submitted_hash && row.submitted_hash !== submittedEventHash(event)) {
+    if (row.submitted_hash && row.submitted_hash !== submittedEventHash(event, row.idem)) {
       throw new Error('bad import event');
     }
     const answer = this.appendInTransaction(row.item, event, { expectedSeq: row.seq - 1, idem: row.idem });

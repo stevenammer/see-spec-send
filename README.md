@@ -7,6 +7,6 @@ Work in progress. This is the start of a free, open-source tool for any organiza
 3. **Send it:** put a working version in front of the people doing the work. Nothing counts until they say it helps.
 
 Nothing here is ready to use yet. License: Apache-2.0.
-Status: core only. This repository currently contains the small event machine and
-its local store. It has no HTTP service, authentication, UI, network access,
-model, or builder.
+Status: core only. The local event store now has registered actors, item-scoped
+tokens, transactional appends, replayable hash chains, and JSONL transfer. It
+has no HTTP service, authentication UI, network access, model, or builder.

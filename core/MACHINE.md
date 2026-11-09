@@ -1,8 +1,18 @@
 # Machine
 
 The table is the machine oracle. `open` means every state except `HELPS` and
-`SHELVED`. Role checks marked with a condition are additional to the listed
-role. `commented`, `steward_changed`, and `erased` preserve the state.
+`SHELVED`; a steward alternative requires that state to already have a steward.
+Each event has an actor id, timestamp, and idempotency key. An event
+never carries a role. The store resolves the actor from its authority table
+before it calls the machine.
+
+`member` is any registered person. `leader` is a registered person flagged as
+a leader. The steward is state-derived: the person who made the first `checked`
+event, until a leader makes `steward_changed` naming another registered person.
+`gateway` and `run` are registered tokens scoped to exactly one item. An
+`approver` below means the person recorded by `approved`, not an actor role.
+People have no counters. Role checks marked with a condition are additional to
+the listed role. `commented`, `steward_changed`, and `erased` preserve state.
 
 | From | Event | Role | Next |
 | --- | --- | --- | --- |
@@ -21,7 +31,7 @@ role. `commented`, `steward_changed`, and `erased` preserve the state.
 | open | shelved | leader or steward | SHELVED |
 | open | commented | member | unchanged |
 | open | steward_changed | leader | unchanged |
-| open | erased | member | unchanged |
+| open | erased | leader or steward | unchanged |
 
 `checked` requires `looked` with at least one entry, `found` as an array, and
 `verdict` of `already_have`, `setting`, `free`, `pay`, or `build_needed`.
@@ -31,5 +41,8 @@ least one entry. `approved` requires a nonempty `spec_hash`, finite nonnegative
 require a nonempty note or reason. `charged` requires finite nonnegative usd.
 `tried` and `helped` require a nonempty artifact hash. The approval freezes its
 cap and quorum. Helpers count only once each and only for the current artifact.
+`helped` is refused for the steward and approver. `erased` names a body hash,
+uses a steward or leader's actual timestamp, records its receipt, and then only
+that item's body bytes may be removed. Body hashes include the item id.
 
 There is no done event. `HELPS` and `SHELVED` are terminal.

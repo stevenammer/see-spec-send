@@ -1,0 +1,8 @@
+node_modules/
+*.bak
+*.log
+.env
+.env.*
+!.env.example
+data/
+.claude/

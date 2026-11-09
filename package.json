@@ -1,0 +1,13 @@
+{
+  "name": "seespecsend",
+  "version": "0.0.1",
+  "private": true,
+  "description": "See it. Spec it. Send it. A way for any organization to turn the problems everyone already knows about into small, checked, capped experiments that the people doing the work confirm help.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": { "node": ">=20.20.0" },
+  "scripts": {
+    "test": "node --test",
+    "check:public": "node scripts/check-public.mjs"
+  }
+}

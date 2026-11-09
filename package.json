@@ -7,7 +7,8 @@
   "type": "module",
   "engines": { "node": ">=20.20.0" },
   "scripts": {
-    "test": "node --test",
+    "test": "node --test test/*.test.mjs",
+    "test:listen": "node --test test/listener.smoke.mjs",
     "check:public": "node scripts/check-public.mjs",
     "check:mutants": "node scripts/mutate-check.mjs"
   }

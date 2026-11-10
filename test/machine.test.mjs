@@ -4,7 +4,7 @@ import { initial, step } from '../core/machine.js';
 
 const person = { kind: 'person', leader: false };
 const leader = { kind: 'person', leader: true };
-const checked = { type: 'checked', actor: 's', looked: ['x'], found: [], verdict: 'build_needed' };
+const checked = { type: 'checked', actor: 's', problem: 'x', looked: ['x'], found: [], verdict: 'build_needed' };
 
 test('machine needs separately resolved authority', () => {
   assert.ok(step(initial(), checked, person).context);

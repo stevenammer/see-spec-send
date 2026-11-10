@@ -139,7 +139,7 @@ test('events reject client authority, tokens, self approval, and require fresh s
   const send = input => call(handler, 'POST', '/api/items/a/events', input, authHeaders(cookie, me.csrf));
   assert.equal((await send({ type: 'checked', actor: 'member', looked: ['x'], found: [], verdict: 'build_needed' })).status, 403);
   assert.equal((await send({ type: 'checked', role: 'leader', looked: ['x'], found: [], verdict: 'build_needed' })).status, 403);
-  assert.equal((await send({ type: 'checked', looked: ['x'], found: [], verdict: 'build_needed' })).status, 201);
+  assert.equal((await send({ type: 'checked', problem: 'x', looked: ['x'], found: [], verdict: 'build_needed' })).status, 201);
   assert.equal((await send({ type: 'specced', must: ['x'], how_we_know: ['x'], out_of_scope: [] })).status, 201);
   const before = await send({ type: 'approved', spec_hash: 'x', cap_usd: 1, quorum: 1 });
   assert.equal(before.status, 403);

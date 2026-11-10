@@ -15,7 +15,7 @@ function seeded(file) {
   const store = new Store(file);
   store.registerPerson('member');
   store.append('item', {
-    type: 'checked', actor: 'member', at: '2026-11-09T00:00:00.000Z',
+    type: 'checked', actor: 'member', problem: 'x', at: '2026-11-09T00:00:00.000Z',
     looked: ['x'], found: [], verdict: 'free',
   }, { idem: 'one' });
   return store;

@@ -9,6 +9,7 @@
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "test:listen": "node --test test/listener.smoke.mjs",
+    "test:e2e": "node test/e2e/manual-path.e2e.mjs",
     "check:public": "node scripts/check-public.mjs",
     "check:mutants": "node scripts/mutate-check.mjs"
   }

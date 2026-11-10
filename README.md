@@ -16,10 +16,19 @@ I'm building this in public, and it's early. Here's the honest state:
 
 - **Works and tested:**
   - **The core.** A small state machine that decides what can happen to an item, and a local store that records every step in a tamper-evident chain. Money is exact, builder events are tied to the approval they were built under, and roles come from a registry instead of from whatever an event claims to be.
+  - **The manual path with a web UI.** A person can post a checked problem, write a spec, have a different leader approve it with a password step-up, deliver one safe playable try, and reach Helps only when other people say it helps.
   - **Sign-in and a small HTTP API.** Invites, passwords, sessions, CSRF protection, rate limits, and a leader step-up before anything gets approved. The command line is the only admin surface. See [docs/ADMIN.md](docs/ADMIN.md) and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md), which also lists what's not covered.
-- **Not built yet:** a web UI, the model layer, the builder, the cost-cap gateway, and the guided "Vision Quest" for working through a problem alone. Don't try to run an organization on this yet.
+- **Not built yet:** the model layer, builder adapters, the cost gateway, Vision Quest, and kept modules. Don't try to run an organization on this yet.
 
-I'm treating tests as claims. `npm test` runs them, and `npm run check:mutants` deliberately breaks the code in 28 different ways and checks that the tests notice. If a test can't fail, I don't count it.
+I'm treating tests as claims. `npm test` runs them, and `npm run check:mutants` deliberately breaks the code in 39 different ways and checks that the tests notice. If a test can't fail, I don't count it.
+
+## What it looks like
+
+![The work feed at phone width](docs/screens/feed-390.png)
+
+![An item in the Send stage with a playable try](docs/screens/item-trying-1280.png)
+
+These screenshots come from the real-browser test.
 
 ## Try it
 
@@ -30,6 +39,7 @@ npm test
 npm run check:mutants
 npm run check:public
 npm run test:listen
+npm run test:e2e
 ```
 
 `test:listen` starts a real server on a local port and runs a short end-to-end check. `check:public` is a guard that scans the files and the git history for secrets, private paths, personal emails and backup files before anything gets published.

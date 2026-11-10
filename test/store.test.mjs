@@ -21,7 +21,7 @@ function actors(store, item = 'i') {
 
 function ready(store, item = 'i', cap = 1) {
   actors(store, item);
-  store.append(item, event('checked', 'steward', { looked: ['x'], found: [], verdict: 'build_needed' }), { idem: '1' });
+  store.append(item, event('checked', 'steward', { problem: 'x', looked: ['x'], found: [], verdict: 'build_needed' }), { idem: '1' });
   store.append(item, event('specced', 'steward', { must: ['x'], how_we_know: ['x'], out_of_scope: [] }), { idem: '2' });
   const spec = store.events(item).at(-1).body_hash;
   store.append(item, event('approved', 'approver', { spec_hash: spec, cap_usd: cap, quorum: 2 }), { idem: '3' });
@@ -35,10 +35,10 @@ function binding(store, item = 'i') {
 test('authority is registry-derived and tokens are item-scoped', () => {
   const store = new Store();
   actors(store);
-  assert.throws(() => store.append('i', { ...event('checked', 'member', { looked: ['x'], found: [], verdict: 'free' }), role: 'leader' }, { idem: 'x' }), /role/);
-  assert.throws(() => store.append('i', event('checked', 'nobody', { looked: ['x'], found: [], verdict: 'free' }), { idem: 'y' }), /unknown/);
+  assert.throws(() => store.append('i', { ...event('checked', 'member', { problem: 'x', looked: ['x'], found: [], verdict: 'free' }), role: 'leader' }, { idem: 'x' }), /role/);
+  assert.throws(() => store.append('i', event('checked', 'nobody', { problem: 'x', looked: ['x'], found: [], verdict: 'free' }), { idem: 'y' }), /unknown/);
   assert.throws(() => store.append('other', event('charged', 'gateway', { usd: 1 }), { idem: 'z' }), /scoped/);
-  store.append('i', event('checked', 'steward', { looked: ['x'], found: [], verdict: 'free' }), { idem: 'ok' });
+  store.append('i', event('checked', 'steward', { problem: 'x', looked: ['x'], found: [], verdict: 'free' }), { idem: 'ok' });
   assert.equal(store.read('i').context.steward, 'steward');
 });
 
@@ -95,7 +95,7 @@ test('money is exact micro-dollars and rejects invalid decimal inputs', () => {
   assert.equal(tenths.read('tenths').context.spentMicros, 300_000);
   for (const bad of [0.0000001, NaN, Infinity, -1, Number.MAX_SAFE_INTEGER]) {
     const invalid = new Store(); actors(invalid, 'bad');
-    invalid.append('bad', event('checked', 'steward', { looked: ['x'], found: [], verdict: 'build_needed' }), { idem: 'checked' });
+    invalid.append('bad', event('checked', 'steward', { problem: 'x', looked: ['x'], found: [], verdict: 'build_needed' }), { idem: 'checked' });
     invalid.append('bad', event('specced', 'steward', { must: ['x'], how_we_know: ['x'], out_of_scope: [] }), { idem: 'spec' });
     const spec = invalid.events('bad').at(-1).body_hash;
     assert.throws(() => invalid.append('bad', event('approved', 'approver', { spec_hash: spec, cap_usd: bad, quorum: 1 }), { idem: 'approval' }), /event not allowed/);
@@ -107,7 +107,7 @@ test('money is exact micro-dollars and rejects invalid decimal inputs', () => {
 
 test('a superseded builder cannot spend or deliver under a newer approval', () => {
   const store = new Store(); actors(store, 'A');
-  store.append('A', event('checked', 'steward', { looked: ['x'], found: [], verdict: 'build_needed' }), { idem: '1' });
+  store.append('A', event('checked', 'steward', { problem: 'x', looked: ['x'], found: [], verdict: 'build_needed' }), { idem: '1' });
   store.append('A', event('specced', 'steward', { must: ['v1'], how_we_know: ['k'], out_of_scope: [] }), { idem: '2' });
   const v1 = store.events('A').at(-1).body_hash;
   const first = store.append('A', event('approved', 'leader', { spec_hash: v1, cap_usd: 1, quorum: 1 }), { idem: '3' });
@@ -127,7 +127,7 @@ test('a superseded builder cannot spend or deliver under a newer approval', () =
 test('erasure is authorized, item-scoped, timestamped, and verifiable', () => {
   const store = new Store();
   actors(store, 'a'); actors(store, 'b');
-  for (const item of ['a', 'b']) store.append(item, event('checked', 'steward', { looked: ['same'], found: [], verdict: 'free' }), { idem: item });
+  for (const item of ['a', 'b']) store.append(item, event('checked', 'steward', { problem: 'same', looked: ['same'], found: [], verdict: 'free' }), { idem: item });
   const a = store.events('a')[0].body_hash;
   const b = store.events('b')[0].body_hash;
   assert.notEqual(a, b);

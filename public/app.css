@@ -1,0 +1,103 @@
+:root {
+  color: #17212b;
+  background: #fff;
+  font:
+    18px/1.45 system-ui,
+    sans-serif;
+}
+body {
+  margin: 0;
+}
+header,
+main {
+  max-width: 760px;
+  margin: auto;
+  padding: 1rem;
+}
+header {
+  border-bottom: 1px solid #ccd5dd;
+}
+a {
+  color: #064f9e;
+}
+label {
+  display: block;
+  margin: 1rem 0;
+}
+input,
+textarea,
+select,
+button {
+  box-sizing: border-box;
+  font: inherit;
+  padding: 0.55rem;
+  max-width: 100%;
+  width: 100%;
+}
+textarea {
+  min-height: 7rem;
+}
+button,
+.button {
+  background: #075b9c;
+  color: #fff;
+  border: 0;
+  border-radius: 0.25rem;
+  display: inline-block;
+  text-decoration: none;
+  padding: 0.6rem 1rem;
+  width: auto;
+}
+button:focus,
+a:focus,
+input:focus,
+textarea:focus,
+select:focus {
+  outline: 3px solid #202f3c;
+  outline-offset: 2px;
+}
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.feed {
+  list-style: none;
+  padding: 0;
+}
+.feed li {
+  border: 1px solid #ccd5dd;
+  margin: 0.75rem 0;
+}
+.feed a {
+  display: block;
+  padding: 1rem;
+}
+.feed span,
+.feed small {
+  display: block;
+}
+.stage {
+  font-weight: bold;
+}
+.helps {
+  background: #d9f4e4;
+  padding: 1rem;
+}
+iframe {
+  border: 1px solid #667788;
+  width: 100%;
+  min-height: 20rem;
+}
+@media (max-width: 320px) {
+  :root {
+    font-size: 16px;
+  }
+  .top {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.error { color: #9b1c1c; font-weight: 600; margin: .5rem 0 0; }

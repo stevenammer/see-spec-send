@@ -2,8 +2,11 @@ import { chmodSync, constants, copyFileSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { Store } from './core/store.js';
 import { Auth } from './app/auth.js';
+import { createServerFor } from './app/http.js';
 
-const fail = message => { throw new Error(message); };
+const fail = message => {
+  throw new Error(message);
+};
 
 export async function main(argv = process.argv.slice(2), env = process.env, write = console.log) {
   const [command, ...args] = argv;
@@ -24,7 +27,8 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
     const hours = Number((value('--expires') || '24h').replace('h', ''));
     write(auth.createInvite(role, Date.now() + hours * 60 * 60 * 1000));
   } else if (command === 'person' && args[0] === 'list') {
-    for (const row of auth.db.prepare('SELECT id,leader FROM users ORDER BY id').all()) write(JSON.stringify(row));
+    for (const row of auth.db.prepare('SELECT id,leader FROM users ORDER BY id').all())
+      write(JSON.stringify(row));
   } else if (command === 'session' && args[0] === 'revoke') {
     auth.revokePerson(value('--person') || fail('missing --person'));
   } else if (command === 'token' && args[0] === 'create') {
@@ -45,10 +49,22 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
     auth.db.exec('PRAGMA wal_checkpoint(FULL)');
     copyFileSync(file, target, constants.COPYFILE_EXCL);
     chmodSync(target, 0o600);
+  } else if (command === 'serve') {
+    const port = Number(value('--port') || '8080');
+    const origin = value('--origin') || `http://127.0.0.1:${port}`;
+    const insecure = args.includes('--insecure-cookies');
+    const server = createServerFor({ store, auth, secure: !insecure, origin });
+    await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
+    write(`Serving ${origin}`);
+    if (insecure) write('WARNING: insecure cookies are enabled for local HTTP development only.');
+    return;
   } else fail('unknown command');
   store.close();
 }
 
 if (import.meta.url === new URL(`file://${process.argv[1]}`).href) {
-  main().catch(error => { console.error(error.message); process.exitCode = 1; });
+  main().catch(error => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
 }

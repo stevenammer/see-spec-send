@@ -1,4 +1,4 @@
-{"type":"checked","actor":"member-1","role":"member","looked":["work"],"found":[],"verdict":"build_needed"}
+{"type":"checked","actor":"member-1","role":"member","problem":"work","looked":["work"],"found":[],"verdict":"build_needed"}
 {"type":"specced","actor":"steward-1","role":"steward","must":["small"],"how_we_know":["signal"],"out_of_scope":[],"body_hash":"spec-1"}
 {"type":"approved","actor":"leader-1","role":"leader","spec_hash":"spec-1","cap_usd":2,"quorum":1}
 {"type":"tried","actor":"run-1","role":"run","artifact_hash":"artifact-1","approval":1,"spec_hash":"spec-1"}

@@ -33,7 +33,7 @@ the listed role. `commented`, `steward_changed`, and `erased` preserve state.
 | open | steward_changed | leader | unchanged |
 | open | erased | leader or steward | unchanged |
 
-`checked` requires `looked` with at least one entry, `found` as an array, and
+`checked` requires `problem` as a nonempty string no longer than 2000 characters, `looked` with at least one entry, `found` as an array, and
 `verdict` of `already_have`, `setting`, `free`, `pay`, or `build_needed`.
 `specced` requires `must` and `out_of_scope` arrays and `how_we_know` with at
 least one entry. `approved` requires a nonempty `spec_hash`, finite nonnegative

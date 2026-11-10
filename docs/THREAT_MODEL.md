@@ -37,3 +37,24 @@ A separate hostile review (a different AI, in its own sandbox, with a repro scri
 I also found one the review missed: the first admin's one-time password came from `Math.random()`. It now uses `crypto.randomBytes`.
 
 Still true, on purpose: any signed-in person can read any item. The product is built around an open feed, so there is no per-item read control yet. If you need confidential items, that has to be designed in first. A host administrator who can edit both the database and the code can still recompute the hash chain; the chain detects accidents and partial tampering, not a determined insider with full access.
+
+## Slice 3, manual web path
+
+Covered: sign-in, CSRF, and same-origin checks on each new write; role checks for approval and
+delivery; step-up approval; a distinct-helper quorum; stale artifact refusal in the machine; 256 KB
+artifact limit; escaped item text; strict page CSP; and artifact CSP plus an opaque-origin iframe.
+The proof is `manual web path is authorized, escaped, sandboxed, and has strict pages`, alongside
+the existing `csrf cases` and `step-up required, stale, single use` tests.
+
+Proved in a real browser (`npm run test:e2e`, run outside any sandbox): four people sign in through the
+real screens and drive one item to Helps and another to Shelved. The steward and the approver get no vote
+button. Text like `<img onerror=...>` posted as a problem is shown as text and never runs, in the item
+page and in the feed. Inside the try, reading the cookie and reaching the parent page both throw a
+SecurityError, because the frame is sandboxed without `allow-same-origin`.
+
+Not covered: the viewer is an opaque-origin iframe, not a separate hostname. There is no stored-XSS fuzz
+corpus yet. Only one browser engine has been run.
+
+What the browser test caught that the in-process tests missed: the web form did not send the CSRF token,
+so posting a problem always failed in a real browser; the history showed a token hash instead of the
+person who delivered the try; and the steward and approver could not even see the try.

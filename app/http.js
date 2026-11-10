@@ -1,9 +1,12 @@
 import { createServer } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { feedPage, htmlHeaders, itemPage, newItemPage, redeemPage, signInPage } from './pages.js';
 
-const json = (res, status, body) => {
+const json = (res, status, value) => {
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-  res.end(JSON.stringify(body));
+  res.end(JSON.stringify(value));
 };
 const headers = res => {
   res.setHeader('content-security-policy', "default-src 'none'; frame-ancestors 'none'");
@@ -12,53 +15,99 @@ const headers = res => {
   res.setHeader('cross-origin-opener-policy', 'same-origin');
   res.setHeader('cross-origin-resource-policy', 'same-origin');
 };
-const body = req => new Promise((resolve, reject) => {
-  let size = 0;
-  let text = '';
-  req.on('data', chunk => {
-    size += chunk.length;
-    if (size > 16_384) reject(new Error('body too large'));
-    else text += chunk;
+const page = (res, html) => {
+  res.writeHead(200, {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-security-policy': htmlHeaders,
   });
-  req.on('end', () => {
-    try {
-      const value = JSON.parse(text || '{}');
-      if (!value || Array.isArray(value) || Object.keys(value).some(key =>
-        ['__proto__', 'constructor', 'prototype'].includes(key))) throw new Error('bad json');
-      resolve(value);
-    } catch { reject(new Error('bad json')); }
+  res.end(html);
+};
+const unsafe = new Set(['__proto__', 'constructor', 'prototype']);
+const safeObject = value =>
+  value === null ||
+  typeof value !== 'object' ||
+  (Array.isArray(value)
+    ? value.every(safeObject)
+    : Object.keys(value).every(key => !unsafe.has(key) && safeObject(value[key])));
+const body = (req, limit = 300 * 1024) =>
+  new Promise((resolve, reject) => {
+    let size = 0;
+    let text = '';
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > limit) reject(new Error('body too large'));
+      else text += chunk;
+    });
+    req.on('end', () => {
+      try {
+        const value = JSON.parse(text || '{}');
+        if (!safeObject(value)) throw new Error('bad json');
+        resolve(value);
+      } catch {
+        reject(new Error('bad json'));
+      }
+    });
+    req.on('error', reject);
   });
-  req.on('error', reject);
-});
-const cookies = req => Object.fromEntries((req.headers.cookie || '').split(';').map(part => {
-  const [key, ...rest] = part.trim().split('=');
-  return [key, rest.join('=')];
-}).filter(([key]) => key));
-
-// Compare parsed origins; a prefix match would accept lookalike hosts such as localhost.evil.test.
+const cookies = req =>
+  Object.fromEntries(
+    (req.headers.cookie || '')
+      .split(';')
+      .map(part => {
+        const [key, ...rest] = part.trim().split('=');
+        return [key, rest.join('=')];
+      })
+      .filter(([key]) => key),
+  );
 const sameOriginAs = expected => value => {
-  try { return new URL(value).origin === new URL(expected).origin; } catch { return false; }
+  try {
+    return new URL(value).origin === new URL(expected).origin;
+  } catch {
+    return false;
+  }
+};
+const staticFile = (res, file, type) => {
+  res.writeHead(200, {
+    'content-type': type,
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+  });
+  res.end(readFileSync(join(new URL('..', import.meta.url).pathname, 'public', file)));
+};
+const checked = input => {
+  const looked = ['have', 'pay_for', 'free', 'setting']
+    .filter(key => input[key])
+    .map(key => `${key}:${String(input[`${key}_note`] || '').slice(0, 280)}`);
+  if (!looked.length) throw new Error('check required');
+  return { problem: input.problem, looked, found: [], verdict: input.verdict };
 };
 
 export function createHandler({ auth, store, secure = true, origin = 'https://localhost' }) {
   const sameOrigin = sameOriginAs(origin);
   const cookieName = secure ? '__Host-sss' : 'sss';
-  const cookie = value => `${cookieName}=${value}; Path=/; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
+  const cookie = value =>
+    `${cookieName}=${value}; Path=/; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
   return async (req, res) => {
     headers(res);
     try {
       const url = new URL(req.url, origin);
       const change = req.method === 'POST';
+      if (req.method === 'GET' && url.pathname === '/assets/app.js')
+        return staticFile(res, 'app.js', 'application/javascript; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/assets/app.css')
+        return staticFile(res, 'app.css', 'text/css; charset=utf-8');
       const sessionToken = cookies(req)[cookieName];
       const session = sessionToken && auth.session(sessionToken);
-      if (change && req.headers['content-type'] !== 'application/json') return json(res, 415, { error: 'request refused' });
-      if (change && url.pathname !== '/api/login' && url.pathname !== '/api/invite/redeem') {
-        // Browser state changes require both a same-origin request and session-bound nonce.
-        if (!sameOrigin(req.headers.origin || req.headers.referer)
-            || req.headers['x-csrf-token'] !== session?.csrf) {
-          return json(res, 403, { error: 'request refused' });
-        }
-      }
+      if (change && req.headers['content-type'] !== 'application/json')
+        return json(res, 415, { error: 'request refused' });
+      if (
+        change &&
+        !['/api/login', '/api/invite/redeem'].includes(url.pathname) &&
+        (!sameOrigin(req.headers.origin || req.headers.referer) ||
+          req.headers['x-csrf-token'] !== session?.csrf)
+      )
+        return json(res, 403, { error: 'request refused' });
       const input = change ? await body(req) : {};
       const ip = req.socket?.remoteAddress || 'local';
       if (req.method === 'POST' && url.pathname === '/api/login') {
@@ -71,33 +120,120 @@ export function createHandler({ auth, store, secure = true, origin = 'https://lo
         res.setHeader('set-cookie', cookie(login.value));
         return json(res, 201, { csrf: login.csrf });
       }
+      if (req.method === 'GET' && url.pathname === '/signin') return page(res, signInPage());
+      if (req.method === 'GET' && url.pathname === '/redeem') return page(res, redeemPage());
       if (req.method === 'POST' && url.pathname === '/api/logout') {
         auth.revoke(sessionToken);
         res.setHeader('set-cookie', cookie('') + '; Max-Age=0');
         return json(res, 204, {});
       }
-      if (req.method === 'GET' && url.pathname === '/api/me') {
-        return session ? json(res, 200, { id: session.person, csrf: session.csrf }) : json(res, 403, { error: 'request refused' });
+      if (req.method === 'GET' && url.pathname === '/api/me')
+        return session
+          ? json(res, 200, { id: session.person, csrf: session.csrf })
+          : json(res, 403, { error: 'request refused' });
+      if (!session) {
+        if (req.method === 'GET' && url.pathname === '/') return page(res, signInPage());
+        return json(res, 403, { error: 'request refused' });
       }
-      if (!session) return json(res, 403, { error: 'request refused' });
       if (req.method === 'POST' && url.pathname === '/api/stepup') {
         await auth.stepup(sessionToken, input.password, ip);
         return json(res, 204, {});
       }
+      const leader =
+        auth.db.prepare('SELECT leader FROM users WHERE id=?').get(session.person)?.leader === 1;
+      if (req.method === 'GET' && url.pathname === '/')
+        return page(res, feedPage(store.listItems()));
+      if (req.method === 'GET' && url.pathname === '/items/new') return page(res, newItemPage());
+      const view = url.pathname.match(/^\/items\/([^/]+)$/);
+      if (req.method === 'GET' && view) {
+        const state = store.read(view[1]);
+        return page(
+          res,
+          itemPage({ id: view[1], ...state }, store.events(view[1]), session.person, leader),
+        );
+      }
+      if (req.method === 'GET' && url.pathname === '/api/items')
+        return json(res, 200, { items: store.listItems() });
+      if (req.method === 'POST' && url.pathname === '/api/items') {
+        const id = randomBytes(24).toString('base64url');
+        store.append(
+          id,
+          {
+            type: 'checked',
+            actor: session.person,
+            at: new Date().toISOString(),
+            ...checked(input),
+          },
+          { idem: randomUUID() },
+        );
+        return json(res, 201, { id, state: store.read(id) });
+      }
+      const artifact = url.pathname.match(/^\/api\/items\/([^/]+)\/artifact\/([a-f0-9]{64})$/);
+      if (req.method === 'GET' && artifact) {
+        const html = store.artifact(artifact[1], artifact[2]);
+        if (html === null) return json(res, 404, { error: 'not found' });
+        res.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff',
+          'content-security-policy':
+            "sandbox allow-scripts; default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+        });
+        return res.end(html);
+      }
+      const deliver = url.pathname.match(/^\/api\/items\/([^/]+)\/artifact$/);
+      if (req.method === 'POST' && deliver) {
+        const state = store.read(deliver[1]);
+        if (!(leader || state.context.steward === session.person))
+          throw new Error('event not allowed');
+        // Check the stage before storing any bytes, so a refused delivery leaves nothing behind.
+        if (state.state !== 'SENDING') throw new Error('event not allowed');
+        const hash = store.putArtifact(deliver[1], input.html);
+        const run = auth.createToken('run', deliver[1]);
+        const actor = createHash('sha256').update(run).digest('hex');
+        store.append(
+          deliver[1],
+          {
+            type: 'tried',
+            actor,
+            artifact_hash: hash,
+            approval: state.context.approval,
+            spec_hash: state.context.specHash,
+            delivered_by: session.person,
+            at: new Date().toISOString(),
+          },
+          { idem: randomUUID() },
+        );
+        return json(res, 201, { hash });
+      }
       const match = url.pathname.match(/^\/api\/items\/([^/]+)(?:\/events)?$/);
       if (!match) return json(res, 404, { error: 'not found' });
-      if (req.method === 'GET') return json(res, 200, { state: store.read(match[1]), events: store.events(match[1]) });
-      if (Object.hasOwn(input, 'actor') || Object.hasOwn(input, 'role')) return json(res, 403, { error: 'request refused' });
-      if (input.type === 'approved' && !auth.useStepup(sessionToken)) return json(res, 403, { error: 'request refused' });
-      const event = { ...input, actor: session.person, at: new Date().toISOString() };
-      return json(res, 201, store.append(match[1], event, { idem: req.headers['idempotency-key'] || randomUUID() }));
+      if (req.method === 'GET')
+        return json(res, 200, { state: store.read(match[1]), events: store.events(match[1]) });
+      if (Object.hasOwn(input, 'actor') || Object.hasOwn(input, 'role'))
+        return json(res, 403, { error: 'request refused' });
+      if (input.type === 'approved') {
+        if (!auth.useStepup(sessionToken)) return json(res, 403, { error: 'request refused' });
+        input.spec_hash = store.read(match[1]).context.specHash;
+      }
+      return json(
+        res,
+        201,
+        store.append(
+          match[1],
+          { ...input, actor: session.person, at: new Date().toISOString() },
+          { idem: req.headers['idempotency-key'] || randomUUID() },
+        ),
+      );
     } catch (error) {
-      return json(res, /refused|not allowed|stale|approval|event/.test(error.message) ? 409 : 400,
-        { error: 'request refused' });
+      return json(
+        res,
+        /refused|not allowed|stale|approval|event|artifact|check/.test(error.message) ? 409 : 400,
+        { error: 'request refused' },
+      );
     }
   };
 }
-
 export function createServerFor(deps) {
   const server = createServer(createHandler(deps));
   server.headersTimeout = 10_000;

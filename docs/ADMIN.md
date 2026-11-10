@@ -17,3 +17,7 @@ token once. Only its digest is stored.
 
 `node cli.js verify` verifies each item's hash chain. `node cli.js export` prints JSONL.
 `node cli.js backup --to FILE` checkpoints SQLite then copies its database file.
+
+`node cli.js serve --port 8080 --origin http://127.0.0.1:8080 --insecure-cookies` starts the web server.
+Secure cookies are the default. `--insecure-cookies` is only for local HTTP development, and the
+command prints a warning when it is used. For HTTPS, omit it and give the public HTTPS origin.

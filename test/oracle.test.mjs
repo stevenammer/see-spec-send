@@ -33,7 +33,7 @@ function setup(state) {
   store.registerPerson('leader', { leader: true }); store.registerPerson('approver', { leader: true });
   store.registerToken('gateway', { kind: 'gateway', item }); store.registerToken('run', { kind: 'run', item });
   const put = (type, actor, body, idem) => store.append(item, { type, actor, at: `2026-11-09T00:00:${idem}.000Z`, ...body }, { idem });
-  if (state !== 'SEEN') put('checked', 'steward', { looked: ['x'], found: [], verdict: 'build_needed' }, '1');
+  if (state !== 'SEEN') put('checked', 'steward', { problem: 'x', looked: ['x'], found: [], verdict: 'build_needed' }, '1');
   if (['SPECCED', 'SENDING', 'TRYING', 'HELPS'].includes(state)) put('specced', 'steward', { must: ['x'], how_we_know: ['x'], out_of_scope: [] }, '2');
   if (['SENDING', 'TRYING', 'HELPS'].includes(state)) put('approved', 'approver', { spec_hash: store.events(item).at(-1).body_hash, cap_usd: 1, quorum: 1 }, '3');
   if (['TRYING', 'HELPS'].includes(state)) put('tried', 'run', { artifact_hash: 'a', approval: 1, spec_hash: store.read(item).context.specHash }, '4');
@@ -46,7 +46,7 @@ function body(type, store, item) {
   const spec = store.events(item).find(event => event.type === 'specced')?.body_hash || 'none';
   const context = store.read(item).context;
   return {
-    checked: { looked: ['x'], found: [], verdict: 'build_needed' },
+    checked: { problem: 'x', looked: ['x'], found: [], verdict: 'build_needed' },
     specced: { must: ['x'], how_we_know: ['x'], out_of_scope: [] },
     approved: { spec_hash: spec, cap_usd: 1, quorum: 1 }, returned: { note: 'x' },
     charged: { usd: 0, approval: context.approval, spec_hash: context.specHash },

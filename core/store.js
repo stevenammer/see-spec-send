@@ -98,6 +98,30 @@ export class Store {
 
   events(item) { return this.eventRows(item).map(row => this.eventFromRow(row)); }
 
+  putArtifact(item, html) {
+    if (typeof html !== 'string' || Buffer.byteLength(html, 'utf8') > 256 * 1024) {
+      throw new Error('artifact too large');
+    }
+    const hash = scopedBodyHash(item, html);
+    this.db.prepare('INSERT OR IGNORE INTO bodies(hash,bytes) VALUES(?,?)').run(hash, html);
+    return hash;
+  }
+
+  artifact(item, hash) {
+    const row = this.db.prepare('SELECT bytes FROM bodies WHERE hash=?').get(hash);
+    if (!row || scopedBodyHash(item, row.bytes) !== hash) return null;
+    return row.bytes;
+  }
+
+  listItems() {
+    return this.db.prepare('SELECT item,state,context FROM items ORDER BY item').all().map(row => {
+      const context = JSON.parse(row.context);
+      const first = this.events(row.item).find(event => event.type === 'checked');
+      return { id: row.item, state: row.state, problem: first?.problem || '', steward: context.steward,
+        spent: context.spentMicros / 1_000_000, quorum: context.quorum, helpers: context.helpers.length };
+    });
+  }
+
   read(item) { return fold(this.events(item), actor => this.actor(actor, item)); }
 
   cache(item) {

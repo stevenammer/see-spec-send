@@ -54,6 +54,7 @@ export function step(state, event, who) {
     return result({ ...context, phase: 'SHELVED' }, stopsBuild(context, 'SHELVED', event.type));
   }
   if (event.type === 'checked' && context.phase === 'SEEN' && person(who)
+      && nonempty(event.problem) && event.problem.length <= 2000
       && array(event.looked) && event.looked.length > 0 && array(event.found)
       && verdicts.has(event.verdict)) {
     const phase = event.verdict === 'already_have' ? 'SHELVED' : 'CHECKED';

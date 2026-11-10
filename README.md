@@ -10,6 +10,8 @@ This is my attempt at a free, open-source way for any organization to fix that w
 
 That last rule isn't a policy in a handbook. The code enforces it. There's no "done" button anywhere. An item only reaches Helps when enough different people, who are neither the one who wrote the spec nor the one who approved it, confirm the current build helps. A leader can't override it. You can [watch the real server refuse](docs/WATCH_IT_REFUSE.md) the person who wrote the spec, the leader who approved it, and a made-up "done" event.
 
+**Try the demo.** There's a small demo that runs in your browser, at https://stevenammer.github.io/see-spec-send/ once I publish it (that address isn't live yet). The people are invented, there's no server, and nothing leaves your page. It runs a copy of the real state machine, so you can try to get around the rule and watch it refuse. It doesn't have sign-in, the database, or the password step-up. See [docs/DEMO.md](docs/DEMO.md).
+
 ## Where this actually is
 
 I'm building this in public, and it's early. Here's the honest state:

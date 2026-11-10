@@ -4,7 +4,8 @@ The table is the machine oracle. `open` means every state except `HELPS` and
 `SHELVED`; a steward alternative requires that state to already have a steward.
 Each event has an actor id, timestamp, and idempotency key. An event
 never carries a role. The store resolves the actor from its authority table
-before it calls the machine.
+before it calls the machine. Each accepted event snapshots that authority in its
+hash, so later registry changes cannot rewrite history.
 
 `member` is any registered person. `leader` is a registered person flagged as
 a leader. The steward is state-derived: the person who made the first `checked`
@@ -44,9 +45,11 @@ with the same micro-dollar rule. The machine stores and compares budget values
 as integer micro-dollars.
 `tried` and `helped` require a nonempty artifact hash. The approval freezes its
 cap and quorum. Helpers count only once each and only for the current artifact.
-`helped` is refused for the steward and approver. `erased` names a body hash,
-uses a steward or leader's actual timestamp, records its receipt, and then only
-that item's body bytes may be removed. Body hashes include the item id.
+`helped` is refused for anyone who has ever been a steward, written a spec, or
+approved the item. When a person becomes steward, they are removed from current
+helpers and remain ineligible. `erased` names a body hash, uses a steward or
+leader's actual timestamp, records its receipt, and replaces free text with a
+replayable tombstone. Body hashes include the item id.
 
 Each `approved` event advances the item's approval counter. Its `build.start`
 effect carries that counter, the approved spec hash, and the approved cap.

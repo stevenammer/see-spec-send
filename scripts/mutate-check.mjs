@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const root = new URL('..', import.meta.url).pathname;
-const suite = ['--test', 'test/auth.test.mjs', 'test/hardening.test.mjs', 'test/store.test.mjs',
-  'test/machine.test.mjs', 'test/oracle.test.mjs', 'test/web.test.mjs', 'test/web-pages.test.mjs'];
+const suite = ['--test', '--test-concurrency=2', 'test/auth.test.mjs', 'test/hardening.test.mjs', 'test/store.test.mjs',
+  'test/machine.test.mjs', 'test/oracle.test.mjs', 'test/web.test.mjs', 'test/web-pages.test.mjs',
+  'test/review-regressions.test.mjs', 'test/legacy-migration.test.mjs'];
 const mutants = [
   ['CSRF token check', "req.headers['x-csrf-token'] !== session?.csrf", 'false'],
   ['Origin check', 'new URL(value).origin === new URL(expected).origin', 'true'],
@@ -43,14 +44,30 @@ const mutants = [
   ['HTML CSP', "'content-security-policy': htmlHeaders", "'content-security-policy': \"default-src *\""],
   ['helper count privacy', 'quorum: context.quorum, helpers: context.helpers.length };', 'quorum: context.quorum, helpers: context.helpers.length, helper_names: context.helpers };'],
   ['history shows token hash', 'event.delivered_by || event.actor', 'event.actor'],
-  ['approver and steward can vote', 'const canVote = context.steward !== person && context.approver !== person;', 'const canVote = true;'],
+  ['approver and steward can vote', 'const canVote = !context.ineligibleHelpers.includes(person);', 'const canVote = true;'],
   ['artifact stored before stage check', "if (state.state !== 'SENDING') throw new Error('event not allowed');", ''],
   ['checked problem requirement', '&& nonempty(event.problem) && event.problem.length <= 2000', ''],
+  ['insider exclusion', '&& !context.ineligibleHelpers.includes(event.actor)', '&& true'],
+  ['legacy authority captured once', 'AND (actor_kind IS NULL OR actor_leader IS NULL)', ''],
+  ['legacy cache migration', '      this.rebuild();', ''],
+  ['authority snapshot replay', 'return { kind: row.actor_kind, leader: row.actor_leader === 1 };', "return { kind: 'person', leader: false };"],
+  ['redaction receipt binding', 'erased.get(row.body_hash) !== scopedBodyHash(item, body.bytes)', 'false'],
+  ['redaction unknown fields', 'const tombstone = {};', 'const tombstone = { ...body };'],
+  ['erase redaction', "this.db.prepare('UPDATE bodies SET bytes=?, erased=1 WHERE hash=?').run(tombstone, targetHash);", "this.db.prepare('DELETE FROM bodies WHERE hash=?').run(targetHash);"],
+  ['transaction before await', "// Password work must finish before the transaction so other requests stay isolated.\n    const record = await this.passwordRecord(password);\n    this.db.exec('BEGIN IMMEDIATE');", "this.db.exec('BEGIN IMMEDIATE');\n    const record = await this.passwordRecord(password);"],
+  ['usdToMicros tolerance', 'if (Math.abs(scaled - micros) > tolerance) return null;', 'if (Math.abs(scaled - micros) > 0) return null;'],
+  ['export actors registry', "const actors = this.db.prepare('SELECT id,kind,leader,item FROM actors ORDER BY id').all();", 'const actors = [];'],
 ];
 
 function run(cwd, args) {
   return spawnSync(process.execPath, args, { cwd, stdio: 'pipe', encoding: 'utf8' });
 }
+
+const onlyAt = process.argv.indexOf('--only');
+const only = onlyAt < 0 ? null : process.argv[onlyAt + 1];
+if (onlyAt >= 0 && !only) throw new Error('--only requires a mutant name');
+const selected = mutants.filter(([name]) => !only || name.includes(only));
+if (!selected.length) throw new Error('no mutant matches the requested name');
 
 const baseline = run(root, [...suite, 'test/check-public.test.mjs']);
 if (baseline.status !== 0 || /# skipped [^0]/.test(baseline.stdout)) {
@@ -59,10 +76,8 @@ if (baseline.status !== 0 || /# skipped [^0]/.test(baseline.stdout)) {
   process.exit(1);
 }
 
-const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 let failed = false;
-for (const [name, find, replace] of mutants) {
-  if (only && !name.includes(only)) continue;
+for (const [name, find, replace] of selected) {
   const copy = mkdtempSync(join(tmpdir(), 'sss-mutant-'));
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
   const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/store.js', 'cli.js'];

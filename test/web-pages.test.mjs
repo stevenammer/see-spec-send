@@ -13,7 +13,8 @@ function trying(helpers = []) {
   return {
     id: 'item1',
     state: 'TRYING',
-    context: { steward: 'maya', approver: 'lead', helpers, quorum: 2, artifact: hash },
+    context: { steward: 'maya', approver: 'lead', helpers, quorum: 2, artifact: hash,
+      ineligibleHelpers: ['maya', 'lead'] },
   };
 }
 const events = [

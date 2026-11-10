@@ -133,7 +133,7 @@ test('erasure is authorized, item-scoped, timestamped, and verifiable', () => {
   assert.notEqual(a, b);
   assert.throws(() => store.erase('a', a, 'member', at()), /not allowed/);
   store.erase('a', a, 'steward', '2026-11-09T01:02:03.000Z');
-  assert.equal(store.db.prepare('SELECT bytes FROM bodies WHERE hash=?').get(a), undefined);
+  assert.equal(store.db.prepare('SELECT erased FROM bodies WHERE hash=?').get(a).erased, 1);
   assert.ok(store.db.prepare('SELECT bytes FROM bodies WHERE hash=?').get(b));
   assert.equal(store.events('a').at(-1).at, '2026-11-09T01:02:03.000Z');
   assert.deepEqual(store.verify('a'), { ok: true });
@@ -152,7 +152,7 @@ test('transfer verifies order, content, authority, and is idempotent', () => {
   const target = new Store(); actors(target);
   target.importJsonl(text);
   assert.equal(target.exportJsonl(), text);
-  const imported = JSON.parse(text.split('\n')[0]);
+  const imported = JSON.parse(text.split('\n').find(line => line.includes('"type"')));
   imported.submitted_hash = 'different';
   assert.throws(() => target.importRow(imported), /conflicting import/);
   target.importJsonl(text);
@@ -162,11 +162,11 @@ test('transfer verifies order, content, authority, and is idempotent', () => {
     text.split('\n').filter(Boolean).reverse().join('\n'),
     text.split('\n').slice(0, -2).join('\n'),
   ]) {
-    const fresh = new Store(); actors(fresh);
+    const fresh = new Store();
     assert.throws(() => fresh.importJsonl(hostile));
     assert.equal(fresh.events('i').length, 0);
   }
-  const role = JSON.parse(text.split('\n')[0]);
+  const role = JSON.parse(text.split('\n').find(line => line.includes('"type"')));
   role.bytes = JSON.stringify({ role: 'leader', looked: ['x'], found: [], verdict: 'build_needed' });
   const bad = `${JSON.stringify(role)}\n`;
   const fresh = new Store(); actors(fresh);
@@ -180,13 +180,26 @@ function child(file, code, args = []) {
   });
 }
 
+async function boundedWriters(values, work) {
+  const results = new Array(values.length);
+  let next = 0;
+  // Keep real process contention without loading 120 Node runtimes into a small machine.
+  await Promise.all(Array.from({ length: Math.min(4, values.length) }, async () => {
+    while (next < values.length) {
+      const index = next++;
+      results[index] = await work(values[index]);
+    }
+  }));
+  return results;
+}
+
 test('real writers serialize charges and stale revisions', async () => {
   const file = join(temp(), 'shared.db'); const store = new Store(file); ready(store, 'i', 1); store.close();
   const module = new URL('../core/store.js', import.meta.url).pathname;
   const charge = `import {Store} from '${module}';const s=new Store(process.argv[1]);
     const c=s.read('i').context;try{s.append('i',{type:'charged',actor:'gateway',usd:.01,approval:c.approval,spec_hash:c.specHash,at:process.argv[2]},{idem:process.argv[2]});process.exit(0)}catch{process.exit(1)}`;
-  const outcomes = await Promise.all(Array.from({ length: 120 }, (_, index) =>
-    child(file, charge, [`charge-${index}`])));
+  const outcomes = await boundedWriters(Array.from({ length: 120 }, (_, index) => index),
+    index => child(file, charge, [`charge-${index}`]));
   const reopened = new Store(file); const rows = reopened.eventRows('i');
   assert.equal(outcomes.filter(code => code === 0).length, 100);
   assert.equal(reopened.read('i').context.spentMicros, 1_000_000);

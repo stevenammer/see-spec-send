@@ -9,8 +9,14 @@ const stable = value => {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
   return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stable(value[key])}`).join(',')}}`;
 };
-const eventHash = (prev, seq, type, actor, bodyHash, at) =>
-  digest(stable({ prev, seq, type, actor, bodyHash, at }));
+const eventHash = (prev, seq, type, actor, bodyHash, at, authority) => {
+  const event = { prev, seq, type, actor, bodyHash, at };
+  if (authority) {
+    event.actor_kind = authority.kind;
+    event.actor_leader = authority.leader ? 1 : 0;
+  }
+  return digest(stable(event));
+};
 const scopedBodyHash = (item, bytes) => digest(`${item}\0${bytes}`);
 // The idempotency key is part of the hash so a forged key is caught by verify.
 const submittedEventHash = (event, idem) => digest(stable({ idem, event }));
@@ -21,6 +27,26 @@ function bodyOf(event) {
   delete body.actor;
   delete body.at;
   return body;
+}
+
+function erasedText(value) {
+  return Array.isArray(value) ? value.map(() => '[erased]') : '[erased]';
+}
+
+function redactBody(type, body) {
+  const tombstone = {};
+  const structural = ['verdict', 'quorum', 'cap_usd', 'approval', 'spec_hash',
+    'artifact_hash', 'usd', 'steward', 'body_hash', 'redacted_hash', 'delivered_by'];
+  const textFields = ['problem', 'looked', 'found', 'must', 'how_we_know', 'out_of_scope',
+    'note', 'reason', 'comment'];
+  // Preserve only known machine fields; unknown metadata may contain personal writing.
+  for (const field of structural) {
+    if (Object.hasOwn(body, field)) tombstone[field] = body[field];
+  }
+  for (const field of textFields) {
+    if (Object.hasOwn(body, field)) tombstone[field] = erasedText(body[field]);
+  }
+  return tombstone;
 }
 
 export class Store {
@@ -39,15 +65,51 @@ export class Store {
       CREATE TABLE IF NOT EXISTS events(
         item TEXT, seq INTEGER, type TEXT, actor TEXT, body_hash TEXT,
         prev_hash TEXT, hash TEXT, at TEXT, idem TEXT, submitted_hash TEXT,
+        actor_kind TEXT, actor_leader INTEGER, authority_version INTEGER NOT NULL DEFAULT 1,
         PRIMARY KEY(item,seq), UNIQUE(item,idem)
       );
-      CREATE TABLE IF NOT EXISTS bodies(hash TEXT PRIMARY KEY, bytes TEXT);
+      CREATE TABLE IF NOT EXISTS bodies(
+        hash TEXT PRIMARY KEY, bytes TEXT, erased INTEGER NOT NULL DEFAULT 0
+      );
       CREATE TABLE IF NOT EXISTS items(
         item TEXT PRIMARY KEY, state TEXT, head TEXT, seq INTEGER, context TEXT
       );`);
     try { this.db.exec('ALTER TABLE items ADD COLUMN context TEXT'); } catch {}
     try { this.db.exec('ALTER TABLE events ADD COLUMN submitted_hash TEXT'); } catch {}
+    try { this.db.exec('ALTER TABLE events ADD COLUMN actor_kind TEXT'); } catch {}
+    try { this.db.exec('ALTER TABLE events ADD COLUMN actor_leader INTEGER'); } catch {}
+    try { this.db.exec('ALTER TABLE events ADD COLUMN authority_version INTEGER NOT NULL DEFAULT 0'); } catch {}
+    try { this.db.exec('ALTER TABLE bodies ADD COLUMN erased INTEGER NOT NULL DEFAULT 0'); } catch {}
     this.backfillSubmittedHashes();
+    this.backfillAuthoritySnapshots();
+  }
+
+  backfillAuthoritySnapshots() {
+    const rows = this.db.prepare(`SELECT * FROM events
+      WHERE (authority_version=0 OR authority_version IS NULL)
+      AND (actor_kind IS NULL OR actor_leader IS NULL)`).all();
+    if (!rows.length) return;
+    const actor = this.db.prepare('SELECT kind,leader FROM actors WHERE id=?');
+    const fillSnapshots = this.db.prepare(`UPDATE events
+      SET actor_kind=?, actor_leader=?, authority_version=0 WHERE item=? AND seq=?`);
+    // Legacy hashes cannot recover past roles. Capture today's registry once, atomically.
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const row of rows) {
+        const snapshot = actor.get(row.actor);
+        if (!snapshot) throw new Error('legacy authority migration requires a known actor');
+        fillSnapshots.run(snapshot.kind, snapshot.leader, row.item, row.seq);
+      }
+      for (const { item } of this.db.prepare('SELECT DISTINCT item FROM events').all()) {
+        if (!this.verify(item).ok) throw new Error('legacy migration found an invalid chain');
+      }
+      // The machine now records past shapers; refresh only its derived cache.
+      this.rebuild();
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   backfillSubmittedHashes() {
@@ -98,6 +160,16 @@ export class Store {
 
   events(item) { return this.eventRows(item).map(row => this.eventFromRow(row)); }
 
+  authorityFromRow(row) {
+    return { kind: row.actor_kind, leader: row.actor_leader === 1 };
+  }
+
+  replay(item) {
+    const rows = this.eventRows(item);
+    const events = rows.map(row => ({ ...this.eventFromRow(row), authority: this.authorityFromRow(row) }));
+    return fold(events, (actor, event) => event.authority);
+  }
+
   putArtifact(item, html) {
     if (typeof html !== 'string' || Buffer.byteLength(html, 'utf8') > 256 * 1024) {
       throw new Error('artifact too large');
@@ -122,7 +194,7 @@ export class Store {
     });
   }
 
-  read(item) { return fold(this.events(item), actor => this.actor(actor, item)); }
+  read(item) { return this.replay(item); }
 
   cache(item) {
     const row = this.db.prepare('SELECT context FROM items WHERE item=?').get(item);
@@ -153,7 +225,8 @@ export class Store {
     }
   }
 
-  appendInTransaction(item, event, { expectedSeq, idem }) {
+  appendInTransaction(item, event, options) {
+    const { expectedSeq, idem, authoritySnapshot, authorityVersion = 1, bodyHash } = options;
     this.ensureEvent(item, event);
     const submittedHash = submittedEventHash(event, idem);
     const existing = this.db.prepare('SELECT * FROM events WHERE item=? AND idem=?').get(item, idem);
@@ -174,18 +247,21 @@ export class Store {
     const currentSeq = cached?.seq || 0;
     if (expectedSeq !== undefined && expectedSeq !== currentSeq) throw new Error('stale expectedSeq');
     const bytes = stable(bodyOf(event));
-    const hashOfBody = scopedBodyHash(item, bytes);
-    const prior = this.events(item);
-    const priorState = fold(prior, actor => this.actor(actor, item)).context;
-    const outcome = step(priorState, { ...event, body_hash: hashOfBody }, this.actor(event.actor, item));
+    const hashOfBody = bodyHash || scopedBodyHash(item, bytes);
+    const prior = this.read(item);
+    if (prior.refusal) throw new Error(`cannot append: replay refused: ${prior.refusal}`);
+    const authority = authoritySnapshot || this.actor(event.actor, item);
+    const outcome = step(prior.context, { ...event, body_hash: hashOfBody }, authority);
     if (outcome.refusal) throw new Error(outcome.refusal);
     const seq = currentSeq + 1;
     const previous = cached?.head || '';
-    const hash = eventHash(previous, seq, event.type, event.actor, hashOfBody, event.at);
+    const hash = eventHash(previous, seq, event.type, event.actor, hashOfBody, event.at,
+      authorityVersion === 1 ? authority : null);
     this.db.prepare('INSERT OR IGNORE INTO bodies(hash,bytes) VALUES(?,?)').run(hashOfBody, bytes);
-    this.db.prepare(`INSERT INTO events(item,seq,type,actor,body_hash,prev_hash,hash,at,idem,submitted_hash)
-      VALUES(?,?,?,?,?,?,?,?,?,?)`)
-      .run(item, seq, event.type, event.actor, hashOfBody, previous, hash, event.at, idem, submittedHash);
+    this.db.prepare(`INSERT INTO events(item,seq,type,actor,body_hash,prev_hash,hash,at,idem,
+      submitted_hash,actor_kind,actor_leader,authority_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(item, seq, event.type, event.actor, hashOfBody, previous, hash, event.at, idem,
+        submittedHash, authority.kind, authority.leader ? 1 : 0, authorityVersion);
     this.db.prepare(`INSERT INTO items(item,state,head,seq,context) VALUES(?,?,?,?,?)
       ON CONFLICT(item) DO UPDATE SET state=excluded.state,head=excluded.head,
       seq=excluded.seq,context=excluded.context`)
@@ -195,25 +271,39 @@ export class Store {
 
   verify(item) {
     const rows = this.eventRows(item);
-    const erased = new Set();
+    const erased = new Map();
     for (const row of rows.filter(row => row.type === 'erased')) {
       const bytes = this.db.prepare('SELECT bytes FROM bodies WHERE hash=?').get(row.body_hash)?.bytes;
-      if (bytes) erased.add(JSON.parse(bytes).body_hash);
+      if (!bytes) continue;
+      let receipt;
+      try { receipt = JSON.parse(bytes); } catch {
+        return { ok: false, seq: row.seq, reason: 'body' };
+      }
+      erased.set(receipt.body_hash, receipt.redacted_hash);
     }
     let previous = '';
     for (let index = 0; index < rows.length; index += 1) {
       const row = rows[index];
       if (row.seq !== index + 1) return { ok: false, seq: row.seq, reason: 'sequence' };
-      const body = this.db.prepare('SELECT bytes FROM bodies WHERE hash=?').get(row.body_hash);
-      if (body && scopedBodyHash(item, body.bytes) !== row.body_hash) {
+      const body = this.db.prepare('SELECT bytes,erased FROM bodies WHERE hash=?').get(row.body_hash);
+      if (body && body.erased !== 1 && scopedBodyHash(item, body.bytes) !== row.body_hash) {
         return { ok: false, seq: row.seq, reason: 'body' };
+      }
+      // The sealed receipt binds the replacement bytes as well as the original body hash.
+      if (body?.erased === 1
+          && erased.get(row.body_hash) !== scopedBodyHash(item, body.bytes)) {
+        return { ok: false, seq: row.seq, reason: 'erasure' };
       }
       if (!body && !erased.has(row.body_hash)) return { ok: false, seq: row.seq, reason: 'body' };
       // An erased body cannot be re-hashed, but its receipt is in the chain.
-      if (body && submittedEventHash(this.submittedEventFromRow(row), row.idem) !== row.submitted_hash) {
+      if (body && body.erased !== 1
+          && submittedEventHash(this.submittedEventFromRow(row), row.idem) !== row.submitted_hash) {
         return { ok: false, seq: row.seq, reason: 'submission' };
       }
-      const hash = eventHash(previous, row.seq, row.type, row.actor, row.body_hash, row.at);
+      const authority = row.authority_version === 1
+        ? { kind: row.actor_kind, leader: row.actor_leader === 1 }
+        : null;
+      const hash = eventHash(previous, row.seq, row.type, row.actor, row.body_hash, row.at, authority);
       if (row.prev_hash !== previous || row.hash !== hash) {
         return { ok: false, seq: row.seq, reason: 'chain' };
       }
@@ -247,6 +337,7 @@ export class Store {
     this.db.exec('DELETE FROM items');
     for (const { item } of this.db.prepare('SELECT DISTINCT item FROM events').all()) {
       const outcome = this.read(item);
+      if (outcome.refusal) throw new Error(`cannot rebuild: replay refused: ${outcome.refusal}`);
       const last = this.eventRows(item).at(-1);
       this.db.prepare('INSERT INTO items VALUES(?,?,?,?,?)').run(
         item, outcome.state, last?.hash || '', last?.seq || 0, stable(outcome.context),
@@ -258,14 +349,19 @@ export class Store {
     if (!targetHash || !actor || typeof at !== 'string' || !at) throw new Error('erase arguments required');
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const target = this.db.prepare('SELECT 1 FROM events WHERE item=? AND body_hash=?').get(item, targetHash);
+      const target = this.db.prepare('SELECT * FROM events WHERE item=? AND body_hash=?').get(item, targetHash);
       if (!target) throw new Error('body is not part of item');
       const current = this.db.prepare('SELECT seq FROM items WHERE item=?').get(item);
-      this.appendInTransaction(item, { type: 'erased', actor, body_hash: targetHash, at }, {
+      const body = this.db.prepare('SELECT bytes FROM bodies WHERE hash=?').get(targetHash);
+      if (!body) throw new Error('body is already erased');
+      const tombstone = stable(redactBody(target.type, JSON.parse(body.bytes)));
+      const redacted_hash = scopedBodyHash(item, tombstone);
+      this.appendInTransaction(item, { type: 'erased', actor, body_hash: targetHash,
+        redacted_hash, at }, {
         expectedSeq: current?.seq || 0, idem: `erase:${targetHash}`,
       });
-      // The receipt commits before deletion so a missing body remains explainable.
-      this.db.prepare('DELETE FROM bodies WHERE hash=?').run(targetHash);
+      // Keep machine fields so an erasure cannot corrupt item history.
+      this.db.prepare('UPDATE bodies SET bytes=?, erased=1 WHERE hash=?').run(tombstone, targetHash);
       this.db.exec('COMMIT');
     } catch (error) {
       try { this.db.exec('ROLLBACK'); } catch {}
@@ -274,20 +370,27 @@ export class Store {
   }
 
   exportJsonl() {
-    const rows = this.db.prepare(`SELECT e.*,b.bytes FROM events e LEFT JOIN bodies b ON b.hash=e.body_hash
+    const rows = this.db.prepare(`SELECT e.*,b.bytes,b.erased FROM events e LEFT JOIN bodies b ON b.hash=e.body_hash
       ORDER BY e.item,e.seq`).all();
-    const lines = rows.map(row => JSON.stringify(row));
-    lines.push(JSON.stringify({ complete: true, events: rows.length }));
+    const actors = this.db.prepare('SELECT id,kind,leader,item FROM actors ORDER BY id').all();
+    const lines = actors.map(row => JSON.stringify({ registry: row }));
+    lines.push(...rows.map(row => JSON.stringify(row)));
+    lines.push(JSON.stringify({ complete: true, events: rows.length, actors: actors.length }));
     return `${lines.join('\n')}\n`;
   }
 
   importJsonl(text) {
     const lines = text.trim() ? text.trim().split('\n').map(JSON.parse) : [];
     const footer = lines.pop();
-    if (!footer?.complete || footer.events !== lines.length) throw new Error('incomplete import');
+    const actors = lines.filter(row => row.registry).map(row => row.registry);
+    const events = lines.filter(row => !row.registry);
+    if (!footer?.complete || footer.events !== events.length || footer.actors !== actors.length) {
+      throw new Error('incomplete import');
+    }
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      for (const row of lines) this.importRow(row);
+      for (const actor of actors) this.importActor(actor);
+      for (const row of events) this.importRow(row, events);
       this.db.exec('COMMIT');
     } catch (error) {
       try { this.db.exec('ROLLBACK'); } catch {}
@@ -295,14 +398,35 @@ export class Store {
     }
   }
 
-  importRow(row) {
-    if (!row.bytes || scopedBodyHash(row.item, row.bytes) !== row.body_hash) throw new Error('bad import body');
-    if (eventHash(row.prev_hash, row.seq, row.type, row.actor, row.body_hash, row.at) !== row.hash) {
+  importActor(actor) {
+    if (!actor.id || !['person', 'gateway', 'run'].includes(actor.kind)) {
+      throw new Error('bad import actor');
+    }
+    if (actor.kind !== 'person' && !actor.item) throw new Error('bad import actor');
+    this.db.prepare(`INSERT INTO actors(id,kind,leader,item) VALUES(?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, leader=excluded.leader, item=excluded.item`)
+      .run(actor.id, actor.kind, actor.leader ? 1 : 0, actor.item || null);
+  }
+
+  importRow(row, allRows = [row]) {
+    const erased = row.erased === 1;
+    const hasReceipt = allRows.some(record => record.type === 'erased'
+      && record.item === row.item && record.bytes
+      && JSON.parse(record.bytes).body_hash === row.body_hash
+      && JSON.parse(record.bytes).redacted_hash === scopedBodyHash(row.item, row.bytes));
+    if (!row.bytes || (!erased && scopedBodyHash(row.item, row.bytes) !== row.body_hash)) {
+      throw new Error('bad import body');
+    }
+    if (erased && !hasReceipt) throw new Error('erased import body lacks receipt');
+    const authority = row.authority_version === 1
+      ? { kind: row.actor_kind, leader: row.actor_leader === 1 }
+      : null;
+    if (eventHash(row.prev_hash, row.seq, row.type, row.actor, row.body_hash, row.at, authority) !== row.hash) {
       throw new Error('bad import chain');
     }
     const existing = this.db.prepare('SELECT * FROM events WHERE item=? AND idem=?').get(row.item, row.idem);
     if (existing) {
-      const { bytes, submitted_hash: incomingSubmittedHash, ...stored } = row;
+      const { bytes, erased: incomingErased, submitted_hash: incomingSubmittedHash, ...stored } = row;
       const { submitted_hash: existingSubmittedHash, ...incoming } = existing;
       const hash = incomingSubmittedHash || submittedEventHash({ ...JSON.parse(row.bytes), type: row.type, actor: row.actor, at: row.at }, row.idem);
       if (stable(incoming) !== stable(stored) || (existingSubmittedHash && existingSubmittedHash !== hash)) {
@@ -315,11 +439,19 @@ export class Store {
       throw new Error('import is not next in chain');
     }
     const event = { ...JSON.parse(row.bytes), type: row.type, actor: row.actor, at: row.at };
-    if (row.submitted_hash && row.submitted_hash !== submittedEventHash(event, row.idem)) {
+    if (!erased && row.submitted_hash && row.submitted_hash !== submittedEventHash(event, row.idem)) {
       throw new Error('bad import event');
     }
-    const answer = this.appendInTransaction(row.item, event, { expectedSeq: row.seq - 1, idem: row.idem });
+    const snapshot = { kind: row.actor_kind, leader: row.actor_leader === 1 };
+    const answer = this.appendInTransaction(row.item, event, {
+      expectedSeq: row.seq - 1,
+      idem: row.idem,
+      authoritySnapshot: snapshot,
+      authorityVersion: row.authority_version || 0,
+      bodyHash: erased ? row.body_hash : undefined,
+    });
     if (answer.hash !== row.hash) throw new Error('import hash differs');
+    if (erased) this.db.prepare('UPDATE bodies SET erased=1 WHERE hash=?').run(row.body_hash);
   }
 
   close() { this.db.close(); }

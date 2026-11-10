@@ -15,12 +15,12 @@ That last rule isn't a policy in a handbook. The code enforces it. There's no "d
 I'm building this in public, and it's early. Here's the honest state:
 
 - **Works and tested:**
-  - **The core.** A small state machine that decides what can happen to an item, and a local store that records every step in a tamper-evident chain. Money is exact, builder events are tied to the approval they were built under, and roles come from a registry instead of from whatever an event claims to be.
+  - **The core.** A small state machine that decides what can happen to an item, and a local store that records every step in a tamper-evident chain. Money is exact, builder events are tied to the approval they were built under, and each event hashes the authority it was accepted under. Registry edits cannot rewrite history. Exports include the registry, so importing is an administrator action for files you exported yourself.
   - **The manual path with a web UI.** A person can post a checked problem, write a spec, have a different leader approve it with a password step-up, deliver one safe playable try, and reach Helps only when other people say it helps.
   - **Sign-in and a small HTTP API.** Invites, passwords, sessions, CSRF protection, rate limits, and a leader step-up before anything gets approved. The command line is the only admin surface. See [docs/ADMIN.md](docs/ADMIN.md) and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md), which also lists what's not covered.
 - **Not built yet:** the model layer, builder adapters, the cost gateway, Vision Quest, and kept modules. Don't try to run an organization on this yet.
 
-I'm treating tests as claims. `npm test` runs them, and `npm run check:mutants` deliberately breaks the code in 39 different ways and checks that the tests notice. If a test can't fail, I don't count it.
+I'm treating tests as claims. `npm test` runs them, and `npm run check:mutants` deliberately breaks individual controls and checks that the tests notice. If a test can't fail, I don't count it.
 
 ## What it looks like
 
@@ -32,7 +32,7 @@ These screenshots come from the real-browser test.
 
 ## Try it
 
-You need Node 22 or newer. There are no dependencies to install.
+You need Node 22.5 or newer. There are no dependencies to install.
 
 ```sh
 npm test

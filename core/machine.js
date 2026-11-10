@@ -5,6 +5,7 @@ const MICROS_PER_USD = 1_000_000;
 export const initial = () => ({
   phase: 'SEEN', steward: null, approver: null, specHash: null,
   capMicros: null, quorum: 2, spentMicros: 0, approval: 0, artifact: null, helpers: [],
+  ineligibleHelpers: [],
 });
 
 const fail = refusal => ({ refusal });
@@ -14,11 +15,17 @@ const result = (context, effects = []) => ({ state: context.phase, context, effe
 const person = who => who?.kind === 'person';
 const leader = who => person(who) && who.leader === true;
 const steward = (state, event, who) => person(who) && event.actor === state.steward;
+const addIneligible = (state, id) => state.ineligibleHelpers.includes(id)
+  ? state.ineligibleHelpers
+  : [...state.ineligibleHelpers, id];
 
 export function usdToMicros(value) {
-  const micros = value * MICROS_PER_USD;
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0
-    && Number.isSafeInteger(micros) ? micros : null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
+  const scaled = value * MICROS_PER_USD;
+  const micros = Math.round(scaled);
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 4;
+  if (Math.abs(scaled - micros) > tolerance) return null;
+  return Number.isSafeInteger(micros) ? micros : null;
 }
 
 function currentApproval(state, event) {
@@ -47,7 +54,9 @@ export function step(state, event, who) {
   if (event.type === 'commented' && person(who)) return result(context);
   if (event.type === 'erased' && (leader(who) || steward(context, event, who))) return result(context);
   if (event.type === 'steward_changed' && leader(who) && nonempty(event.steward)) {
-    return result({ ...context, steward: event.steward });
+    const ineligibleHelpers = addIneligible(context, event.steward);
+    const helpers = context.helpers.filter(id => id !== event.steward);
+    return result({ ...context, steward: event.steward, helpers, ineligibleHelpers });
   }
   if (event.type === 'shelved' && nonempty(event.reason)
       && (leader(who) || steward(context, event, who))) {
@@ -58,13 +67,15 @@ export function step(state, event, who) {
       && array(event.looked) && event.looked.length > 0 && array(event.found)
       && verdicts.has(event.verdict)) {
     const phase = event.verdict === 'already_have' ? 'SHELVED' : 'CHECKED';
-    return result({ ...context, phase, steward: event.actor });
+    return result({ ...context, phase, steward: event.actor,
+      ineligibleHelpers: addIneligible(context, event.actor) });
   }
   if (event.type === 'specced'
       && ['CHECKED', 'SPECCED', 'SENDING', 'TRYING'].includes(context.phase)
       && steward(context, event, who) && validSpec(event)) {
     return result({ ...context, phase: 'SPECCED', specHash: event.body_hash || event.spec_hash,
-      artifact: null, helpers: [] }, stopsBuild(context, 'SPECCED', event.type));
+      artifact: null, helpers: [], ineligibleHelpers: addIneligible(context, event.actor) },
+    stopsBuild(context, 'SPECCED', event.type));
   }
   if (event.type === 'approved' && context.phase === 'SPECCED' && leader(who)
       && event.actor !== context.steward && nonempty(event.spec_hash)
@@ -72,7 +83,7 @@ export function step(state, event, who) {
       && Number.isInteger(event.quorum) && event.quorum >= 1) {
     const next = { ...context, phase: 'SENDING', approver: event.actor,
       capMicros: usdToMicros(event.cap_usd), quorum: event.quorum, spentMicros: 0,
-      approval: context.approval + 1 };
+      approval: context.approval + 1, ineligibleHelpers: addIneligible(context, event.actor) };
     return result(next, [{ kind: 'build.start', approval: next.approval,
       spec_hash: event.spec_hash, cap_usd: event.cap_usd }]);
   }
@@ -100,7 +111,7 @@ export function step(state, event, who) {
       stopsBuild(context, 'SPECCED', event.type));
   }
   if (event.type === 'helped' && context.phase === 'TRYING' && person(who)
-      && event.actor !== context.steward && event.actor !== context.approver
+      && !context.ineligibleHelpers.includes(event.actor)
       && nonempty(event.artifact_hash) && event.artifact_hash === context.artifact) {
     const helpers = context.helpers.includes(event.actor) ? context.helpers : [...context.helpers, event.actor];
     return result({ ...context, helpers, phase: helpers.length >= context.quorum ? 'HELPS' : 'TRYING' });
@@ -112,7 +123,7 @@ export function fold(events = [], resolve = () => undefined) {
   let context = initial();
   let effects = [];
   for (const event of events) {
-    const outcome = step(context, event, resolve(event.actor));
+    const outcome = step(context, event, resolve(event.actor, event));
     if (outcome.refusal) return outcome;
     context = outcome.context;
     effects = effects.concat(outcome.effects);

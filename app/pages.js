@@ -88,7 +88,7 @@ export function itemPage(item, events, person, leader) {
   if (item.state === 'SENDING' && (leader || context.steward === person))
     action = `<form data-artifact="true"><h2>Deliver the try</h2><label>One HTML document<textarea name="html" required></textarea></label><button>Deliver the try</button></form>`;
   if (item.state === 'TRYING') {
-    const canVote = context.steward !== person && context.approver !== person;
+    const canVote = !context.ineligibleHelpers.includes(person);
     action = `<iframe title="Playable try" sandbox="allow-scripts" src="/api/items/${encodeURIComponent(item.id)}/artifact/${encodeURIComponent(context.artifact)}"></iframe>${canVote ? `<form data-event="helped"><input type="hidden" name="artifact_hash" value="${escape(context.artifact)}"><button>It helps</button></form>` : '<p>You helped shape this one, so others say whether it helps.</p>'}`;
   }
   if (item.state === 'HELPS')

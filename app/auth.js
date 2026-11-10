@@ -127,13 +127,14 @@ export class Auth {
   async redeem(value, id, password, ip = 'local') {
     if (!this.allowed(ip, hash(value), 'invite')) throw new Error('try again later');
     const digest = hash(value);
+    // Password work must finish before the transaction so other requests stay isolated.
+    const record = await this.passwordRecord(password);
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const invite = this.db.prepare('SELECT * FROM invites WHERE digest=?').get(digest);
       if (!invite || invite.expires <= this.clock()) throw new Error('invite unavailable');
       const changed = this.db.prepare('UPDATE invites SET used=1 WHERE digest=? AND used=0').run(digest);
       if (changed.changes !== 1) throw new Error('invite unavailable');
-      const record = await this.passwordRecord(password);
       this.db.prepare('INSERT INTO users(id,password,leader) VALUES(?,?,?)')
         .run(id, record, invite.role === 'leader' ? 1 : 0);
       this.store.registerPerson(id, { leader: invite.role === 'leader' });

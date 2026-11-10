@@ -1,0 +1,7 @@
+{"type":"checked","actor":"author","role":"member","problem":"work","looked":["work"],"found":[],"verdict":"build_needed"}
+{"type":"specced","actor":"author","role":"steward","must":["small"],"how_we_know":["people say helps"],"out_of_scope":[],"body_hash":"spec-1"}
+{"type":"approved","actor":"leader","role":"leader","spec_hash":"spec-1","cap_usd":2,"quorum":2}
+{"type":"tried","actor":"run","role":"run","artifact_hash":"artifact-1","approval":1,"spec_hash":"spec-1"}
+{"type":"helped","actor":"helper","role":"member","artifact_hash":"artifact-1"}
+{"type":"steward_changed","actor":"leader","role":"leader","steward":"helper"}
+{"type":"helped","actor":"author","role":"member","artifact_hash":"artifact-1"}

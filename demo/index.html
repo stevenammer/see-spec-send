@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<title>See it. Spec it. Send it. A demo</title>
+<link rel="stylesheet" href="style.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<header>
+  <h1>See it. Spec it. Send it. A demo</h1>
+  <p class="lead">Nothing counts until the people doing the work say it helps. Here you can try to get around that and watch the rule refuse you.</p>
+  <p class="honest"><strong>This is a demo.</strong> The people are invented and there's no server. Everything runs in your browser and nothing leaves the page. The rules are the real state machine from the project, copied in by a script. The sign-in, the SQLite store, the leader password step-up and the rest of the real app are not here. <a href="https://github.com/stevenammer/see-spec-send">The repository is on GitHub</a>.</p>
+  <noscript><p class="refused">This demo needs JavaScript and a static file server. It can't run from a file:// address.</p></noscript>
+</header>
+<main>
+  <section aria-labelledby="h-tour">
+    <h2 id="h-tour">Show me the rule being enforced</h2>
+    <p>One click plays the same sequence as the project's <a href="https://github.com/stevenammer/see-spec-send/blob/main/docs/WATCH_IT_REFUSE.md">watch it refuse</a> page. It starts a fresh item, so it clears what you've done.</p>
+    <div class="row">
+      <button type="button" id="tour-all">Show me the rule being enforced</button>
+      <button type="button" id="tour-start" class="quiet">Go one step at a time</button>
+      <button type="button" id="tour-next" class="quiet" disabled>Next step</button>
+    </div>
+    <div id="tour-out" tabindex="-1"></div>
+  </section>
+
+  <section aria-labelledby="h-who">
+    <h2 id="h-who">Who are you acting as?</h2>
+    <p>Pick a person. Lena and Omar are leaders. The others are members. This list is fixed. What each person may do comes from it, never from what a step claims.</p>
+    <fieldset class="roster"><legend>Acting as</legend><div id="who"></div></fieldset>
+  </section>
+
+  <section aria-labelledby="h-status">
+    <h2 id="h-status">Where the item is</h2>
+    <div id="status"></div>
+    <div id="result" role="status" aria-live="polite"></div>
+  </section>
+
+  <section aria-labelledby="h-see">
+    <h2 id="h-see">1. See it</h2>
+    <p>Post the thing everyone already knows, and say what you checked. If you find you already have the answer, the item ends right there.</p>
+    <form id="form-post" autocomplete="off">
+      <label for="problem">What's the thing everyone already knows?</label>
+      <textarea id="problem" name="problem" maxlength="500" required>We copy every refund into a spreadsheet by hand.</textarea>
+      <fieldset><legend>What did you check?</legend>
+        <div class="check"><input type="checkbox" id="c-have" name="have" checked><label for="c-have">Something we already have</label><input type="text" name="have_note" maxlength="280" aria-label="Note for something we already have" value="Looked at the billing tool settings."></div>
+        <div class="check"><input type="checkbox" id="c-pay" name="pay_for"><label for="c-pay">Something we could pay for</label><input type="text" name="pay_for_note" maxlength="280" aria-label="Note for something we could pay for"></div>
+        <div class="check"><input type="checkbox" id="c-free" name="free"><label for="c-free">Something free</label><input type="text" name="free_note" maxlength="280" aria-label="Note for something free"></div>
+        <div class="check"><input type="checkbox" id="c-set" name="setting"><label for="c-set">A setting</label><input type="text" name="setting_note" maxlength="280" aria-label="Note for a setting"></div>
+      </fieldset>
+      <label for="verdict">What did you find?</label>
+      <select id="verdict" name="verdict">
+        <option value="build_needed">A small build may help</option>
+        <option value="already_have">We already have it</option>
+        <option value="setting">It's a setting</option>
+        <option value="free">A free option works</option>
+        <option value="pay">A paid option works</option>
+      </select>
+      <button type="submit">Post what you checked</button>
+    </form>
+  </section>
+
+  <section aria-labelledby="h-spec">
+    <h2 id="h-spec">2. Spec it</h2>
+    <p>Only the steward (whoever posted) can write the spec. One line each.</p>
+    <form id="form-spec" autocomplete="off">
+      <label for="must">What it must do</label>
+      <textarea id="must" name="must" maxlength="1600">Show each refund once</textarea>
+      <label for="how">How we'll know it worked</label>
+      <textarea id="how" name="how_we_know" maxlength="1600">Nobody opens the spreadsheet</textarea>
+      <label for="out">Out of scope (optional)</label>
+      <textarea id="out" name="out_of_scope" maxlength="1600"></textarea>
+      <button type="submit">Write the spec</button>
+    </form>
+  </section>
+
+  <section aria-labelledby="h-send">
+    <h2 id="h-send">3. Send it</h2>
+    <h3>Approve it, as a leader</h3>
+    <p>A leader who didn't write the spec sets a budget and says how many people must say it helps. The demo money is invented.</p>
+    <form id="form-approve" autocomplete="off">
+      <label for="cap">Cap in dollars</label>
+      <input id="cap" name="cap" type="text" inputmode="decimal" maxlength="7" value="5">
+      <label for="quorum">How many people must say it helps (1 to 6)</label>
+      <input id="quorum" name="quorum" type="text" inputmode="numeric" maxlength="1" value="2">
+      <button type="submit">Approve it</button>
+    </form>
+    <h3>Deliver a try</h3>
+    <p>In the real app this is one playable page. Here it's a short note, so nothing a visitor writes ever runs.</p>
+    <form id="form-deliver" autocomplete="off">
+      <label for="try">What the try does</label>
+      <textarea id="try" name="text" maxlength="1000">One page that lists each refund once.</textarea>
+      <button type="submit">Deliver the try</button>
+    </form>
+    <h3>Say it helps</h3>
+    <p>This is the step that matters. Try it as Maya (she wrote the spec) and as Lena (she approved it).</p>
+    <div class="row">
+      <button type="button" id="btn-help">Say it helps</button>
+      <button type="button" id="btn-done" class="quiet">Mark it done</button>
+    </div>
+    <p class="small">The second button is there to be refused. The machine has no "done" event.</p>
+    <h3>Shelve it</h3>
+    <form id="form-shelve" autocomplete="off">
+      <label for="reason">Why shelve it? (a leader or the steward can)</label>
+      <input id="reason" name="reason" type="text" maxlength="200">
+      <button type="submit">Shelve with a reason</button>
+    </form>
+  </section>
+
+  <section aria-labelledby="h-log">
+    <h2 id="h-log">The log</h2>
+    <p>Every accepted step is added to a chain. Each one carries a SHA-256 hash of the step before it. Refused steps aren't added.</p>
+    <ol id="events" class="events"></ol>
+    <div class="row">
+      <button type="button" id="verify">Verify the chain</button>
+      <button type="button" id="tamper" class="quiet">Edit the last event (to watch verify catch it)</button>
+    </div>
+    <p id="verify-out" role="status"></p>
+    <h3>Refusals this session</h3>
+    <ul id="refusals" class="events"></ul>
+  </section>
+
+  <section aria-labelledby="h-real">
+    <h2 id="h-real">What's real and what isn't</h2>
+    <ul>
+      <li><strong>Real:</strong> the state machine. It's a generated copy of <code>core/machine.js</code>, and a check fails if the copy drifts.</li>
+      <li><strong>Close, but smaller:</strong> the log. It's append-only and hash-chained like the real store, with authority looked up from the fixed roster. It lives in memory, not in a database.</li>
+      <li><strong>Not here:</strong> sign-in, invites, sessions, the SQLite store, the leader password step-up, rate limits, builder runs and a playable try. Nobody here is a real person. One item at a time.</li>
+      <li><strong>Your browser only:</strong> this page makes no requests after it loads and sets no cookies. It stores nothing unless you tick the box below.</li>
+    </ul>
+    <div class="row">
+      <input type="checkbox" id="persist"><label for="persist">Keep this in my browser (local storage)</label>
+    </div>
+    <div class="row"><button type="button" id="reset" class="quiet">Start over</button></div>
+  </section>
+</main>
+</body>
+</html>

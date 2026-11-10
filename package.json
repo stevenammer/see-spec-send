@@ -10,6 +10,8 @@
     "test": "node --test test/*.test.mjs",
     "test:listen": "node --test test/listener.smoke.mjs",
     "test:e2e": "node test/e2e/manual-path.e2e.mjs",
+    "sync:demo": "node scripts/sync-demo.mjs",
+    "check:demo": "node scripts/sync-demo.mjs --check",
     "check:public": "node scripts/check-public.mjs",
     "check:mutants": "node scripts/mutate-check.mjs"
   }

@@ -5,7 +5,7 @@
   "description": "See it. Spec it. Send it. A way for any organization to turn the problems everyone already knows about into small, checked, capped experiments that the people doing the work confirm help.",
   "license": "Apache-2.0",
   "type": "module",
-  "engines": { "node": ">=22.5.0" },
+  "engines": { "node": ">=22.13.0" },
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "test:listen": "node --test test/listener.smoke.mjs",

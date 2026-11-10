@@ -8,7 +8,7 @@ This is my attempt at a free, open-source way for any organization to fix that w
 2. **Spec it.** Write down exactly what the fix has to do, and how we'll know it worked.
 3. **Send it.** A leader sets a budget. An agent builds a small version. It goes in front of the people doing the work, and **nothing counts until they say it helps.**
 
-That last rule isn't a policy in a handbook. The code enforces it. There's no "done" button anywhere. An item only reaches Helps when enough different people, who are neither the one who wrote the spec nor the one who approved it, confirm the current build helps. A leader can't override it.
+That last rule isn't a policy in a handbook. The code enforces it. There's no "done" button anywhere. An item only reaches Helps when enough different people, who are neither the one who wrote the spec nor the one who approved it, confirm the current build helps. A leader can't override it. You can [watch the real server refuse](docs/WATCH_IT_REFUSE.md) the person who wrote the spec, the leader who approved it, and a made-up "done" event.
 
 ## Where this actually is
 
@@ -16,7 +16,7 @@ I'm building this in public, and it's early. Here's the honest state:
 
 - **Works and tested:**
   - **The core.** A small state machine that decides what can happen to an item, and a local store that records every step in a tamper-evident chain. Money is exact, builder events are tied to the approval they were built under, and each event hashes the authority it was accepted under. Registry edits cannot rewrite history. Exports include the registry, so importing is an administrator action for files you exported yourself.
-  - **The manual path with a web UI.** A person can post a checked problem, write a spec, have a different leader approve it with a password step-up, deliver one safe playable try, and reach Helps only when other people say it helps.
+  - **The manual path with a web UI.** A person can post a checked problem, write a spec, have a leader who isn't the steward approve it with a password step-up, deliver one safe playable try, and reach Helps only when other people say it helps.
   - **Sign-in and a small HTTP API.** Invites, passwords, sessions, CSRF protection, rate limits, and a leader step-up before anything gets approved. The command line is the only admin surface. See [docs/ADMIN.md](docs/ADMIN.md) and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md), which also lists what's not covered.
 - **Not built yet:** the model layer, builder adapters, the cost gateway, Vision Quest, and kept modules. Don't try to run an organization on this yet.
 
@@ -30,19 +30,42 @@ I'm treating tests as claims. `npm test` runs them, and `npm run check:mutants` 
 
 These screenshots come from the real-browser test.
 
+## Run it yourself
+
+You need Node 22.13 or newer. There's nothing to install. Start a server with a throwaway database:
+
+```sh
+export SSS_DB="$(mktemp -d)/sss.db"
+node cli.js init --id leader
+node cli.js serve --port 8787 --insecure-cookies
+```
+
+`init` prints a one-time password for the leader, so copy it. `serve` keeps running, so use a second terminal for anything else. Then open http://127.0.0.1:8787/signin and sign in as `leader`. `--insecure-cookies` is for local http only. The database is in a temp folder, and deleting that folder removes everything.
+
+To see the main rule refused without clicking through it, run `node scripts/watch-it-refuse.mjs`. The output is in [docs/WATCH_IT_REFUSE.md](docs/WATCH_IT_REFUSE.md).
+
+## Words used here
+
+- **Steward:** the person who made the first `checked` event for an item. A leader can hand it to someone else.
+- **Approver:** the person recorded on the `approved` event. It has to be a leader who isn't the steward.
+- **Step-up:** typing your password again, right before approving. It's good for five minutes and works once.
+- **Quorum:** how many different people must say "it helps". The approver sets it, and it's frozen with the approval.
+- **Artifact:** the one playable HTML try that gets delivered. A "helps" only counts for the current artifact.
+
 ## Try it
 
-You need Node 22.5 or newer. There are no dependencies to install.
+These are the checks. There are no dependencies to install for the first four.
 
 ```sh
 npm test
 npm run check:mutants
 npm run check:public
 npm run test:listen
-npm run test:e2e
 ```
 
 `test:listen` starts a real server on a local port and runs a short end-to-end check. `check:public` is a guard that scans the files and the git history for secrets, private paths, personal emails and backup files before anything gets published.
+
+`npm run test:e2e` is separate and isn't part of the no-dependency path. It drives a real browser, so it needs an existing Playwright install (set `PLAYWRIGHT_DIR` to the folder that holds it) and Chrome (set `CHROME_PATH` if it isn't at `/usr/bin/google-chrome`).
 
 ## How I'm building it
 

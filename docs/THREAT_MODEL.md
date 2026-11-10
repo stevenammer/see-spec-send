@@ -16,7 +16,7 @@
 | Parser abuse | JSON size limit and unsafe-key rejection | `oversized and malformed bodies` |
 
 Not covered yet: multi-factor authenticators, email delivery, distributed rate limits,
-external database checkpoints, recovery drills, encrypted backups, a browser UI, and
+external database checkpoints, recovery drills, encrypted backups, and
 protection from a host administrator who can alter the database and application.
 Also not built: a trusted-proxy mode (behind a reverse proxy, per-IP limits see the proxy's
 address, so run it directly or add that mode first), and cutting off an oversized request
@@ -79,10 +79,10 @@ remain. This is redaction of an event body, not removal of a person's entire ide
 The independent continuation reproduced four additional failures before fixing them:
 legacy snapshots changed on reopen, old caches no longer matched replay, an unreceipted
 erased flag bypassed verification, and unknown personal metadata survived erasure.
-The full suite passes52 tests. The four-person browser walkthrough passes after the fixes.
+The full suite passes 52 tests. The four-person browser walkthrough passes after the fixes.
 Eleven changed-control mutations are independently killed: the six peer-review controls,
 two legacy migration controls, two redaction controls and the helper-vote view.
 The past-author handoff view has a permanent regression in addition to the core refusal.
-The writer stress test still uses120 real processes, with at most4 in flight to avoid
-loading120 runtimes into a small machine. The full49-mutation campaign was not rerun
+The writer stress test still uses120 real processes, with at most 4 in flight to avoid
+loading 120 runtimes into a small machine. The full 49-mutation campaign was not rerun
 in this continuation.

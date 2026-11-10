@@ -1,8 +1,14 @@
+import { checkedFromQuest } from '../public/vision-quest.js';
 import { createServer } from 'node:http';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { feedPage, htmlHeaders, itemPage, newItemPage, redeemPage, signInPage } from './pages.js';
+import { feedPage, htmlHeaders, itemPage, newItemPage, questPage, redeemPage, signInPage } from './pages.js';
+
+// Object key order does not change a retry identity. Array order is meaningful.
+const canonical = value => JSON.stringify(value, (_key, entry) =>
+  entry && typeof entry === 'object' && !Array.isArray(entry)
+    ? Object.fromEntries(Object.keys(entry).sort().map(key => [key, entry[key]])) : entry);
 
 const json = (res, status, value) => {
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
@@ -97,6 +103,12 @@ export function createHandler({ auth, store, secure = true, origin = 'https://lo
         return staticFile(res, 'app.js', 'application/javascript; charset=utf-8');
       if (req.method === 'GET' && url.pathname === '/assets/app.css')
         return staticFile(res, 'app.css', 'text/css; charset=utf-8');
+      if (req.method === 'GET' &&
+          ['/assets/vision-quest.js', '/assets/quest-storage.js', '/assets/quest-ui.js']
+            .includes(url.pathname)) {
+        return staticFile(res, url.pathname.split('/').at(-1),
+          'application/javascript; charset=utf-8');
+      }
       const sessionToken = cookies(req)[cookieName];
       const session = sessionToken && auth.session(sessionToken);
       if (change && req.headers['content-type'] !== 'application/json')
@@ -144,6 +156,9 @@ export function createHandler({ auth, store, secure = true, origin = 'https://lo
       if (req.method === 'GET' && url.pathname === '/')
         return page(res, feedPage(store.listItems()));
       if (req.method === 'GET' && url.pathname === '/items/new') return page(res, newItemPage());
+      if (req.method === 'GET' && url.pathname === '/quest') {
+        return page(res, questPage(session.person));
+      }
       const view = url.pathname.match(/^\/items\/([^/]+)$/);
       if (req.method === 'GET' && view) {
         const state = store.read(view[1]);
@@ -155,17 +170,23 @@ export function createHandler({ auth, store, secure = true, origin = 'https://lo
       if (req.method === 'GET' && url.pathname === '/api/items')
         return json(res, 200, { items: store.listItems() });
       if (req.method === 'POST' && url.pathname === '/api/items') {
-        const id = randomBytes(24).toString('base64url');
-        store.append(
-          id,
-          {
-            type: 'checked',
-            actor: session.person,
-            at: new Date().toISOString(),
-            ...checked(input),
-          },
-          { idem: randomUUID() },
-        );
+        // Derive and validate before looking up a receipt, including the signed-in owner.
+        const eventBody = input.quest ? checkedFromQuest(input.quest, session.person) : checked(input);
+        const id = input.quest ? createHash('sha256').update(canonical({
+          person: session.person, quest: input.quest,
+        })).digest('hex') : randomBytes(24).toString('base64url');
+        // This entire lookup/append block is synchronous. Concurrent requests cannot
+        // interleave it; the deterministic item ID also survives server restarts.
+        const prior = input.quest ? store.events(id) : [];
+        if (prior.length) {
+          if (prior[0].type !== 'checked' || prior[0].actor !== session.person) {
+            throw Error('Quest receipt owner does not match.');
+          }
+          return json(res, 200, { id, state: store.read(id), idempotent: true });
+        }
+        store.append(id, { type: 'checked', actor: session.person,
+          at: new Date().toISOString(), ...eventBody },
+        { idem: input.quest ? `quest:${id}` : randomUUID() });
         return json(res, 201, { id, state: store.read(id) });
       }
       const artifact = url.pathname.match(/^\/api\/items\/([^/]+)\/artifact\/([a-f0-9]{64})$/);
@@ -210,6 +231,8 @@ export function createHandler({ auth, store, secure = true, origin = 'https://lo
       if (!match) return json(res, 404, { error: 'not found' });
       if (req.method === 'GET')
         return json(res, 200, { state: store.read(match[1]), events: store.events(match[1]) });
+      if (Object.hasOwn(input, 'quest')) return json(res, 409, { error: 'request refused' });
+      if (Object.hasOwn(input, 'questMemo')) return json(res, 409, { error: 'request refused' });
       if (Object.hasOwn(input, 'actor') || Object.hasOwn(input, 'role'))
         return json(res, 403, { error: 'request refused' });
       if (input.type === 'approved') {

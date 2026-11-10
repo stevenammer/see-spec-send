@@ -1,3 +1,4 @@
+import { postedQuestMemo } from '../public/vision-quest.js';
 const escape = value =>
   String(value ?? '').replace(
     /[&<>"']/g,
@@ -48,7 +49,8 @@ export function feedPage(items) {
       .join('') || '<li>No problems posted yet.</li>';
   return shell(
     'The work',
-    `<div class="top"><h1>The work</h1><a class="button" href="/items/new">Post a problem</a></div><ul class="feed">${cards}</ul>`,
+    '<div class="top"><h1>The work</h1><div><a class="button" href="/items/new">Post a problem</a> ' +
+      `<a href="/quest">Start a Vision Quest</a></div></div><ul class="feed">${cards}</ul>`,
   );
 }
 
@@ -79,10 +81,34 @@ export function itemPage(item, events, person, leader) {
   const context = item.context;
   const problem = events.find(event => event.type === 'checked')?.problem || '';
   const current = events.at(-1);
+  const questEvent = events.find(event => event.type === 'checked');
+  let questMemo = '';
+  let questDraft;
+  if (questEvent) {
+    questDraft = postedQuestMemo(questEvent);
+    if (questDraft && !questDraft.stopped) {
+      questMemo = `<section><h2>Vision Quest memo</h2><p>${escape(questDraft.recommendation)}: ` +
+        `${escape(questDraft.reason)}</p><p>Author-reported, not independently verified.</p>` +
+        `<p>Decision owner: ${escape(questDraft.memo.decisionOwner)}</p>` +
+        `<p>Stop if: ${escape(questDraft.memo.stopCondition)}</p>` +
+        `<details><summary>Proposed test, still a draft</summary>` +
+        `<p>Must: ${escape(questDraft.spec.must.join('\n'))}</p>` +
+        `<p>How we'll know: ${escape(questDraft.spec.how_we_know.join('\n'))}</p>` +
+        `<p>Out of scope: ${escape(questDraft.spec.out_of_scope.join('\n'))}</p>` +
+        `</details></section>`;
+    }
+  }
   const spec = events.filter(event => event.type === 'specced').at(-1);
   let action = '';
-  if (item.state === 'CHECKED' && context.steward === person)
-    action = `<form data-event="specced"><h2>Write the spec</h2><label>Must do<textarea name="must" required></textarea></label><label>How we'll know<textarea name="how_we_know" required></textarea></label><label>Out of scope<textarea name="out_of_scope"></textarea></label><button>Save the spec</button></form>`;
+  // A Vision Quest build proposal is only a first draft: the steward edits it and saves it by hand.
+  const draftSpec = questDraft && !questDraft.stopped ? questDraft.spec : { must: [], how_we_know: [], out_of_scope: [] };
+  const fill = key => escape(draftSpec[key].join('\n'));
+  const specForm = `<form data-event="specced"><h2>Write the spec</h2>` +
+    `<label>Must do<textarea name="must" required>${fill('must')}</textarea></label>` +
+    `<label>How we'll know<textarea name="how_we_know" required>${fill('how_we_know')}</textarea></label>` +
+    `<label>Out of scope<textarea name="out_of_scope">${fill('out_of_scope')}</textarea></label>` +
+    '<button>Save the spec</button></form>';
+  if (item.state === 'CHECKED' && context.steward === person) action = specForm;
   if (item.state === 'SPECCED' && leader && context.steward !== person)
     action = `<form data-approve="true"><h2>Decide</h2><label>Cap in dollars<input name="cap_usd" type="number" min="0" step="0.01" required></label><label>How many people need to say it helps?<input name="quorum" type="number" min="1" required></label><label>Re-enter your password<input name="password" type="password" required></label><button>Approve the try</button></form><form data-event="returned"><label>What needs to change?<input name="note" required></label><button>Return the spec</button></form>`;
   if (item.state === 'SENDING' && (leader || context.steward === person))
@@ -95,15 +121,51 @@ export function itemPage(item, events, person, leader) {
     action = '<p class="helps">People who do this work said it helps.</p>';
   if (item.state === 'SHELVED')
     action = `<p>This was shelved: ${escape(current?.reason || '')}</p>`;
+  if (item.state === 'CHECKED' && questDraft && questDraft.recommendation !== 'BUILD') {
+    action = '<p>No build is proposed. Ask the decision owner to review the existing option.</p>';
+  }
   const shelve =
     !['HELPS', 'SHELVED'].includes(item.state) && (leader || context.steward === person)
       ? `<form data-event="shelved"><label>Why shelve it?<input name="reason" required></label><button>Shelve with a reason</button></form>`
       : '';
   return shell(
     problem,
-    `<p><a href="/">Back to the work</a></p><p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1><p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${action}${shelve}<h2>What happened</h2><ol>${events.map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
+    '<p><a href="/">Back to the work</a></p>' +
+      `<p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1>` +
+      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${questMemo}${action}${shelve}` +
+      `<h2>What happened</h2><ol>${events.map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
   );
 }
 
 export const htmlHeaders =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
+
+
+export function questPage(person) {
+  return shell('Vision Quest', `
+    <p><a href="/">Back to the work</a></p>
+    <h1>Vision Quest</h1>
+    <p>Start with the last real occurrence. One question at a time, no AI calls.</p>
+    <p>This guide can use only what you type. Your account isn't independent verification.
+      Only your derived memo is saved to the shared item. Posting sends your answers to this server
+      temporarily so it can check the memo again. Nothing is posted until you choose to post.</p>
+    <section id="quest" data-person="${escape(person)}">
+      <p id="quest-status" role="status">Opening your draft...</p>
+      <div id="quest-content"></div>
+      <p id="quest-error" class="error" role="alert"></p>
+      <div class="quest-tools">
+        <button type="button" id="quest-compact">Compact</button>
+        <button type="button" id="quest-squirrel">Squirrel?</button>
+        <button type="button" id="quest-export">Export draft</button>
+        <button type="button" id="quest-new">Start another quest</button>
+        <div id="quest-history"></div>
+        <label>Restore your own draft file<input type="file" id="quest-restore"
+          accept="application/json,.json"></label>
+      </div>
+      <pre id="quest-note"></pre>
+      <p>Drafts stay in this browser for this signed-in ID. Export before clearing browser data.
+        A SHA check detects changed bytes; it doesn't prove that an account is true.</p>
+    </section>
+    <script type="module" src="/assets/quest-ui.js"></script>
+  `);
+}

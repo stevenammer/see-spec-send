@@ -86,3 +86,30 @@ The past-author handoff view has a permanent regression in addition to the core 
 The writer stress test still uses120 real processes, with at most 4 in flight to avoid
 loading 120 runtimes into a small machine. The full 49-mutation campaign was not rerun
 in this continuation.
+
+## Vision Quest (no model)
+
+| Attack | Control | Proof |
+| --- | --- | --- |
+| A session acts for someone else | The server takes the person from the session, and the quest must name that same person | `authority: a quest can only post what its signed-in person could post by hand` |
+| A session skips a step, approves, delivers or helps | A quest is accepted only on item creation and only as a `checked` event; every other route refuses it | `authority: a quest can only post what its signed-in person could post by hand` |
+| A client sends its own recommendation or memo | The server derives the event again from the transcript and ignores everything else | `quest creation is explicit, signed-in, CSRF guarded and server-derived` |
+| Typed text runs as script on the item page or the guide | Every typed value is escaped on the page, and the guide uses `textContent` | `stored Vision Quest text is escaped on every page that shows it` |
+| Oversized or malformed input | At most 2000 characters a field, 120 turns and 120,000 bytes; unknown keys, steps and options are refused before any write | `limits: oversized or malformed quests are refused with no write` |
+| Another person reads or resumes a draft | Drafts are keyed by the signed-in ID and refuse a file written for another ID | `drafts: a half-finished draft survives a restart and is private to its author` |
+| A draft changes without notice | Revisions are read back and hash-checked before the pointer moves; stale tabs are refused | `save-first immutable revisions survive failed writes and stale tab conflict` |
+| The guide sends data somewhere | No model and no network call in the shared code; the page only calls the app's own two routes | `no model and no network: the session code makes no outbound request` |
+| A retry creates a duplicate item | Canonical owner-bound item identity returns the existing item, after validation | `quest retries are canonical, simultaneous and durable, and cannot borrow another owner` |
+| A conversation is exposed through shared history | Server stores only its derived memo and proposed spec; raw turns are not in events or exports | `posted output contains only the derived memo and proposed spec, never turns or private challenges` |
+| A safety concern gets ordinary analysis | A keyword screen stops the guide and refuses posting, and it stays stopped through corrections | `safety stays stopped through correction, pending text, export and restore` |
+
+Not covered: drafts live unencrypted in the browser's local storage, so anyone with the
+same browser profile can read them with its developer tools. The keyword screen only
+catches the words it lists. A hash check detects changed bytes, not a rewritten and
+rehashed file. Shared items contain the derived memo (including selected reported
+answers), not the raw conversation. The server receives raw answers transiently to
+validate and derive the memo. Existing imported raw records are not rewritten.
+Canonical owner-bound retry identity prevents a repeated quest from making another
+item. History and posted receipts live in browser storage and do not encrypt drafts.
+Sign-out clearing and posting a shelved record for a KILL remain follow-ups. See
+VISION_QUEST.md.

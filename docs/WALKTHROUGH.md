@@ -18,3 +18,14 @@ with a setting. The steward writes the spec. A different leader decides by enter
 and their password again. The steward or a leader delivers one HTML try. People other than the
 steward and approver can open that try and choose `It helps`. When the quorum is met, the item reaches
 Helps. A steward or leader can shelve any open item with a reason.
+
+## Start alone with Vision Quest
+
+From the signed-in work feed, choose **Start a Vision Quest**. Answer one question
+at a time, confirm or correct the playback, then review the memo. You can keep or
+export the draft without posting anything. Corrections retain earlier answers.
+Choose **Post my checked problem** only after reviewing the account. This creates
+a checked item, never an automatic spec or approval. A build proposal opens the spec
+form with a first draft for the steward to edit. Existing-option and process-change
+recommendations don't propose a build, and a parked one stays a memo.
+See [VISION_QUEST.md](VISION_QUEST.md) for persistence, safety and current limits.

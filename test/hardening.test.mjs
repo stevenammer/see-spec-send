@@ -6,6 +6,9 @@ import { dirname, join } from 'node:path';
 import { Store } from '../core/store.js';
 import { Auth } from '../app/auth.js';
 import { main as cli } from '../cli.js';
+import { feedPage, itemPage, questPage } from '../app/pages.js';
+import { STEPS, checkedFromQuest } from '../public/vision-quest.js';
+import { completedQuest } from './helpers/quest-fixture.mjs';
 
 const password = 'correct-horse-9-battery';
 const temp = () => join(mkdtempSync(join(tmpdir(), 'sss-hard-')), 'db.sqlite');
@@ -115,4 +118,23 @@ test('the rate limiter forgets idle identities and has a hard size cap', () => {
   assert.ok(auth.buckets.size < 2_000, `idle buckets must be pruned, found ${auth.buckets.size}`);
   for (let index = 0; index < 60_000; index += 1) auth.take(`flood:${index}`);
   assert.ok(auth.buckets.size <= 50_000, `size must stay capped, found ${auth.buckets.size}`);
+});
+
+test('stored Vision Quest text is escaped on every page that shows it', () => {
+  const evil = '<img src=x onerror=alert(1)>"\'&<script>alert(2)</script>';
+  const fields = Object.fromEntries(STEPS.filter(step => !step.options).map(step => [step.key, evil]));
+  const quest = completedQuest({ ...fields, setting: 'works' }, 'maker');
+  const checked = { type: 'checked', actor: 'maker', ...checkedFromQuest(quest, 'maker') };
+  const item = { id: 'x', state: 'CHECKED', context: { steward: 'maker', helpers: [], quorum: 2, ineligibleHelpers: [] } };
+  const pages = [
+    itemPage(item, [checked], 'maker', true),
+    itemPage(item, [checked], 'other', false),
+    feedPage([{ id: 'x', state: 'CHECKED', problem: checked.problem, helpers: 0, quorum: 2 }]),
+    questPage('"><img src=x onerror=alert(3)>'),
+  ];
+  assert.match(pages[3], /data-person="&quot;&gt;&lt;img[^"]*">/);
+  for (const html of pages) {
+    assert.doesNotMatch(html, /<img|<script(?![^>]* src=)/);
+    assert.match(html, /&lt;|&quot;/);
+  }
 });

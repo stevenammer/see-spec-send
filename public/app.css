@@ -101,3 +101,29 @@ iframe {
 }
 
 .error { color: #9b1c1c; font-weight: 600; margin: .5rem 0 0; }
+
+#quest pre, section pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  background: #f1f5f8;
+  padding: 1rem;
+}
+.quest-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-top: 1rem;
+}
+#quest details {
+  margin-block: 1.5rem;
+}
+#quest input[type=checkbox] {
+  width: auto;
+  margin-right: .5rem;
+}
+#quest-status {
+  min-height: 2rem;
+}
+
+#quest { overflow-wrap: anywhere; }

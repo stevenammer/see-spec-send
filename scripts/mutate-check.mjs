@@ -6,7 +6,9 @@ import { spawnSync } from 'node:child_process';
 const root = new URL('..', import.meta.url).pathname;
 const suite = ['--test', '--test-concurrency=2', 'test/auth.test.mjs', 'test/hardening.test.mjs', 'test/store.test.mjs',
   'test/machine.test.mjs', 'test/oracle.test.mjs', 'test/web.test.mjs', 'test/web-pages.test.mjs',
-  'test/review-regressions.test.mjs', 'test/legacy-migration.test.mjs'];
+  'test/review-regressions.test.mjs', 'test/legacy-migration.test.mjs', 'test/vision-quest.test.mjs', 'test/quest-http.test.mjs',
+  'test/quest-storage-faults.test.mjs', 'test/quest-attack.test.mjs', 'test/quest-spec.test.mjs',
+  'test/quest-review-regressions.test.mjs'];
 const mutants = [
   ['CSRF token check', "req.headers['x-csrf-token'] !== session?.csrf", 'false'],
   ['Origin check', 'new URL(value).origin === new URL(expected).origin', 'true'],
@@ -22,7 +24,7 @@ const mutants = [
   ['secure first password', 'randomBytes(18).toString(\'base64url\')', 'Math.random().toString(36).slice(2)'],
   ['database file mode', 'chmodSync(file, 0o600);', 'chmodSync(file, 0o644);'],
   ['backup file mode', 'chmodSync(target, 0o600);', 'chmodSync(target, 0o644);'],
-  ['verify submission hash', 'if (body && submittedEventHash(this.submittedEventFromRow(row), row.idem) !== row.submitted_hash) {', 'if (false) {'],
+  ['verify submission hash', 'if (body && body.erased !== 1\n          && submittedEventHash(this.submittedEventFromRow(row), row.idem) !== row.submitted_hash) {', 'if (false) {'],
   ['verify idempotency key', 'digest(stable({ idem, event }))', 'digest(stable({ event }))'],
   ['verify orphaned events', "...this.db.prepare('SELECT DISTINCT item FROM events').all().map(row => row.item),", ''],
   ['verify cache drift', "return same ? { item, ok: true } : { item, ok: false, reason: 'cache' };", 'return { item, ok: true };'],
@@ -57,6 +59,30 @@ const mutants = [
   ['transaction before await', "// Password work must finish before the transaction so other requests stay isolated.\n    const record = await this.passwordRecord(password);\n    this.db.exec('BEGIN IMMEDIATE');", "this.db.exec('BEGIN IMMEDIATE');\n    const record = await this.passwordRecord(password);"],
   ['usdToMicros tolerance', 'if (Math.abs(scaled - micros) > tolerance) return null;', 'if (Math.abs(scaled - micros) > 0) return null;'],
   ['export actors registry', "const actors = this.db.prepare('SELECT id,kind,leader,item FROM actors ORDER BY id').all();", 'const actors = [];'],
+  ['quest server rederivation',
+    'input.quest ? checkedFromQuest(input.quest, session.person) : checked(input);',
+    'input.quest ? { ...checked(input), quest: input.quest } : checked(input);'],
+  ['quest refused on the event route', "if (Object.hasOwn(input, 'quest')) return json(res, 409, { error: 'request refused' });", ''],
+  ['quest names its signed-in person', 'doc.person !== person ||', 'false ||'],
+  ['quest field length bound', "typeof value === 'string' && value.length <= 2000 &&", "typeof value === 'string' &&"],
+  ['quest turn count bound', 'doc.turns.length > 120 ||', 'false ||'],
+  ['quest byte bound', 'byteLength > 120000', 'byteLength > 1e12'],
+  ['quest unknown keys refused', 'Object.keys(value).every(key => keys.includes(key))', 'true'],
+  ['quest playback gate', "if (position > 10 && playbackAt < 0) throw Error('Confirm the playback first.');", ''],
+  ['quest safety stop covers history', '.some(turn => safety.test(screenText(`${turn.value} ${turn.note}`)));', '.some(() => false);'],
+  ['quest process change verdict',
+    "recommendation === 'CONFIGURE' || recommendation === 'PROCESS CHANGE' ? 'setting' :",
+    "recommendation === 'CONFIGURE' ? 'setting' :"],
+  ['quest kill is never posted', "draft.stopped || draft.recommendation === 'KILL' ||", 'draft.stopped ||'],
+  ['quest squirrel weights', '{ impact: 40, repeat: 30, control: 20, evidence: 10 }',
+    '{ impact: 25, repeat: 25, control: 25, evidence: 25 }'],
+  ['quest squirrel threshold', 'SQUIRREL_THRESHOLD = 60;', 'SQUIRREL_THRESHOLD = 0;'],
+  ['quest draft is keyed by person', 'const keyFor = person => `sss-quest:${encodeURIComponent(person)}`;',
+    "const keyFor = () => 'sss-quest:shared';"],
+  ['quest restore checks the person', 'validateQuest(envelope.data, person);', 'validateQuest(envelope.data);'],
+  ['quest spec draft is escaped', "escape(draftSpec[key].join('\\n'))", "String(draftSpec[key].join('\\n'))"],
+  ['quest memo is escaped', 'Decision owner: ${escape(questDraft.memo.decisionOwner)}', 'Decision owner: ${questDraft.memo.decisionOwner}'],
+  ['quest page makes no outside request', "await fetch('/api/me')", "await fetch('https://example.invalid/api/me')"],
 ];
 
 function run(cwd, args) {
@@ -80,7 +106,8 @@ let failed = false;
 for (const [name, find, replace] of selected) {
   const copy = mkdtempSync(join(tmpdir(), 'sss-mutant-'));
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
-  const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/store.js', 'cli.js'];
+  const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/store.js', 'cli.js',
+    'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {

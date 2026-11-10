@@ -27,7 +27,7 @@ function showError(form, message) {
 
 document.addEventListener('submit', async event => {
   const form = event.target;
-  if (!form.matches('form')) return;
+  if (!form.matches('form') || form.hasAttribute('data-quest-form')) return;
   event.preventDefault();
   try {
     const input = value(form);

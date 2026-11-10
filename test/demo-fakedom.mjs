@@ -4,7 +4,8 @@ export class Node {
   constructor(tag, text = null) { this.tag = tag; this.text = text; this.attrs = {}; this.children = []; }
   setAttribute(name, value) { this.attrs[name] = value; }
   append(...nodes) { this.children.push(...nodes); }
-  replaceChildren(...nodes) { this.children = nodes; }
+  // Like a real browser: anything that isn't a node becomes a text node, so null shows as "null".
+  replaceChildren(...nodes) { this.children = nodes.map(node => (node instanceof Node ? node : new Node('#text', String(node)))); }
 }
 export const fakeDocument = {
   createElement: tag => new Node(tag),

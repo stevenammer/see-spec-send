@@ -4,12 +4,23 @@
 import { explain } from './rules.js';
 import { runToken } from './roster.js';
 
-export const limits = { problem: 500, note: 280, line: 200, lines: 8, text: 1000, reason: 200, quorumMax: 6 };
+export const limits = { problem: 500, note: 280, line: 200, lines: 8, text: 1000, reason: 200, quorumMax: 6, steps: 200 };
 export const checkKinds = ['have', 'pay_for', 'free', 'setting'];
 export const verdicts = ['build_needed', 'already_have', 'setting', 'free', 'pay'];
 export const stageLabels = {
   SEEN: 'See', CHECKED: 'Checked', SPECCED: 'Spec', SENDING: 'Send', TRYING: 'Send', HELPS: 'Helps', SHELVED: 'Shelved',
 };
+
+// Keeps saved try text only when it still matches the hash the chain recorded for it.
+export async function restoreArtifacts(log, saved) {
+  const kept = new Map();
+  if (!Array.isArray(saved)) return kept;
+  for (const entry of saved.slice(0, limits.steps)) {
+    if (!Array.isArray(entry) || typeof entry[0] !== 'string' || typeof entry[1] !== 'string') continue;
+    if (entry[1].length <= limits.text && await log.hashArtifact(entry[1]) === entry[0]) kept.set(entry[0], entry[1]);
+  }
+  return kept;
+}
 
 export function createSession({ log, roster }) {
   return { log, roster, attempts: 0, refusals: [], artifacts: new Map() };
@@ -62,7 +73,7 @@ const builders = {
   spec(input) {
     const must = parseLines(input.must, { name: 'What it must do' });
     if (must.error) return must;
-    const how = parseLines(input.how_we_know, { name: 'How we will know' });
+    const how = parseLines(input.how_we_know, { name: "How we'll know" });
     if (how.error) return how;
     const out = parseLines(input.out_of_scope, { name: 'Out of scope', required: false });
     if (out.error) return out;
@@ -94,6 +105,9 @@ export const actionNames = ['post', 'spec', 'approve', 'deliver', 'help', 'done'
 //   { status: 'refused', rule, words, state } the machine refused it, the log is unchanged
 export async function perform(session, who, action, input = {}) {
   if (!actionNames.includes(action)) return { status: 'invalid', message: 'Unknown action.' };
+  if (session.log.length >= limits.steps) {
+    return { status: 'invalid', message: `This session has ${limits.steps} steps. Press "Start over" to begin again.` };
+  }
   const before = session.log.replay();
   const context = before.context;
   let event;

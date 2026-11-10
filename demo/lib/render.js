@@ -49,14 +49,16 @@ export function renderStatus(doc, root, view) {
 export function renderResult(doc, root, result, actor) {
   if (!result) { root.replaceChildren(); return; }
   const who = nameOf(actor);
-  if (result.status === 'invalid') {
+  if (result.status === 'note') {
+    root.replaceChildren(h(doc, 'p', { class: 'note' }, result.message));
+  } else if (result.status === 'invalid') {
     root.replaceChildren(h(doc, 'p', { class: 'note' }, 'Not sent. ', result.message));
   } else if (result.status === 'accepted') {
     root.replaceChildren(h(doc, 'p', { class: 'ok' }, h(doc, 'strong', {}, 'Accepted. '),
       `${who}'s step went through. The item is now ${result.state}.`));
   } else {
     root.replaceChildren(h(doc, 'div', { class: 'refused' },
-      h(doc, 'p', {}, h(doc, 'strong', {}, 'Refused. '), `${who}'s step did not go through. The log did not change.`),
+      h(doc, 'p', {}, h(doc, 'strong', {}, 'Refused. '), `${who}'s step didn't go through. The log didn't change.`),
       h(doc, 'p', {}, h(doc, 'strong', {}, 'Rule: '), result.words),
       h(doc, 'p', { class: 'small' }, `What the code said: ${result.machine}. Rule name: ${result.rule}.`)));
   }
@@ -86,8 +88,8 @@ export function renderTour(doc, root, played, total) {
       refused ? entry.outcome.words : entry.step.note,
       ` Item is ${entry.state.state}${progress}.`);
   });
-  root.replaceChildren(h(doc, 'ol', {}, items),
+  root.replaceChildren(...[h(doc, 'ol', {}, items),
     played.length === total
-      ? h(doc, 'p', {}, 'That is the whole rule. The item reached Helps only after two people who did not shape it said so.')
-      : null);
+      ? h(doc, 'p', {}, "That's the whole rule. The item reached Helps only after two people who didn't shape it said so.")
+      : null].filter(Boolean));
 }

@@ -12,7 +12,7 @@ export const tourSteps = [
     note: 'Maya is the steward, so she writes the spec.' },
   { who: 'lena', label: 'approve, cap $5, quorum 2', action: 'approve', expect: 'accepted',
     input: { cap: '5', quorum: '2' },
-    note: 'Lena is a leader who did not write the spec. She sets a $5 cap and needs 2 people.' },
+    note: "Lena is a leader who didn't write the spec. She sets a $5 cap and needs 2 people." },
   { who: 'maya', label: 'deliver one try (a note here, playable in the real app)', action: 'deliver', expect: 'accepted',
     input: { text: 'One page that lists each refund once.' },
     note: 'Maya delivers one small try.' },
@@ -23,7 +23,7 @@ export const tourSteps = [
   { who: 'maya', label: 'make up a "done" event', action: 'done', expect: 'refused',
     note: 'Someone tries to mark it done.' },
   { who: 'ben', label: 'say it helps', action: 'help', expect: 'accepted',
-    note: 'Ben did not shape it, so his counts.' },
+    note: "Ben didn't shape it, so his counts." },
   { who: 'cleo', label: 'say it helps', action: 'help', expect: 'accepted',
     note: 'Cleo is the second person. The quorum of 2 is met.' },
 ];

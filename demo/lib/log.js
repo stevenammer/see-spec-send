@@ -132,7 +132,7 @@ export function createLog({ roster, item, now = () => new Date().toISOString(),
 
 // Restore saved rows. They are only accepted if the chain verifies, so a hand-edited save is dropped.
 export async function restoreLog(saved, options) {
-  if (!saved || saved.item !== options.item || !Array.isArray(saved.rows)) return null;
+  if (!saved || saved.item !== options.item || !Array.isArray(saved.rows) || saved.rows.length > 200) return null;
   const fresh = createLog(options);
   // Rebuild through the real append path: same events, same idempotency keys, same timestamps.
   try {

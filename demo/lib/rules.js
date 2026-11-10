@@ -8,18 +8,18 @@ const known = new Set(['checked', 'specced', 'approved', 'returned', 'charged', 
 const shortText = value => String(value ?? '').slice(0, 40);
 
 export const rules = {
-  'no-done-event': 'There is no "done" event. Nothing marks an item finished by hand.',
+  'no-done-event': "There's no \"done\" event. Nothing marks an item finished by hand.",
   'unknown-event': 'The machine has no event with that name.',
   finished: 'This item already reached Helps or was shelved. Those end the item.',
-  'no-try-yet': 'There is no try to confirm yet. "It helps" only counts on a delivered try.',
-  'approver-cannot-help': 'The leader who approved it cannot say it helps.',
-  'author-cannot-help': 'The person who wrote the spec cannot say it helps.',
-  'past-shaper-cannot-help': 'Anyone who has been steward, written a spec, or approved it cannot say it helps.',
+  'no-try-yet': "There's no try to confirm yet. \"It helps\" only counts on a delivered try.",
+  'approver-cannot-help': "The leader who approved it can't say it helps.",
+  'author-cannot-help': "The person who wrote the spec can't say it helps.",
+  'past-shaper-cannot-help': "Anyone who has been steward, written a spec, or approved it can't say it helps.",
   'stale-artifact': 'That "it helps" is for an older try. Only the current try counts.',
-  'wrong-stage': 'The item is not at the right stage for that.',
+  'wrong-stage': "The item isn't at the right stage for that.",
   'leaders-approve': 'Only a leader can approve.',
-  'steward-cannot-approve': 'A leader who is also the steward cannot approve their own spec.',
-  'stale-spec': 'That approval is for a spec that is not the current one.',
+  'steward-cannot-approve': "A leader who is also the steward can't approve their own spec.",
+  'stale-spec': "That approval is for a spec that isn't the current one.",
   'bad-budget': 'The cap and quorum have to be real numbers. The cap is money, the quorum is at least one person.',
   'only-steward-specs': 'Only the steward can write or change the spec.',
   'bad-spec': 'A spec needs a list of what it must do, an out-of-scope list, and at least one way to know it worked.',
@@ -28,7 +28,7 @@ export const rules = {
   'shelve-needs-leader-or-steward': 'Only a leader or the steward can shelve an item, and they need a reason.',
   'stale-approval': 'That build event belongs to an older approval. A new approval starts a new build.',
   'wrong-actor': 'Only the build run and cost gateway can send that kind of event.',
-  'not-allowed': 'The machine does not allow that event right now.',
+  'not-allowed': "The machine doesn't allow that event right now.",
 };
 
 const result = (rule, extra = '') => ({ rule, words: `${rules[rule]}${extra ? ` ${extra}` : ''}` });
@@ -52,7 +52,7 @@ export function explain(context, event, authority, refusal = 'event not allowed'
   }
   if (event.type === 'approved') {
     if (context.phase !== 'SPECCED') return result('wrong-stage', 'Approval comes after a spec and before a try.');
-    if (!leader) return result('leaders-approve', `${who} is not a leader.`);
+    if (!leader) return result('leaders-approve', `${who} isn't a leader.`);
     if (event.actor === context.steward) return result('steward-cannot-approve', `${who} wrote this spec.`);
     if (event.spec_hash !== context.specHash) return result('stale-spec');
     return result('bad-budget');
@@ -61,7 +61,7 @@ export function explain(context, event, authority, refusal = 'event not allowed'
     if (!['CHECKED', 'SPECCED', 'SENDING', 'TRYING'].includes(context.phase)) {
       return result('wrong-stage', 'Post and check a problem first.');
     }
-    if (!person || event.actor !== context.steward) return result('only-steward-specs', `${who} is not the steward.`);
+    if (!person || event.actor !== context.steward) return result('only-steward-specs', `${who} isn't the steward.`);
     return result('bad-spec');
   }
   if (event.type === 'checked') {

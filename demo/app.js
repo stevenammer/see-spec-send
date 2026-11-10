@@ -1,14 +1,16 @@
 // Page wiring only. The rules live in lib/machine.js (a generated copy of core/machine.js).
 import { createLog, restoreLog } from './lib/log.js';
-import { createSession, perform, summary, checkKinds } from './lib/flow.js';
+import { createSession, perform, summary, checkKinds, restoreArtifacts } from './lib/flow.js';
 import { item, makeRoster } from './lib/roster.js';
 import { tourSteps, playStep } from './lib/tour.js';
 import { renderEvents, renderRefusals, renderResult, renderStatus, renderTour, renderWho } from './lib/render.js';
 
 const storageKey = 'sss-demo-v1';
 const $ = id => document.getElementById(id);
+let busy = false;
 const app = { session: null, current: 'maya', result: null, resultActor: 'maya', played: [] };
 
+const storeHadValue = () => { try { return localStorage.getItem(storageKey) !== null; } catch { return false; } };
 const store = {
   read() { try { return JSON.parse(localStorage.getItem(storageKey)); } catch { return null; } },
   write(value) { try { localStorage.setItem(storageKey, JSON.stringify(value)); } catch { /* storage off: stay in memory */ } },
@@ -32,10 +34,13 @@ function paint() {
   renderEvents(document, $('events'), app.session.log.rows());
   renderRefusals(document, $('refusals'), app.session.refusals);
   renderTour(document, $('tour-out'), app.played, tourSteps.length);
-  $('tour-next').disabled = app.played.length >= tourSteps.length;
+  $('tour-next').disabled = busy || app.played.length >= tourSteps.length;
+  $('tour-all').disabled = busy;
+  $('tour-start').disabled = busy;
 }
 
 async function act(action, input) {
+  if (busy) return;
   app.resultActor = app.current;
   app.result = await perform(app.session, app.current, action, input);
   save();
@@ -86,28 +91,31 @@ function wire() {
       ? `Event ${seq} was edited in memory. Press "Verify the chain" to see it caught.`
       : 'There are no events to edit yet.';
   });
-  $('reset').addEventListener('click', () => reset());
+  $('reset').addEventListener('click', () => { if (!busy) reset(); });
   $('persist').addEventListener('change', () => {
     if ($('persist').checked) save(); else store.clear();
   });
-  $('tour-start').addEventListener('click', async () => {
+  // The tour buttons are locked while a tour runs, so two clicks can't interleave two tours.
+  const locked = async work => {
+    if (busy) return;
+    busy = true; paint();
+    try { await work(); } finally { busy = false; save(); paint(); }
+  };
+  $('tour-start').addEventListener('click', () => locked(async () => {
     reset();
     app.played = [await playStep(app.session, 0)];
     app.result = null;
-    paint();
     $('tour-out').focus();
-  });
-  $('tour-next').addEventListener('click', async () => {
+  }));
+  $('tour-next').addEventListener('click', () => locked(async () => {
     if (!app.played.length) { reset(); }
     app.played.push(await playStep(app.session, app.played.length));
-    save(); paint();
-  });
-  $('tour-all').addEventListener('click', async () => {
+  }));
+  $('tour-all').addEventListener('click', () => locked(async () => {
     reset();
     for (let index = 0; index < tourSteps.length; index += 1) app.played.push(await playStep(app.session, index));
-    save(); paint();
     $('tour-out').focus();
-  });
+  }));
 }
 
 function reset() {
@@ -127,11 +135,15 @@ async function start() {
     const restored = await restoreLog(saved.log, { roster: app.session.roster, item });
     if (restored) {
       app.session.log = restored;
-      for (const [hash, text] of saved.artifacts ?? []) {
-        if (typeof hash === 'string' && typeof text === 'string') app.session.artifacts.set(hash, text);
-      }
+      app.session.artifacts = await restoreArtifacts(restored, saved.artifacts);
       $('persist').checked = true;
-    } else store.clear();
+    } else {
+      store.clear();
+      app.result = { status: 'note', message: "What this browser had saved didn't check out (it was damaged or edited), so it was thrown away. You're starting fresh." };
+    }
+  } else if (saved === null && storeHadValue()) {
+    store.clear();
+    app.result = { status: 'note', message: "What this browser had saved couldn't be read, so it was thrown away. You're starting fresh." };
   }
   wire();
   paint();

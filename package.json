@@ -7,7 +7,7 @@
   "type": "module",
   "engines": { "node": ">=22.13.0" },
   "scripts": {
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "test:listen": "node --test test/listener.smoke.mjs",
     "test:e2e": "node test/e2e/manual-path.e2e.mjs",
     "sync:demo": "node scripts/sync-demo.mjs",

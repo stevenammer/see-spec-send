@@ -33,3 +33,33 @@ Later registry edits and reopening do not recapture those roles.
 New erasure receipts bind the replacement tombstone bytes. Unknown body metadata is
 removed along with authored text; actor IDs and structural references remain. This does
 not guarantee removal from backups or earlier copies of the database.
+
+## Worker and emergency stop
+
+I run the fake builder in a separate terminal with `node cli.js worker` using the
+same `SSS_DB` as the server. It reconciles every 250 milliseconds. `node cli.js worker --once`
+runs one pass and exits. Another pass may be needed to observe the adapter's stop.
+The only adapter here is the fake. It makes a tiny static try without a model or a charge.
+
+`node cli.js kill set` sets an independent `SSS_DB.kill` file before recording the
+stop in SQLite. It blocks new starts, charges, and try delivery. Existing runs get
+persistent stop requests. A running worker tells the adapter to stop on its next pass
+and retries until it observes a terminal status. If the worker isn't running, I have
+to start it to finish those stop requests. This isn't a host-level process watchdog.
+
+`node cli.js kill status` prints `stopped` or `clear`.
+`node cli.js kill clear` explicitly clears the latch. It never revives a stopped run.
+An interrupted current run gets a `failed` receipt when the worker observes its stop,
+so a leader can approve again. Set and clear also leave rows in `worker_history`.
+Those global receipts aren't part of an item's hash chain.
+
+I keep the database and its adjacent kill file together, with one canonical path.
+Don't use different symlink paths to the same database. A latch read error blocks
+work. A failed clear can leave the file set; check status after fixing the error.
+The database backup includes worker rows, but not the separate latch file. JSONL
+export doesn't include worker state or artifact bytes, so it isn't a worker backup.
+Don't restore an old database into a running worker. Stop it and set kill first.
+
+Database symlinks resolve to the real database path before selecting the independent
+kill file, so opening the same database through a symbolic link observes the same
+stop latch. The SQLite backup still does not include that file.

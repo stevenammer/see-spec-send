@@ -113,3 +113,28 @@ Canonical owner-bound retry identity prevents a repeated quest from making anoth
 item. History and posted receipts live in browser storage and do not encrypt drafts.
 Sign-out clearing and posting a shelved record for a KILL remain follow-ups. See
 VISION_QUEST.md.
+
+## Slice 5, local fake worker
+
+| Attack | Control | Proof |
+| --- | --- | --- |
+| Two workers start the same approval | Unique run identity and serialized start with idempotent adapter | `two real workers race` |
+| Worker dies during a run | Durable identity and adapter recovery | `worker SIGKILL mid-run`, `crash inside adapter start` |
+| Late or repeated output | Atomic artifact and event receipt, delivery flag, current approval check | `worker delivers once`, `spec replacement and new approval` |
+| Old token claims a fresh approval | Managed token bound to its original approval and spec | `spec replacement and new approval` |
+| Token crosses items or grants itself person authority | Item scope and unchanged machine roles | `worker delivers once`, `spec replacement and new approval` |
+| Stop response disappears | Stop intent commits before adapter call and retries until terminal | `exit effects persist stop intent` |
+| Emergency stop lost at restart | Separate file latch, database latch, durable stop intent | `kill blocks starts and all delivery` |
+| Latch read fails | Fail closed except a missing file | `independent latch alone and unreadable latch` |
+| Stopped adapter restarts | Stable ID, stop tombstone, no restart after clear | `fake adapter conformance`, `kill blocks starts and all delivery` |
+
+I've tested a local fake, not a sandboxed external builder. There's no process kill
+watchdog, provider egress control, metering gateway, or bound on how quickly a broken
+adapter stops. Worker polling asks for stop; the delivery and charge gates don't wait
+for that response. Accepted historical tries stay visible after kill.
+
+The kill file blocks even if the database update fails. The CLI still needs a readable
+SQLite database to initialize, so an operator facing a broken database must create the
+adjacent latch file directly. A host owner can remove both latches or alter worker rows.
+Global control history isn't hash sealed. Worker rows and fake jobs aren't replayed
+from item events or checked by `verify`. JSONL export isn't a worker restore format.

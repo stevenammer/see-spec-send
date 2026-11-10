@@ -2,6 +2,7 @@ import { chmodSync, closeSync, openSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { fold, initial, step } from './machine.js';
+import { guard, setup } from '../worker/control.js';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 const stable = value => {
@@ -80,6 +81,7 @@ export class Store {
     try { this.db.exec('ALTER TABLE events ADD COLUMN actor_leader INTEGER'); } catch {}
     try { this.db.exec('ALTER TABLE events ADD COLUMN authority_version INTEGER NOT NULL DEFAULT 0'); } catch {}
     try { this.db.exec('ALTER TABLE bodies ADD COLUMN erased INTEGER NOT NULL DEFAULT 0'); } catch {}
+    setup(this, file);
     this.backfillSubmittedHashes();
     this.backfillAuthoritySnapshots();
   }
@@ -243,6 +245,7 @@ export class Store {
       }
       return { idempotent: true, seq: existing.seq, ...this.read(item) };
     }
+    guard(this, item, event);
     const cached = this.db.prepare('SELECT * FROM items WHERE item=?').get(item);
     const currentSeq = cached?.seq || 0;
     if (expectedSeq !== undefined && expectedSeq !== currentSeq) throw new Error('stale expectedSeq');
@@ -266,6 +269,10 @@ export class Store {
       ON CONFLICT(item) DO UPDATE SET state=excluded.state,head=excluded.head,
       seq=excluded.seq,context=excluded.context`)
       .run(item, outcome.state, hash, seq, stable(outcome.context));
+    if (outcome.effects.some(effect => effect.kind === 'build.stop')) {
+      this.db.prepare("UPDATE runs SET status='stop_requested' WHERE item=? AND approval=? AND status='active'")
+        .run(item, prior.context.approval);
+    }
     return { seq, hash, ...this.read(item), effects: outcome.effects };
   }
 

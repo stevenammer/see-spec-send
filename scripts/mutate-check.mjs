@@ -4,12 +4,34 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const root = new URL('..', import.meta.url).pathname;
-const suite = ['--test', '--test-concurrency=2', 'test/auth.test.mjs', 'test/hardening.test.mjs', 'test/store.test.mjs',
+const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test/hardening.test.mjs', 'test/store.test.mjs',
   'test/machine.test.mjs', 'test/oracle.test.mjs', 'test/web.test.mjs', 'test/web-pages.test.mjs',
   'test/review-regressions.test.mjs', 'test/legacy-migration.test.mjs', 'test/vision-quest.test.mjs', 'test/quest-http.test.mjs',
   'test/quest-storage-faults.test.mjs', 'test/quest-attack.test.mjs', 'test/quest-spec.test.mjs',
-  'test/quest-review-regressions.test.mjs'];
+  'test/quest-review-regressions.test.mjs', 'test/worker.test.mjs',
+  'test/worker-path.test.mjs'];
+const workerOnly = process.argv.includes('--worker');
+const suite = workerOnly ? ['--test', '--test-concurrency=1',
+  'test/worker.test.mjs', 'test/worker-path.test.mjs'] : fullSuite;
 const mutants = [
+  ['worker canonical kill path', '`${realpathSync(file)}.kill`', '`${file}.kill`'],
+  ['worker current approval', "&& context.approval === run.approval && context.specHash === run.spec_hash", '&& true'],
+  ['worker stopped delivery', "run.status !== 'active' || killed(this.store) || !current(context, run)", 'false'],
+  ['worker single run', "if (this.db.prepare('SELECT 1 FROM runs WHERE id=?').get(id)) continue;", ''],
+  ['worker duplicate delivery', 'if (run.delivered) return false;', ''],
+  ['worker independent kill', 'readFileSync(store.killFile); return true;', 'readFileSync(store.killFile); return false;'],
+  ['worker kill read failure', "if (error.code !== 'ENOENT') return true;", "if (error.code !== 'ENOENT') return false;"],
+  ['worker kill database latch', "return store.db.prepare('SELECT killed FROM worker_control WHERE id=1').get().killed === 1;",
+    'return false;'],
+  ['worker token binding',
+    'event.approval !== run.approval || event.spec_hash !== run.spec_hash', 'false'],
+  ['worker stop receipt', "if (outcome.effects.some(effect => effect.kind === 'build.stop'))", 'if (false)'],
+  ['worker stop retry', "if (!terminal(observed.state)) return;", 'if (false) return;'],
+  ['worker stopped token', "run.status === 'stopped' || (event.type !== 'failed' && run.status !== 'active')", 'false'],
+  ['worker store kill gate', "if (['tried', 'charged'].includes(event.type) && killed(store))", 'if (false)'],
+  ['fake idempotent start', 'INSERT OR IGNORE INTO fake_jobs VALUES(?,?,?,?)', 'INSERT INTO fake_jobs VALUES(?,?,?,?)'],
+  ['fake identity binding', 'if (prior && prior.input !== input)', 'if (false)'],
+  ['fake stop observed', "DO UPDATE SET status='stopped'", "DO UPDATE SET status='ready'"],
   ['CSRF token check', "req.headers['x-csrf-token'] !== session?.csrf", 'false'],
   ['Origin check', 'new URL(value).origin === new URL(expected).origin', 'true'],
   ['Origin prefix match', 'new URL(value).origin === new URL(expected).origin', 'String(value).startsWith(expected)'],
@@ -24,7 +46,7 @@ const mutants = [
   ['secure first password', 'randomBytes(18).toString(\'base64url\')', 'Math.random().toString(36).slice(2)'],
   ['database file mode', 'chmodSync(file, 0o600);', 'chmodSync(file, 0o644);'],
   ['backup file mode', 'chmodSync(target, 0o600);', 'chmodSync(target, 0o644);'],
-  ['verify submission hash', 'if (body && body.erased !== 1\n          && submittedEventHash(this.submittedEventFromRow(row), row.idem) !== row.submitted_hash) {', 'if (false) {'],
+  ['verify submission hash', 'submittedEventHash(this.submittedEventFromRow(row), row.idem) !== row.submitted_hash', 'false'],
   ['verify idempotency key', 'digest(stable({ idem, event }))', 'digest(stable({ event }))'],
   ['verify orphaned events', "...this.db.prepare('SELECT DISTINCT item FROM events').all().map(row => row.item),", ''],
   ['verify cache drift', "return same ? { item, ok: true } : { item, ok: false, reason: 'cache' };", 'return { item, ok: true };'],
@@ -92,7 +114,8 @@ function run(cwd, args) {
 const onlyAt = process.argv.indexOf('--only');
 const only = onlyAt < 0 ? null : process.argv[onlyAt + 1];
 if (onlyAt >= 0 && !only) throw new Error('--only requires a mutant name');
-const selected = mutants.filter(([name]) => !only || name.includes(only));
+const selected = mutants.filter(([name]) => (!only || name.includes(only)) &&
+  (!workerOnly || name.startsWith('worker ') || name.startsWith('fake ')));
 if (!selected.length) throw new Error('no mutant matches the requested name');
 
 const baseline = run(root, [...suite, 'test/check-public.test.mjs']);
@@ -107,7 +130,8 @@ for (const [name, find, replace] of selected) {
   const copy = mkdtempSync(join(tmpdir(), 'sss-mutant-'));
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
   const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/store.js', 'cli.js',
-    'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js'];
+    'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
+    'worker/control.js', 'worker/runner.js', 'worker/fake.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {

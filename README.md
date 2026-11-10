@@ -10,7 +10,7 @@ This is my attempt at a free, open-source way for any organization to fix that w
 
 That last rule isn't a policy in a handbook. The code enforces it. There's no "done" button anywhere. An item only reaches Helps when enough different people, who are neither the one who wrote the spec nor the one who approved it, confirm the current build helps. A leader can't override it. You can [watch the real server refuse](docs/WATCH_IT_REFUSE.md) the person who wrote the spec, the leader who approved it, and a made-up "done" event.
 
-**Try the demo.** There's a small demo that runs in your browser, at https://stevenammer.github.io/see-spec-send/ once I publish it (that address isn't live yet). The people are invented, there's no server, and nothing leaves your page. It runs a copy of the real state machine, so you can try to get around the rule and watch it refuse. It doesn't have sign-in, the database, or the password step-up. See [docs/DEMO.md](docs/DEMO.md).
+**Try the demo.** There's a small demo that runs in your browser, at https://stevenammer.github.io/see-spec-send/. The people are invented, there's no server, and nothing leaves your page. It runs a copy of the real state machine, so you can try to get around the rule and watch it refuse. It doesn't have sign-in, the database, or the password step-up. See [docs/DEMO.md](docs/DEMO.md).
 
 ## Where this actually is
 
@@ -21,7 +21,8 @@ I'm building this in public, and it's early. Here's the honest state:
   - **The manual path with a web UI.** A person can post a checked problem, write a spec, have a leader who isn't the steward approve it with a password step-up, deliver one safe playable try, and reach Helps only when other people say it helps.
   - **Vision Quest without a model.** A signed-in person can work through one question at a time, correct the playback, and end with a memo that recommends BUILD, CONFIGURE, BUY OR USE, PROCESS CHANGE or KILL. Posting makes one checked problem, and a build proposal opens the steward's spec form with a first draft. Draft answers survive a reload, corrections keep the originals, and earlier quests can be exported after starting another. Shared items keep the derived memo; raw conversation stays browser-side at rest. Posting is safe to retry. It makes no AI calls. See [docs/VISION_QUEST.md](docs/VISION_QUEST.md) for the exact boundaries.
   - **Sign-in and a small HTTP API.** Invites, passwords, sessions, CSRF protection, rate limits, and a leader step-up before anything gets approved. The command line is the only admin surface. See [docs/ADMIN.md](docs/ADMIN.md) and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md), which also lists what's not covered.
-- **Not built yet:** the model layer, builder adapters, the cost gateway, the portable Vision Quest prompt, model-assisted Vision Quest, the standalone offline demo, and kept modules. Don't try to run an organization on this yet.
+  - **The local worker and fake builder.** An approved spec can reach a small static try through one durable run. The worker recovers after a crash and can be stopped from the command line. Crash, race, stale-output, and adapter-contract tests cover that path. The fake uses no network, model, or money. See [docs/ADAPTER.md](docs/ADAPTER.md).
+- **Not built yet:** the model layer, external builder adapters, the cost gateway, a process watchdog, the portable Vision Quest prompt, model-assisted Vision Quest, Vision Quest in the anonymous demo, and kept modules. Don't try to run an organization on this yet.
 
 I'm treating tests as claims. `npm test` runs them, and `npm run check:mutants` deliberately breaks individual controls and checks that the tests notice. If a test can't fail, I don't count it.
 

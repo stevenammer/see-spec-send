@@ -1,6 +1,8 @@
 import { chmodSync, constants, copyFileSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { Store } from './core/store.js';
+import { Worker } from './worker/runner.js';
+import { killed, setKill } from './worker/control.js';
 import { Auth } from './app/auth.js';
 import { createServerFor } from './app/http.js';
 
@@ -17,7 +19,17 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
   const file = env.SSS_DB || 'sss.db';
   const store = new Store(file);
   const auth = new Auth(store);
-  if (command === 'init') {
+  if (command === 'kill') {
+    if (!['set', 'clear', 'status'].includes(args[0])) fail('expected kill set, clear, or status');
+    if (args[0] !== 'status') setKill(store, args[0] === 'set');
+    write(killed(store) ? 'stopped' : 'clear');
+  } else if (command === 'worker') {
+    const worker = new Worker(store);
+    do {
+      worker.reconcile();
+      if (!args.includes('--once')) await new Promise(resolve => setTimeout(resolve, 250));
+    } while (!args.includes('--once'));
+  } else if (command === 'init') {
     if (auth.db.prepare('SELECT 1 FROM users LIMIT 1').get()) fail('already initialized');
     const password = `Start-${randomBytes(18).toString('base64url')}-9a`;
     await auth.createUser(value('--id') || 'leader', password, true);

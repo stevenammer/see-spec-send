@@ -10,6 +10,7 @@
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "test:listen": "node --test test/listener.smoke.mjs",
     "test:e2e": "node test/e2e/manual-path.e2e.mjs",
+    "test:artifact-origin": "node test/e2e/artifact-origin.e2e.mjs",
     "sync:demo": "node scripts/sync-demo.mjs",
     "check:demo": "node scripts/sync-demo.mjs --check",
     "check:public": "node scripts/check-public.mjs",

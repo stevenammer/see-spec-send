@@ -163,3 +163,7 @@ The adapter never receives the bearer credential; errors are generic at the HTTP
 boundary and provider exceptions aren't returned or logged. A host administrator
 can still rewrite checksums, counts and database rows. See GATEWAY.md for exact
 limits, recovery behavior and remaining external-provider work.
+
+## Artifact origin audit (real Chrome)
+
+`npm run test:artifact-origin` (set `PLAYWRIGHT_DIR`) delivers a hostile page through the real server and opens it in Chrome as a signed-in person. The page tries to read the parent DOM, the top DOM, the session cookie, local storage, the app API with credentials, a second origin by fetch and by image, top-level navigation, a popup, and a form post to the top page. All are blocked, the top page URL does not change, and a second local listener sees zero requests. Weakening the sandbox (adding `allow-same-origin`, dropping the CSP `sandbox`) makes the test fail on the parent-DOM read. The artifact is still served from the app origin, protected by the opaque sandbox origin rather than a separate host. A separate artifact host remains advisable before real deployment, and this test is not a substitute for one.

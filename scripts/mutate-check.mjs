@@ -9,11 +9,24 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/review-regressions.test.mjs', 'test/legacy-migration.test.mjs', 'test/vision-quest.test.mjs', 'test/quest-http.test.mjs',
   'test/quest-storage-faults.test.mjs', 'test/quest-attack.test.mjs', 'test/quest-spec.test.mjs',
   'test/quest-review-regressions.test.mjs', 'test/worker.test.mjs',
-  'test/worker-path.test.mjs'];
+  'test/worker-path.test.mjs', 'test/gateway.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs'] : fullSuite;
 const mutants = [
+  ['gateway disabled default', "demand(policy.enabled, 'gateway disabled');", ''],
+  ['gateway run cap', "demand(add(used, worst) <= cap, 'run cap exceeded');", ''],
+  ['gateway global cap', "demand(add(sum(rows), worst) <= policy.global_micros, 'global cap exceeded');", ''],
+  ['gateway day cap', "demand(add(sum(rows.filter(row => row.day === day)), worst) <= policy.day_micros, 'day cap exceeded');", ''],
+  ['gateway concurrency', "['reserved', 'dispatched'].includes(row.state)).length < policy.concurrency", "['reserved', 'dispatched'].includes(row.state)).length < policy.concurrency + 1000"],
+  ['gateway legacy spend counted', 'add(legacyMicros(this.store, run.item, run.approval),', 'add(0,'],
+  ['gateway idempotency payload', "demand(existing.payload_hash === payloadHash, 'idempotency payload conflict');", ''],
+  ['gateway single dispatch claim', "demand(row.state === 'reserved', 'dispatch already claimed');", ''],
+  ['gateway settle only dispatched', "if (row.state !== 'dispatched') return false;", ''],
+  ['gateway capability revoked', 'cap && cap.revoked === 0 &&', 'cap &&'],
+  ['gateway capability expiry', 'cap.expires > this.clock()', 'true'],
+  ['gateway capability binding', 'cap.approval === run.approval && cap.spec_hash === run.spec_hash', 'true'],
+  ['gateway cancelled releases only on no call', "{ state: 'cancelled', charged_micros: 0 }", "{ state: 'cancelled' }"],
   ['worker canonical kill path', '`${realpathSync(file)}.kill`', '`${file}.kill`'],
   ['worker current approval', "&& context.approval === run.approval && context.specHash === run.spec_hash", '&& true'],
   ['worker stopped delivery', "run.status !== 'active' || killed(this.store) || !current(context, run)", 'false'],
@@ -131,7 +144,7 @@ for (const [name, find, replace] of selected) {
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
   const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/store.js', 'cli.js',
     'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
-    'worker/control.js', 'worker/runner.js', 'worker/fake.js'];
+    'worker/control.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {

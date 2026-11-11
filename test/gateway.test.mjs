@@ -278,3 +278,31 @@ test('CLI status and API budget expose original approval holds separately from l
   await main(['gateway', 'revoke', '--digest', digest(token)], { SSS_DB: file }, () => {});
   assert.throws(() => ledger.reserve(token, 'revoked', request()), /revoked/);
 });
+
+// Added to kill mutants that survived the first gateway mutation pass.
+test('ledger-level guards: disabled policy, single dispatch claim, settle once, tampered binding, cancelled release', async t => {
+  const off = fixture(':memory:', { enabled: false }); t.after(() => off.store.close());
+  assert.throws(() => off.ledger.reserve(off.token, 'off', request()), /gateway disabled/);
+
+  const { store, ledger, token } = fixture(':memory:', { concurrency: 4 }); t.after(() => store.close());
+  const one = ledger.reserve(token, 'one', request()).row;
+  assert.equal(ledger.settle(one.id, usage()), false);
+  assert.equal(ledger.receipts().find(row => row.id === one.id).state, 'reserved');
+  assert.equal(ledger.dispatch(token, one.id), true);
+  assert.throws(() => ledger.dispatch(token, one.id), /already claimed/);
+  assert.equal(ledger.settle(one.id, usage()), true);
+  const charged = ledger.receipts().find(row => row.id === one.id).charged_micros;
+  assert.equal(ledger.settle(one.id, { output: 'again', usage: { input_tokens: 1, output_tokens: 1 } }), false);
+  assert.equal(ledger.receipts().find(row => row.id === one.id).charged_micros, charged);
+  assert.equal(ledger.receipts().find(row => row.id === one.id).state, 'settled');
+
+  const two = ledger.reserve(token, 'two', request()).row;
+  ledger.revokeDigest(digest(token));
+  assert.equal(ledger.dispatch(token, two.id), false);
+  const cancelled = ledger.receipts().find(row => row.id === two.id);
+  assert.equal(cancelled.state, 'cancelled'); assert.equal(cancelled.charged_micros, 0);
+
+  const bound = fixture(':memory:'); t.after(() => bound.store.close());
+  bound.store.db.prepare('UPDATE gateway_capabilities SET approval=approval+1').run();
+  assert.throws(() => bound.ledger.reserve(bound.token, 'bound', request()), /binding mismatch/);
+});

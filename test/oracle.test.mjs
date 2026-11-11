@@ -52,7 +52,8 @@ function body(type, store, item) {
     charged: { usd: 0, approval: context.approval, spec_hash: context.specHash },
     tried: { artifact_hash: 'a', approval: context.approval, spec_hash: context.specHash },
     failed: { approval: context.approval, spec_hash: context.specHash },
-    helped: { artifact_hash: 'a' }, shelved: { reason: 'x' }, commented: {},
+    helped: { artifact_hash: 'a' }, shelved: { reason: 'x' }, commented: context.specHash ? { comment: 'x', anchor_kind: 'spec', anchor_hash: context.specHash } : { comment: 'x' },
+    checked_in: { note: 'x' },
     steward_changed: { steward: 'member' }, erased: { body_hash: spec },
   }[type];
 }

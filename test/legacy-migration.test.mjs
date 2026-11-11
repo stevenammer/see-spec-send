@@ -86,7 +86,8 @@ test('legacy authority is captured once and survives demotion, reopen and a new 
     store = new Store(fixture.file);
     assert.deepEqual(store.read('i'), before);
     store.append('i', { type: 'commented', actor: 'author', at: '2026-11-10T00:00:00.000Z',
-      comment: 'An independent later note.' }, { idem: 'later' });
+      comment: 'An independent later note.',
+      ...(before.context.specHash ? { anchor_kind: 'spec', anchor_hash: before.context.specHash } : {}) }, { idem: 'later' });
     assert.equal(store.verify('i').ok, true);
     assert.deepEqual(store.verifyAll(), [{ item: 'i', ok: true }]);
   } finally {

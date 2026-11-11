@@ -34,3 +34,17 @@ The worker stores HTML and its `tried` event in one transaction. It rejects stop
 or superseded runs before storing bytes. A duplicate delivery returns false without
 storing anything. Adapters never get a person identity, so they can't approve,
 change steward, vote, or move an item to Helps.
+
+## Slice 7 adapter policy, offline proof only
+
+An external adapter receives the stable request above plus an explicit policy.
+The fixed default denies all egress, exposes only approved-spec read and artifact
+write scopes, and requires CPU, memory, and wall-clock limits. The offline fake
+sandbox refuses synthetic host-mount, cross-run-read, raw-socket, egress, memory,
+and time escape attempts, then fires its emergency-kill callback.
+
+This does **not** prove a container, user namespaces, read-only mounts,
+seccomp/AppArmor, DNS/rebinding protection, redirect/IP validation, real network
+interception, or process termination on a host. No OpenHands or Docker image was
+used. A real-container acceptance test remains required before an external builder
+is trusted.

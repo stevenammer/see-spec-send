@@ -72,6 +72,7 @@ function eventWords(event) {
     shelved: 'shelved this item',
     steward_changed: 'changed the steward',
     commented: 'left a comment',
+    checked_in: 'posted a check-in',
   };
   // A try is written by a per-item token, so name the person who delivered it instead.
   return `${escape(event.delivered_by || event.actor)} ${words[event.type] || 'updated this item'}`;
@@ -99,6 +100,11 @@ export function itemPage(item, events, person, leader) {
     }
   }
   const spec = events.filter(event => event.type === 'specced').at(-1);
+  const anchoredComments = events.filter(event => event.type === 'commented').map(event => {
+    const currentHash = event.anchor_kind === 'spec' ? context.specHash : context.artifact;
+    const stale = event.anchor_hash && event.anchor_hash !== currentHash;
+    return `<li>${eventWords(event)}${stale ? ' (stale version)' : event.anchor_hash ? ' (current version)' : ''}: ${escape(event.comment)}</li>`;
+  }).join('');
   let action = '';
   // A Vision Quest build proposal is only a first draft: the steward edits it and saves it by hand.
   const draftSpec = questDraft && !questDraft.stopped ? questDraft.spec : { must: [], how_we_know: [], out_of_scope: [] };
@@ -128,12 +134,16 @@ export function itemPage(item, events, person, leader) {
     !['HELPS', 'SHELVED'].includes(item.state) && (leader || context.steward === person)
       ? `<form data-event="shelved"><label>Why shelve it?<input name="reason" required></label><button>Shelve with a reason</button></form>`
       : '';
+  const anchor = context.artifact ? { kind: 'artifact', hash: context.artifact } :
+    context.specHash ? { kind: 'spec', hash: context.specHash } : null;
+  const comment = `<form data-event="commented"><h2>Comment</h2><label>Comment<textarea name="comment" required maxlength="4000"></textarea></label>${anchor ? `<input type="hidden" name="anchor_kind" value="${anchor.kind}"><input type="hidden" name="anchor_hash" value="${escape(anchor.hash)}"><p>Attached to the current ${anchor.kind} version.</p>` : '<p>There is no spec version yet.</p>'}<button>Post comment</button></form>`;
+  const checkin = `<form data-event="checked_in"><h2>Check-in</h2><label>What changed?<input name="note" required maxlength="2000"></label><button>Post check-in</button></form>`;
   return shell(
     problem,
     '<p><a href="/">Back to the work</a></p>' +
       `<p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1>` +
-      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${questMemo}${action}${shelve}` +
-      `<h2>What happened</h2><ol>${events.map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
+      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${questMemo}${action}${shelve}${checkin}${comment}` +
+      `<h2>Comments</h2><ol>${anchoredComments || '<li>No comments yet.</li>'}</ol><h2>What happened</h2><ol>${events.filter(event => event.type !== 'commented').map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
   );
 }
 

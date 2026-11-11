@@ -239,6 +239,14 @@ export function createHandler({ auth, store, secure = true, origin = 'https://lo
       if (Object.hasOwn(input, 'questMemo')) return json(res, 409, { error: 'request refused' });
       if (Object.hasOwn(input, 'actor') || Object.hasOwn(input, 'role'))
         return json(res, 403, { error: 'request refused' });
+      if (input.type === 'commented') {
+        const state = store.read(match[1]).context;
+        if ((state.specHash || state.artifact) &&
+            !((input.anchor_kind === 'spec' && input.anchor_hash === state.specHash) ||
+              (input.anchor_kind === 'artifact' && input.anchor_hash === state.artifact))) {
+          return json(res, 409, { error: 'request refused' });
+        }
+      }
       if (input.type === 'approved') {
         if (!auth.useStepup(sessionToken)) return json(res, 403, { error: 'request refused' });
         input.spec_hash = store.read(match[1]).context.specHash;

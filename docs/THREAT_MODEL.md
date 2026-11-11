@@ -14,6 +14,11 @@
 | Redaction corrupts replay | Erasure stores a replayable tombstone and receipt | `redacted critical bodies replay` |
 | Approval replay | Five-minute, server-side, single-use step-up | `step-up required, stale, single use` |
 | Parser abuse | JSON size limit and unsafe-key rejection | `oversized and malformed bodies` |
+| Comment rewrites history | Comments pin the current spec/artifact hash; changed versions render old anchors stale | `versioned comments become stale` |
+| Self-reported evidence becomes fact | Source-linked records require a claim and an honesty kind; reports name their reporter | `versioned comments become stale` |
+| Handoff restores self-certification | Leader-only handoff keeps all past stewards excluded from Helps | `check-ins cannot approve, vote, or weaken a stewardship handoff` |
+| Builder escape or egress request | Default policy has no egress and fake sandbox kills on synthetic escape | `fake sandbox refuses escape and egress attempts and fires the emergency kill` |
+| Draft silently spends or approves | Exact fixture preflight, explicit consent gate, and no machine command | `draft preflight is exact, fixture-only, labeled, and never sends without explicit approval` |
 
 Not covered yet: multi-factor authenticators, email delivery, distributed rate limits,
 external database checkpoints, recovery drills, encrypted backups, and

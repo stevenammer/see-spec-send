@@ -13,7 +13,7 @@ event, until a leader makes `steward_changed` naming another registered person.
 `gateway` and `run` are registered tokens scoped to exactly one item. An
 `approver` below means the person recorded by `approved`, not an actor role.
 People have no counters. Role checks marked with a condition are additional to
-the listed role. `commented`, `steward_changed`, and `erased` preserve state.
+the listed role. `commented`, `checked_in`, `steward_changed`, and `erased` preserve state.
 
 | From | Event | Role | Next |
 | --- | --- | --- | --- |
@@ -31,6 +31,7 @@ the listed role. `commented`, `steward_changed`, and `erased` preserve state.
 | TRYING | helped | member, neither steward nor approver | TRYING or HELPS at frozen quorum |
 | open | shelved | leader or steward | SHELVED |
 | open | commented | member | unchanged |
+| open | checked_in | member | unchanged |
 | open | steward_changed | leader | unchanged |
 | open | erased | leader or steward | unchanged |
 
@@ -57,5 +58,15 @@ Every builder-originated `charged`, `tried`, and `failed` event must carry the
 same `approval` counter and `spec_hash` as the current approval. A token from a
 previous approval is refused and cannot charge the newer cap or deliver an
 artifact.
+
+Evidence on `checked` or `helped` is optional but, when supplied, is immutable:
+an `http` or `https` source URL, a specific claim, and one of `observed`,
+`reported`, or `documented`. Reported evidence also records who reported it.
+The UI calls it reported rather than independent proof. Before a spec, comments
+are context only. Once an item has a spec or artifact, comments must pin the
+current `spec` or `artifact` hash. The page marks a pinned comment stale after
+that version changes. `checked_in` is an attributable status note, never a vote.
+Stewardship handoff remains leader-only and keeps every past steward ineligible
+to help, so it cannot weaken quorum separation.
 
 There is no done event. `HELPS` and `SHELVED` are terminal.

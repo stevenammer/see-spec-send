@@ -18,6 +18,19 @@ const steward = (state, event, who) => person(who) && event.actor === state.stew
 const addIneligible = (state, id) => state.ineligibleHelpers.includes(id)
   ? state.ineligibleHelpers
   : [...state.ineligibleHelpers, id];
+const source = evidence => evidence && typeof evidence === 'object'
+  && nonempty(evidence.url) && /^https?:\/\//.test(evidence.url)
+  && nonempty(evidence.claim) && nonempty(evidence.kind)
+  && ['observed', 'reported', 'documented'].includes(evidence.kind)
+  && (evidence.kind !== 'reported' || nonempty(evidence.reported_by));
+const evidenceList = value => value === undefined || (array(value) && value.every(source));
+const commentAnchor = (state, event) => {
+  if (!nonempty(event.comment) || event.comment.length > 4000) return false;
+  if (!state.specHash && !state.artifact) return event.anchor_kind === undefined && event.anchor_hash === undefined;
+  if (event.anchor_kind === 'spec') return event.anchor_hash === state.specHash;
+  if (event.anchor_kind === 'artifact') return event.anchor_hash === state.artifact;
+  return false;
+};
 
 export function usdToMicros(value) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
@@ -51,7 +64,9 @@ export function step(state, event, who) {
   if (!event || typeof event !== 'object' || typeof event.type !== 'string') return fail('invalid event');
   if (!open.has(context.phase)) return fail('terminal state');
 
-  if (event.type === 'commented' && person(who)) return result(context);
+  if (event.type === 'commented' && person(who) && commentAnchor(context, event)) return result(context);
+  if (event.type === 'checked_in' && person(who) && nonempty(event.note) && event.note.length <= 2000)
+    return result(context);
   if (event.type === 'erased' && (leader(who) || steward(context, event, who))) return result(context);
   if (event.type === 'steward_changed' && leader(who) && nonempty(event.steward)) {
     const ineligibleHelpers = addIneligible(context, event.steward);
@@ -65,7 +80,7 @@ export function step(state, event, who) {
   if (event.type === 'checked' && context.phase === 'SEEN' && person(who)
       && nonempty(event.problem) && event.problem.length <= 2000
       && array(event.looked) && event.looked.length > 0 && array(event.found)
-      && verdicts.has(event.verdict)) {
+      && verdicts.has(event.verdict) && evidenceList(event.evidence)) {
     const phase = event.verdict === 'already_have' ? 'SHELVED' : 'CHECKED';
     return result({ ...context, phase, steward: event.actor,
       ineligibleHelpers: addIneligible(context, event.actor) });
@@ -112,7 +127,8 @@ export function step(state, event, who) {
   }
   if (event.type === 'helped' && context.phase === 'TRYING' && person(who)
       && !context.ineligibleHelpers.includes(event.actor)
-      && nonempty(event.artifact_hash) && event.artifact_hash === context.artifact) {
+      && nonempty(event.artifact_hash) && event.artifact_hash === context.artifact
+      && evidenceList(event.evidence)) {
     const helpers = context.helpers.includes(event.actor) ? context.helpers : [...context.helpers, event.actor];
     return result({ ...context, helpers, phase: helpers.length >= context.quorum ? 'HELPS' : 'TRYING' });
   }

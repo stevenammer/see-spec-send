@@ -149,7 +149,7 @@ for (const [name, find, replace] of selected) {
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
   const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/store.js', 'cli.js',
     'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
-    'worker/control.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js'];
+    'worker/control.js', 'worker/policy.js', 'drafting/preflight.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {

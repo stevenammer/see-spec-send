@@ -24,7 +24,12 @@ test('versioned comments become stale, while sources retain their honesty label'
   put(store, 'helped', 'member', { artifact_hash: 'a', evidence: [{ url: 'https://example.test/report', claim: 'It reduced a synthetic step', kind: 'reported', reported_by: 'member' }] }, 6);
   const html = itemPage({ id: 'i', ...store.read('i') }, store.events('i'), 'member', false);
   assert.match(html, /current version/);
-  assert.throws(() => put(store, 'helped', 'next', { artifact_hash: 'a', evidence: [{ url: 'https://example.test/x', claim: 'x', kind: 'reported' }] }, 7), /not allowed|terminal state/);
+});
+
+test('reported evidence without a named reporter is refused', () => {
+  const store = ready();
+  assert.throws(() => put(store, 'helped', 'member', { artifact_hash: 'a', evidence: [{ url: 'https://example.test/x', claim: 'x', kind: 'reported' }] }, 5), /not allowed|evidence/);
+  put(store, 'helped', 'member', { artifact_hash: 'a', evidence: [{ url: 'https://example.test/x', claim: 'x', kind: 'reported', reported_by: 'member' }] }, 6);
 });
 
 test('check-ins cannot approve, vote, or weaken a stewardship handoff', () => {

@@ -1,3 +1,4 @@
+import { meteringSummary } from '../gateway/ledger.js';
 import { checkedFromQuest } from '../public/vision-quest.js';
 import { createServer } from 'node:http';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -168,7 +169,8 @@ export function createHandler({ auth, store, secure = true, origin = 'https://lo
         );
       }
       if (req.method === 'GET' && url.pathname === '/api/items')
-        return json(res, 200, { items: store.listItems() });
+        return json(res, 200, { items: store.listItems().map(item => ({ ...item,
+          spent_basis: 'legacy charged events only', gateway_budget: meteringSummary(store, item.id) })) });
       if (req.method === 'POST' && url.pathname === '/api/items') {
         // Derive and validate before looking up a receipt, including the signed-in owner.
         const eventBody = input.quest ? checkedFromQuest(input.quest, session.person) : checked(input);
@@ -230,7 +232,9 @@ export function createHandler({ auth, store, secure = true, origin = 'https://lo
       const match = url.pathname.match(/^\/api\/items\/([^/]+)(?:\/events)?$/);
       if (!match) return json(res, 404, { error: 'not found' });
       if (req.method === 'GET')
-        return json(res, 200, { state: store.read(match[1]), events: store.events(match[1]) });
+        return json(res, 200, { state: store.read(match[1]), events: store.events(match[1]),
+          spent_basis: 'state.context.spentMicros counts legacy charged events only',
+          gateway_budget: meteringSummary(store, match[1]) });
       if (Object.hasOwn(input, 'quest')) return json(res, 409, { error: 'request refused' });
       if (Object.hasOwn(input, 'questMemo')) return json(res, 409, { error: 'request refused' });
       if (Object.hasOwn(input, 'actor') || Object.hasOwn(input, 'role'))

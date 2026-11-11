@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { usdToMicros } from '../core/machine.js';
 import { readFileSync, realpathSync, writeFileSync, unlinkSync } from 'node:fs';
 
 export function setup(store, file) {
@@ -49,7 +51,34 @@ export function setKill(store, enabled) {
   }
 }
 
+// Legacy charges and the new ledger share the original approval's cap.
+function guardLedger(store, item, event) {
+  if (event.type !== 'charged') return;
+  if (!store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='gateway_receipts'").get()) return;
+  const context = store.read(item).context;
+  const micros = usdToMicros(event.usd);
+  if (micros === null) throw new Error('invalid usd');
+  let held = 0n;
+  const rows = store.db.prepare('SELECT * FROM gateway_receipts').all();
+  const integrity = store.db.prepare('SELECT receipt_count FROM gateway_integrity WHERE id=1').get();
+  if (!integrity || integrity.receipt_count !== rows.length) throw new Error('corrupt gateway receipt count');
+  for (const row of rows) {
+    const { seal, ...data } = row;
+    const bytes = JSON.stringify(data, (_key, entry) => entry && typeof entry === 'object' && !Array.isArray(entry)
+      ? Object.fromEntries(Object.keys(entry).sort().map(key => [key, entry[key]])) : entry);
+    if (seal !== createHash('sha256').update(bytes).digest('hex')
+        || !Number.isSafeInteger(row.charged_micros) || row.charged_micros < 0) {
+      throw new Error('corrupt gateway accounting');
+    }
+    if (row.item === item && row.approval === context.approval) held += BigInt(row.charged_micros);
+  }
+  if (held + BigInt(context.spentMicros) + BigInt(micros) > BigInt(context.capMicros)) {
+    throw new Error('combined gateway and legacy cap exceeded');
+  }
+}
+
 export function guard(store, item, event) {
+  guardLedger(store, item, event);
   if (['tried', 'charged'].includes(event.type) && killed(store)) throw new Error('emergency kill is set');
   const run = store.db.prepare('SELECT * FROM runs WHERE run_actor=? OR gateway_actor=?').get(event.actor, event.actor);
   if (!run) return;

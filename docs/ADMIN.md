@@ -63,3 +63,13 @@ Don't restore an old database into a running worker. Stop it and set kill first.
 Database symlinks resolve to the real database path before selecting the independent
 kill file, so opening the same database through a symbolic link observes the same
 stop latch. The SQLite backup still does not include that file.
+
+
+## Local fixture gateway
+
+See [GATEWAY.md](GATEWAY.md) for the disabled-by-default listener, explicit fixture
+policy, scoped capability mint/revoke seam, durable estimates and unknown holds.
+`node cli.js gateway status` and `gateway verify` check the ledger before showing
+amounts. The gateway CLI never configures or calls a real provider. SQLite backups
+include gateway rows; JSONL exports don't. The existing `token create` command
+creates a generic item token, not a usable metering capability.

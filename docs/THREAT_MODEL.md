@@ -129,7 +129,7 @@ VISION_QUEST.md.
 | Stopped adapter restarts | Stable ID, stop tombstone, no restart after clear | `fake adapter conformance`, `kill blocks starts and all delivery` |
 
 I've tested a local fake, not a sandboxed external builder. There's no process kill
-watchdog, provider egress control, metering gateway, or bound on how quickly a broken
+watchdog, provider egress control, or bound on how quickly a broken
 adapter stops. Worker polling asks for stop; the delivery and charge gates don't wait
 for that response. Accepted historical tries stay visible after kill.
 
@@ -138,3 +138,28 @@ SQLite database to initialize, so an operator facing a broken database must crea
 adjacent latch file directly. A host owner can remove both latches or alter worker rows.
 Global control history isn't hash sealed. Worker rows and fake jobs aren't replayed
 from item events or checked by `verify`. JSONL export isn't a worker restore format.
+
+
+## Slice 6, local metering gateway
+
+The real localhost HTTP endpoint uses a separate digest-only capability registry,
+not person sessions or generic item tokens. It binds item, run, original approval,
+spec and expiry. Atomic worst-case reservations include conservative fixture input
+bytes, fixed framing and maximum output tokens before the mock provider sees a
+request. Original approval caps combine legacy charges and ledger receipts;
+operator global/day/concurrency limits cover gateway requests.
+
+The proof in `test/gateway.test.mjs` uses 100 simultaneous real HTTP requests with
+one cent left, plus two actual database writer processes. It also covers duplicate
+payloads, late settlement across new approval/kill/day, restart ambiguity,
+malicious usage/limits, revocation/expiry, capability isolation and partial receipt
+corruption. Unknown usage remains a worst-case hold with its concurrency slot.
+There is no blind refund or retry of uncertain work. The rate/policy/cap and
+payload hash stay in the durable original receipt.
+
+This proves a local mock boundary. It doesn't certify third-party financial caps,
+external provider pricing, provider tokenization, sandbox egress or process kill.
+The adapter never receives the bearer credential; errors are generic at the HTTP
+boundary and provider exceptions aren't returned or logged. A host administrator
+can still rewrite checksums, counts and database rows. See GATEWAY.md for exact
+limits, recovery behavior and remaining external-provider work.

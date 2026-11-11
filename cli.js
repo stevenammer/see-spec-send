@@ -3,6 +3,9 @@ import { randomBytes } from 'node:crypto';
 import { Store } from './core/store.js';
 import { Worker } from './worker/runner.js';
 import { killed, setKill } from './worker/control.js';
+import { Ledger, fixturePolicy } from './gateway/ledger.js';
+import { Gateway, createGatewayServer } from './gateway/http.js';
+import { fixtureProvider } from './gateway/fixture.js';
 import { Auth } from './app/auth.js';
 import { createServerFor } from './app/http.js';
 
@@ -19,7 +22,28 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
   const file = env.SSS_DB || 'sss.db';
   const store = new Store(file);
   const auth = new Auth(store);
-  if (command === 'kill') {
+  if (command === 'gateway') {
+    const ledger = new Ledger(store);
+    if (args[0] === 'fixture-enable') {
+      ledger.configure(fixturePolicy());
+      write('Local fixture enabled. No real provider is configured.');
+    } else if (args[0] === 'mint') {
+      write(ledger.mint(value('--run') || fail('missing --run')));
+    } else if (args[0] === 'revoke') {
+      ledger.revokeDigest(value('--digest') || fail('missing --digest'));
+    } else if (['status', 'verify'].includes(args[0])) {
+      write(JSON.stringify(ledger.summary(value('--item'))));
+    } else if (args[0] === 'serve-fixture') {
+      const server = createGatewayServer(new Gateway(ledger, fixtureProvider));
+      const port = Number(value('--port') || '8081');
+      await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(port, '127.0.0.1', resolve);
+      });
+      write(`Fixture gateway http://127.0.0.1:${server.address().port}; no real provider`);
+      return;
+    } else fail('expected gateway fixture-enable, mint, revoke, status, verify, or serve-fixture');
+  } else if (command === 'kill') {
     if (!['set', 'clear', 'status'].includes(args[0])) fail('expected kill set, clear, or status');
     if (args[0] !== 'status') setKill(store, args[0] === 'set');
     write(killed(store) ? 'stopped' : 'clear');

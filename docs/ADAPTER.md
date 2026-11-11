@@ -19,8 +19,9 @@ There's no separate steer operation. A new spec stops the previous run.
 The worker registers separate item-scoped run and gateway token identities, with
 only digests in the registry. The fake returns bytes to the worker, which appends
 `tried` under the run identity with the frozen approval and spec hash. It doesn't
-post charges. The gateway identity is reserved for the next slice; this isn't a
-metering gateway or a usable external credential transport yet.
+post charges. A separate local metering gateway now exists; see GATEWAY.md. Its
+CLI mint binds a fresh credential to an active run. The discarded worker secret
+isn't recovered or transported to the fake adapter.
 
 Calls are synchronous and short. I hold a database write lock while validating and
 submitting a start. An external adapter must enqueue an independently durable,

@@ -95,6 +95,9 @@ export function createHandler({ auth, store, secure = true, origin = 'https://lo
   const cookieName = secure ? '__Host-sss' : 'sss';
   const cookie = value =>
     `${cookieName}=${value}; Path=/; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
+  const oidcBinderName = secure ? '__Host-sss-oidc' : 'sss-oidc';
+  const oidcBinderCookie = value =>
+    `${oidcBinderName}=${value}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
   return async (req, res) => {
     headers(res);
     try {
@@ -125,15 +128,25 @@ export function createHandler({ auth, store, secure = true, origin = 'https://lo
       const ip = req.socket?.remoteAddress || 'local';
       if (req.method === 'GET' && url.pathname === '/api/oidc/start') {
         if (!auth.oidc) return json(res, 404, { error: 'not found' });
-        res.writeHead(302, { location: auth.beginOidc(), 'cache-control': 'no-store' });
+        const binder = randomBytes(32).toString('base64url');
+        res.setHeader('set-cookie', oidcBinderCookie(binder));
+        res.writeHead(302, { location: auth.beginOidc(binder), 'cache-control': 'no-store' });
         return res.end();
       }
       if (req.method === 'GET' && url.pathname === '/api/oidc/callback') {
         if (!auth.oidc) return json(res, 404, { error: 'not found' });
         let login;
-        try { login = await auth.completeOidc({ state: url.searchParams.get('state'), code: url.searchParams.get('code') }); }
-        catch { return json(res, 400, { error: 'request refused' }); }
-        res.setHeader('set-cookie', cookie(login.value));
+        // Clear the one-time browser binding on every callback outcome.  The
+        // state is consumed by OidcLogin before a failed exchange or mismatch.
+        const clearBinder = oidcBinderCookie('') + '; Max-Age=0';
+        try {
+          login = await auth.completeOidc({ state: url.searchParams.get('state'),
+            code: url.searchParams.get('code'), binder: cookies(req)[oidcBinderName] });
+        } catch {
+          res.setHeader('set-cookie', clearBinder);
+          return json(res, 400, { error: 'request refused' });
+        }
+        res.setHeader('set-cookie', [cookie(login.value), clearBinder]);
         res.writeHead(302, { location: '/', 'cache-control': 'no-store' });
         return res.end();
       }

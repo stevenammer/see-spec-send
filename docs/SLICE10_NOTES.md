@@ -8,7 +8,13 @@ selects OIDC or Postgres automatically.
 
 `app/oidc.js` implements an authorization-code flow with S256 PKCE, 256-bit
 single-use state, a separate nonce, and a ten-minute in-memory pending-login
-window. `OidcLogin` takes explicit provider configuration:
+window. The HTTP start route also creates a fresh random browser binder in a
+pre-authentication `HttpOnly`, `Secure`, `SameSite=Lax` cookie. Only its hash is
+kept with the pending state; the callback requires the matching cookie, consumes
+the state before any exchange, and clears the binder cookie after either success
+or refusal. This binds a callback to the browser that initiated it and fails
+closed after a missing or mismatched cookie. `OidcLogin` takes explicit provider
+configuration:
 
 ```js
 new OidcLogin({
@@ -67,5 +73,7 @@ throwaway server using a least-privilege application role.
 | Explicit endpoints, no live discovery | Prevents unreviewed issuer metadata from becoming runtime authority. |
 | Opaque ID, no email matching | Prevents account takeover through mutable claims. |
 | OIDC cannot use password step-up | A password-only approval proof must not be silently weakened. |
+| Hashed, one-time OIDC browser binder | A callback URL alone cannot establish an IdP session in a different browser, and a pending-entry disclosure does not reveal the cookie value. |
+| `reported_by` equals event actor | A reported claim can only name the authenticated event author until a separately attested reporter workflow exists. |
 | Injected Postgres compatibility driver | The synchronous Store API must not pretend an async network driver is transaction-safe. |
 | In-process fakes only in tests | Tests stay offline and do not claim real IdP or database coverage. |

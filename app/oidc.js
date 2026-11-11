@@ -30,12 +30,16 @@ export class OidcLogin {
     this.pending = new Map();
   }
 
-  begin() {
+  begin(binder) {
+    if (typeof binder !== 'string' || !binder) throw new Error('OIDC browser binding required');
     this.prune();
     const state = random();
     const nonce = random();
     const verifier = random();
-    this.pending.set(state, { nonce, verifier, expires: this.clock() + 10 * 60_000 });
+    // The raw binder belongs only in the browser's pre-authentication cookie.
+    // Keeping a digest here means a pending-login memory disclosure cannot mint
+    // a matching browser cookie.
+    this.pending.set(state, { nonce, verifier, binderHash: sha256(binder), expires: this.clock() + 10 * 60_000 });
     const url = new URL(this.authorizationEndpoint);
     url.search = new URLSearchParams({ response_type: 'code', client_id: this.clientId,
       redirect_uri: this.redirectUri, scope: 'openid', state, nonce,
@@ -43,12 +47,15 @@ export class OidcLogin {
     return url.toString();
   }
 
-  async complete({ state, code }) {
-    if (typeof state !== 'string' || typeof code !== 'string' || !code) throw new Error('OIDC response refused');
+  async complete({ state, code, binder }) {
+    if (typeof state !== 'string' || typeof code !== 'string' || !code
+        || typeof binder !== 'string' || !binder) throw new Error('OIDC response refused');
     const pending = this.pending.get(state);
     // Consume before exchanging, so a provider retry is never a local replay.
     this.pending.delete(state);
-    if (!pending || pending.expires <= this.clock()) throw new Error('OIDC response refused');
+    if (!pending || pending.expires <= this.clock() || pending.binderHash !== sha256(binder)) {
+      throw new Error('OIDC response refused');
+    }
     const response = await this.exchange({ code, clientId: this.clientId,
       redirectUri: this.redirectUri, codeVerifier: pending.verifier });
     if (!response?.id_token) throw new Error('OIDC response refused');

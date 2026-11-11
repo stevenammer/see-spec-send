@@ -34,7 +34,12 @@ async function call(handler, method, path, input, headers = {}) {
   await handler(req, res);
   return { ...res, body: res.text ? JSON.parse(res.text) : {} };
 }
-const sessionCookie = response => response.headers['set-cookie'].split(';')[0];
+const setCookies = response => Array.isArray(response.headers['set-cookie'])
+  ? response.headers['set-cookie'] : [response.headers['set-cookie']];
+const namedCookie = (response, name) => setCookies(response)
+  .find(value => value.startsWith(`${name}=`)).split(';')[0];
+const sessionCookie = response => namedCookie(response, '__Host-sss');
+const oidcBinderCookie = response => namedCookie(response, '__Host-sss-oidc');
 const authHeaders = (cookie, csrf) => ({ cookie, origin: 'https://localhost', 'x-csrf-token': csrf });
 
 test('password policy, invites, and no plaintext storage', async () => {
@@ -140,31 +145,44 @@ test('OIDC uses authorization-code PKCE, single-use state and verified issuer cl
   const handler = createHandler({ store, auth, secure: true });
   const start = await call(handler, 'GET', '/api/oidc/start');
   assert.equal(start.status, 302);
+  assert.match(start.headers['set-cookie'], /__Host-sss-oidc=.*HttpOnly.*SameSite=Lax.*Secure/);
   const authorize = new URL(start.headers.location);
   assert.equal(authorize.searchParams.get('response_type'), 'code');
   assert.equal(authorize.searchParams.get('code_challenge_method'), 'S256');
   const code = provider.issue({ codeChallenge: authorize.searchParams.get('code_challenge'),
     nonce: authorize.searchParams.get('nonce'), subject: 'not-an-account-name' });
-  const callback = await call(handler, 'GET', `/api/oidc/callback?state=${encodeURIComponent(authorize.searchParams.get('state'))}&code=${encodeURIComponent(code)}`);
+  const callback = await call(handler, 'GET', `/api/oidc/callback?state=${encodeURIComponent(authorize.searchParams.get('state'))}&code=${encodeURIComponent(code)}`,
+    undefined, { cookie: oidcBinderCookie(start) });
   assert.equal(callback.status, 302);
+  assert.ok(setCookies(callback).some(value => /__Host-sss-oidc=.*Max-Age=0/.test(value)));
   const cookie = sessionCookie(callback);
   const me = await call(handler, 'GET', '/api/me', undefined, { cookie });
   assert.match(me.body.id, /^oidc-[a-f0-9]{32}$/);
   assert.notEqual(me.body.id, 'not-an-account-name');
   await assert.rejects(auth.stepup(cookie.split('=').at(-1), password), /unavailable/);
+  const mismatchStart = await call(handler, 'GET', '/api/oidc/start');
+  const mismatchAuthorize = new URL(mismatchStart.headers.location);
+  const mismatchCode = provider.issue({ codeChallenge: mismatchAuthorize.searchParams.get('code_challenge'),
+    nonce: mismatchAuthorize.searchParams.get('nonce') });
+  const mismatch = await call(handler, 'GET', `/api/oidc/callback?state=${encodeURIComponent(mismatchAuthorize.searchParams.get('state'))}&code=${encodeURIComponent(mismatchCode)}`,
+    undefined, { cookie: '__Host-sss-oidc=not-the-initiating-browser' });
+  assert.equal(mismatch.status, 400);
+  assert.ok(setCookies(mismatch).some(value => /__Host-sss-oidc=.*Max-Age=0/.test(value)));
   assert.equal((await call(handler, 'GET', `/api/oidc/callback?state=${encodeURIComponent(authorize.searchParams.get('state'))}&code=${encodeURIComponent(code)}`)).status, 400);
   const badStart = await call(handler, 'GET', '/api/oidc/start');
   const badAuthorize = new URL(badStart.headers.location);
   const badCode = provider.issue({ codeChallenge: badAuthorize.searchParams.get('code_challenge'),
     nonce: badAuthorize.searchParams.get('nonce'), issuer: 'https://other.example.test' });
-  assert.equal((await call(handler, 'GET', `/api/oidc/callback?state=${encodeURIComponent(badAuthorize.searchParams.get('state'))}&code=${encodeURIComponent(badCode)}`)).status, 400);
+  assert.equal((await call(handler, 'GET', `/api/oidc/callback?state=${encodeURIComponent(badAuthorize.searchParams.get('state'))}&code=${encodeURIComponent(badCode)}`,
+    undefined, { cookie: oidcBinderCookie(badStart) })).status, 400);
   time += 11 * 60_000;
   const expiredStart = await call(handler, 'GET', '/api/oidc/start');
   const expiredAuthorize = new URL(expiredStart.headers.location);
   time += 11 * 60_000;
   const expiredCode = provider.issue({ codeChallenge: expiredAuthorize.searchParams.get('code_challenge'),
     nonce: expiredAuthorize.searchParams.get('nonce') });
-  assert.equal((await call(handler, 'GET', `/api/oidc/callback?state=${encodeURIComponent(expiredAuthorize.searchParams.get('state'))}&code=${encodeURIComponent(expiredCode)}`)).status, 400);
+  assert.equal((await call(handler, 'GET', `/api/oidc/callback?state=${encodeURIComponent(expiredAuthorize.searchParams.get('state'))}&code=${encodeURIComponent(expiredCode)}`,
+    undefined, { cookie: oidcBinderCookie(expiredStart) })).status, 400);
 });
 
 test('events reject client authority, tokens, self approval, and require fresh single-use step-up', async () => {
@@ -215,16 +233,17 @@ test('OIDC refuses wrong audience, wrong nonce, and a replayed state even with a
   const provider = new FakeOidcProvider({ clock: () => time });
   const oidc = new OidcLogin(provider.configuration('https://localhost/api/oidc/callback'), { clock: () => time });
   const start = async () => {
-    const u = new URL(oidc.begin());
-    return { state: u.searchParams.get('state'), challenge: u.searchParams.get('code_challenge'), nonce: u.searchParams.get('nonce') };
+    const binder = `binder-${Math.random()}`;
+    const u = new URL(oidc.begin(binder));
+    return { state: u.searchParams.get('state'), challenge: u.searchParams.get('code_challenge'), nonce: u.searchParams.get('nonce'), binder };
   };
   let s = await start();
-  await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce, audience: 'someone-else' }) }), /refused/);
+  await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce, audience: 'someone-else' }), binder: s.binder }), /refused/);
   s = await start();
-  await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: 'wrong-nonce' }) }), /refused/);
+  await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: 'wrong-nonce' }), binder: s.binder }), /refused/);
   s = await start();
-  await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce, iat: 999_000 / 1000 - 100, exp: 999_000 / 1000 - 10 }) }), /refused/);
+  await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce, iat: 999_000 / 1000 - 100, exp: 999_000 / 1000 - 10 }), binder: s.binder }), /refused/);
   s = await start();
-  await oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce }) });
-  await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce }) }), /refused/);
+  await oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce }), binder: s.binder });
+  await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce }), binder: s.binder }), /refused/);
 });

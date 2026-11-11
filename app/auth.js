@@ -158,9 +158,9 @@ export class Auth {
     return { value, csrf };
   }
 
-  beginOidc() {
+  beginOidc(binder) {
     if (!this.oidc) throw new Error('OIDC unavailable');
-    return this.oidc.begin();
+    return this.oidc.begin(binder);
   }
 
   async completeOidc(response) {

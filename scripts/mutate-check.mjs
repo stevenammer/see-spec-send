@@ -9,7 +9,8 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/review-regressions.test.mjs', 'test/legacy-migration.test.mjs', 'test/vision-quest.test.mjs', 'test/quest-http.test.mjs',
   'test/quest-storage-faults.test.mjs', 'test/quest-attack.test.mjs', 'test/quest-spec.test.mjs',
   'test/quest-review-regressions.test.mjs', 'test/worker.test.mjs',
-  'test/worker-path.test.mjs', 'test/gateway.test.mjs', 'test/slice9.test.mjs', 'test/slice7.test.mjs', 'test/slice8.test.mjs'];
+  'test/worker-path.test.mjs', 'test/gateway.test.mjs', 'test/slice9.test.mjs', 'test/slice7.test.mjs', 'test/slice8.test.mjs',
+  'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs'] : fullSuite;
@@ -119,10 +120,11 @@ const mutants = [
   ['quest memo is escaped', 'Decision owner: ${escape(questDraft.memo.decisionOwner)}', 'Decision owner: ${questDraft.memo.decisionOwner}'],
   ['quest page makes no outside request', "await fetch('/api/me')", "await fetch('https://example.invalid/api/me')"],
   ['comment version anchor', "if (event.anchor_kind === 'artifact') return event.anchor_hash === state.artifact;", 'return true;'],
-  ['evidence honesty label', "(evidence.kind !== 'reported' || nonempty(evidence.reported_by));", 'true;'],
+  ['reported evidence actor binding', 'evidence.reported_by !== actor', 'false'],
   ['builder egress policy', "policy.egress.length !== 0", 'false'],
   ['builder emergency kill', 'emergencyKill(`builder policy violation: ${attempt.kind}`);', ''],
   ['oidc state single use', 'this.pending.delete(state);', ''],
+  ['oidc browser binding', 'pending.binderHash !== sha256(binder)', 'false'],
   ['oidc state expiry', 'pending.expires <= this.clock()', 'false'],
   ['oidc issuer check', 'claims.iss !== this.issuer', 'false'],
   ['oidc audience check', '!audience.includes(this.clientId)', 'false'],

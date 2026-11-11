@@ -12,6 +12,8 @@ That last rule isn't a policy in a handbook. The code enforces it. There's no "d
 
 **Try the demo.** There's a small demo that runs in your browser, at https://stevenammer.github.io/see-spec-send/. The people are invented, there's no server, and nothing leaves your page. It runs a copy of the real state machine, so you can try to get around the rule and watch it refuse. It doesn't have sign-in, the database, or the password step-up. See [docs/DEMO.md](docs/DEMO.md).
 
+Credits and licenses for what this builds on: [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
+
 ## Where this actually is
 
 I'm building this in public, and it's early. Here's the honest state:

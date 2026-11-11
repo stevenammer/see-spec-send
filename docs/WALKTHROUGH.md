@@ -14,8 +14,8 @@ the invite to join as a member.
 
 The feed shows each problem, its stage, and the progress line. Post a problem gives one calm form:
 write the thing people already know, then check what you have, pay for, can get free, or can change
-with a setting. The steward writes the spec. A different leader decides by entering a cap, a quorum,
-and their password again. The steward or a leader delivers one HTML try. People other than the
+with a setting. The steward writes the spec. A leader who isn't the steward decides by entering a cap, a quorum,
+and their password again. A quorum of 1 is allowed, so one person saying `It helps` is enough. The steward or a leader delivers one HTML try. People other than the
 steward and approver can open that try and choose `It helps`. When the quorum is met, the item reaches
 Helps. A steward or leader can shelve any open item with a reason.
 

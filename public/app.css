@@ -19,6 +19,17 @@ header {
 }
 a {
   color: #064f9e;
+  display: inline-block;
+  min-width: 24px;
+  min-height: 24px;
+}
+a,
+button,
+input,
+textarea,
+select {
+  min-width: 24px;
+  min-height: 24px;
 }
 label {
   display: block;

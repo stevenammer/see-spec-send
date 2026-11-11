@@ -4,7 +4,7 @@
 import { explain } from './rules.js';
 import { runToken } from './roster.js';
 
-export const limits = { problem: 500, note: 280, line: 200, lines: 8, text: 1000, reason: 200, quorumMax: 6, steps: 200 };
+export const limits = { problem: 500, note: 280, line: 200, lines: 8, text: 1000, reason: 200, quorumMax: 4, steps: 200 };
 export const checkKinds = ['have', 'pay_for', 'free', 'setting'];
 export const verdicts = ['build_needed', 'already_have', 'setting', 'free', 'pay'];
 export const stageLabels = {

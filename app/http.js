@@ -123,6 +123,20 @@ export function createHandler({ auth, store, secure = true, origin = 'https://lo
         return json(res, 403, { error: 'request refused' });
       const input = change ? await body(req) : {};
       const ip = req.socket?.remoteAddress || 'local';
+      if (req.method === 'GET' && url.pathname === '/api/oidc/start') {
+        if (!auth.oidc) return json(res, 404, { error: 'not found' });
+        res.writeHead(302, { location: auth.beginOidc(), 'cache-control': 'no-store' });
+        return res.end();
+      }
+      if (req.method === 'GET' && url.pathname === '/api/oidc/callback') {
+        if (!auth.oidc) return json(res, 404, { error: 'not found' });
+        let login;
+        try { login = await auth.completeOidc({ state: url.searchParams.get('state'), code: url.searchParams.get('code') }); }
+        catch { return json(res, 400, { error: 'request refused' }); }
+        res.setHeader('set-cookie', cookie(login.value));
+        res.writeHead(302, { location: '/', 'cache-control': 'no-store' });
+        return res.end();
+      }
       if (req.method === 'POST' && url.pathname === '/api/login') {
         const login = await auth.login(input.id, input.password, ip);
         res.setHeader('set-cookie', cookie(login.value));
@@ -133,7 +147,7 @@ export function createHandler({ auth, store, secure = true, origin = 'https://lo
         res.setHeader('set-cookie', cookie(login.value));
         return json(res, 201, { csrf: login.csrf });
       }
-      if (req.method === 'GET' && url.pathname === '/signin') return page(res, signInPage());
+      if (req.method === 'GET' && url.pathname === '/signin') return page(res, signInPage({ oidc: Boolean(auth.oidc) }));
       if (req.method === 'GET' && url.pathname === '/redeem') return page(res, redeemPage());
       if (req.method === 'POST' && url.pathname === '/api/logout') {
         auth.revoke(sessionToken);
@@ -145,15 +159,15 @@ export function createHandler({ auth, store, secure = true, origin = 'https://lo
           ? json(res, 200, { id: session.person, csrf: session.csrf })
           : json(res, 403, { error: 'request refused' });
       if (!session) {
-        if (req.method === 'GET' && url.pathname === '/') return page(res, signInPage());
+        if (req.method === 'GET' && url.pathname === '/') return page(res, signInPage({ oidc: Boolean(auth.oidc) }));
         return json(res, 403, { error: 'request refused' });
       }
       if (req.method === 'POST' && url.pathname === '/api/stepup') {
         await auth.stepup(sessionToken, input.password, ip);
         return json(res, 204, {});
       }
-      const leader =
-        auth.db.prepare('SELECT leader FROM users WHERE id=?').get(session.person)?.leader === 1;
+      let leader = false;
+      try { leader = store.actor(session.person, '').leader === true; } catch { /* unregistered session holder is not a leader */ }
       if (req.method === 'GET' && url.pathname === '/')
         return page(res, feedPage(store.listItems()));
       if (req.method === 'GET' && url.pathname === '/items/new') return page(res, newItemPage());

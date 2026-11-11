@@ -19,10 +19,21 @@
 | Handoff restores self-certification | Leader-only handoff keeps all past stewards excluded from Helps | `check-ins cannot approve, vote, or weaken a stewardship handoff` |
 | Builder escape or egress request | Default policy has no egress and fake sandbox kills on synthetic escape | `fake sandbox refuses escape and egress attempts and fires the emergency kill` |
 | Draft silently spends or approves | Exact fixture preflight, explicit consent gate, and no machine command | `draft preflight is exact, fixture-only, labeled, and never sends without explicit approval` |
+| OIDC login response is replayed or swapped | 256-bit single-use state, nonce, and ten-minute expiry are consumed before exchange | `OIDC uses authorization-code PKCE, single-use state and verified issuer claims` |
+| Authorization code is intercepted | S256 PKCE binds the code exchange to the browser-created verifier | `OIDC uses authorization-code PKCE, single-use state and verified issuer claims` |
+| A token from another issuer or client grants access | Exact issuer, audience, multi-audience `azp`, nonce, expiry and issued-at checks after signature verification | `OIDC uses authorization-code PKCE, single-use state and verified issuer claims` |
+| Mutable OIDC claims take over an existing person or leader role | Opaque issuer-subject ID, no email linking, and no claim-derived leadership | `OIDC uses authorization-code PKCE, single-use state and verified issuer claims` |
+| OIDC session weakens approval proof | OIDC sessions cannot pass password step-up | `OIDC uses authorization-code PKCE, single-use state and verified issuer claims` |
 
 Not covered yet: multi-factor authenticators, email delivery, distributed rate limits,
 external database checkpoints, recovery drills, encrypted backups, and
 protection from a host administrator who can alter the database and application.
+OIDC is optional and depends on an operator-supplied signature/JWKS verifier. The
+in-process fake proves no real IdP signature, discovery, key rotation, browser
+redirect registration, callback proxy behavior, logout propagation, or durable
+state storage. A process restart during login fails closed. The Postgres fake proves
+only the Store API contract, not real database isolation, migrations, TLS,
+least-privilege roles, backup/restore, or crash recovery.
 Also not built: a trusted-proxy mode (behind a reverse proxy, per-IP limits see the proxy's
 address, so run it directly or add that mode first), and cutting off an oversized request
 body mid-stream (it is refused, but the connection is not dropped early).

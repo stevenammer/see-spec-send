@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../core/store.js';
 import { Auth } from '../app/auth.js';
+import { FakeOidcProvider, OidcLogin } from '../app/oidc.js';
 import { createHandler } from '../app/http.js';
 import { main as cli } from '../cli.js';
 
@@ -128,6 +129,44 @@ test('step-up proof has one use', async () => {
   assert.equal(auth.useStepup(login.value), false);
 });
 
+test('OIDC uses authorization-code PKCE, single-use state and verified issuer claims', async () => {
+  let time = 1_000_000;
+  const store = new Store();
+  const provider = new FakeOidcProvider({ clock: () => time });
+  const oidc = new OidcLogin(provider.configuration('https://localhost/api/oidc/callback'), {
+    clock: () => time,
+  });
+  const auth = new Auth(store, { clock: () => time, oidc });
+  const handler = createHandler({ store, auth, secure: true });
+  const start = await call(handler, 'GET', '/api/oidc/start');
+  assert.equal(start.status, 302);
+  const authorize = new URL(start.headers.location);
+  assert.equal(authorize.searchParams.get('response_type'), 'code');
+  assert.equal(authorize.searchParams.get('code_challenge_method'), 'S256');
+  const code = provider.issue({ codeChallenge: authorize.searchParams.get('code_challenge'),
+    nonce: authorize.searchParams.get('nonce'), subject: 'not-an-account-name' });
+  const callback = await call(handler, 'GET', `/api/oidc/callback?state=${encodeURIComponent(authorize.searchParams.get('state'))}&code=${encodeURIComponent(code)}`);
+  assert.equal(callback.status, 302);
+  const cookie = sessionCookie(callback);
+  const me = await call(handler, 'GET', '/api/me', undefined, { cookie });
+  assert.match(me.body.id, /^oidc-[a-f0-9]{32}$/);
+  assert.notEqual(me.body.id, 'not-an-account-name');
+  await assert.rejects(auth.stepup(cookie.split('=').at(-1), password), /unavailable/);
+  assert.equal((await call(handler, 'GET', `/api/oidc/callback?state=${encodeURIComponent(authorize.searchParams.get('state'))}&code=${encodeURIComponent(code)}`)).status, 400);
+  const badStart = await call(handler, 'GET', '/api/oidc/start');
+  const badAuthorize = new URL(badStart.headers.location);
+  const badCode = provider.issue({ codeChallenge: badAuthorize.searchParams.get('code_challenge'),
+    nonce: badAuthorize.searchParams.get('nonce'), issuer: 'https://other.example.test' });
+  assert.equal((await call(handler, 'GET', `/api/oidc/callback?state=${encodeURIComponent(badAuthorize.searchParams.get('state'))}&code=${encodeURIComponent(badCode)}`)).status, 400);
+  time += 11 * 60_000;
+  const expiredStart = await call(handler, 'GET', '/api/oidc/start');
+  const expiredAuthorize = new URL(expiredStart.headers.location);
+  time += 11 * 60_000;
+  const expiredCode = provider.issue({ codeChallenge: expiredAuthorize.searchParams.get('code_challenge'),
+    nonce: expiredAuthorize.searchParams.get('nonce') });
+  assert.equal((await call(handler, 'GET', `/api/oidc/callback?state=${encodeURIComponent(expiredAuthorize.searchParams.get('state'))}&code=${encodeURIComponent(expiredCode)}`)).status, 400);
+});
+
 test('events reject client authority, tokens, self approval, and require fresh single-use step-up', async () => {
   let time = 2_000_000;
   const { auth, handler } = setup(() => time);
@@ -169,4 +208,23 @@ test('cli creates hashed secrets and runs commands end to end', () => {
   await run(['verify']);
   await run(['backup', '--to', `${db}.copy`]);
   })();
+});
+
+test('OIDC refuses wrong audience, wrong nonce, and a replayed state even with a fresh valid code', async () => {
+  const time = 1_000_000;
+  const provider = new FakeOidcProvider({ clock: () => time });
+  const oidc = new OidcLogin(provider.configuration('https://localhost/api/oidc/callback'), { clock: () => time });
+  const start = async () => {
+    const u = new URL(oidc.begin());
+    return { state: u.searchParams.get('state'), challenge: u.searchParams.get('code_challenge'), nonce: u.searchParams.get('nonce') };
+  };
+  let s = await start();
+  await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce, audience: 'someone-else' }) }), /refused/);
+  s = await start();
+  await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: 'wrong-nonce' }) }), /refused/);
+  s = await start();
+  await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce, iat: 999_000 / 1000 - 100, exp: 999_000 / 1000 - 10 }) }), /refused/);
+  s = await start();
+  await oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce }) });
+  await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce }) }), /refused/);
 });

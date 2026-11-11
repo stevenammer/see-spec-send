@@ -122,6 +122,12 @@ const mutants = [
   ['evidence honesty label', "(evidence.kind !== 'reported' || nonempty(evidence.reported_by));", 'true;'],
   ['builder egress policy', "policy.egress.length !== 0", 'false'],
   ['builder emergency kill', 'emergencyKill(`builder policy violation: ${attempt.kind}`);', ''],
+  ['oidc state single use', 'this.pending.delete(state);', ''],
+  ['oidc state expiry', 'pending.expires <= this.clock()', 'false'],
+  ['oidc issuer check', 'claims.iss !== this.issuer', 'false'],
+  ['oidc audience check', '!audience.includes(this.clientId)', 'false'],
+  ['oidc nonce check', 'claims.nonce !== nonce', 'false'],
+  ['oidc token expiry', 'claims.exp <= now', 'false'],
   ['draft explicit approval', "if (approved !== true) throw Error('explicit approval required');", ''],
 ];
 
@@ -149,7 +155,7 @@ for (const [name, find, replace] of selected) {
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
   const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/store.js', 'cli.js',
     'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
-    'worker/control.js', 'worker/policy.js', 'drafting/preflight.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js'];
+    'worker/control.js', 'worker/policy.js', 'drafting/preflight.js', 'app/oidc.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {

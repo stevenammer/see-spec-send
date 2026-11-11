@@ -51,13 +51,18 @@ function redactBody(type, body) {
 }
 
 export class Store {
-  constructor(file = ':memory:') {
-    if (file !== ':memory:' && file !== '') {
+  // `database` is deliberately a small synchronous compatibility surface
+  // (`exec`, `prepare`, and `close`).  It keeps the event-store contract
+  // independent of SQLite without making an unreviewed network client the
+  // default runtime.
+  constructor(file = ':memory:', { database, kind = 'sqlite' } = {}) {
+    if (!database && file !== ':memory:' && file !== '') {
       // The database holds event bodies and token digests: owner-only from the first byte.
       closeSync(openSync(file, 'a', 0o600));
       chmodSync(file, 0o600);
     }
-    this.db = new DatabaseSync(file);
+    this.kind = kind;
+    this.db = database || new DatabaseSync(file);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS actors(
         id TEXT PRIMARY KEY, kind TEXT CHECK(kind IN ('person','gateway','run')),

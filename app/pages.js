@@ -25,10 +25,10 @@ const shell = (title, content) =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See it. Spec it. Send it.</a></header><main>${content}</main><script src="/assets/app.js" defer></script></body></html>`;
 const progress = item => `${item.helpers} of ${item.quorum} people have said it helps`;
 
-export function signInPage() {
+export function signInPage({ oidc = false } = {}) {
   return shell(
     'Sign in',
-    `<h1>Sign in</h1><form data-api="/api/login" data-next="/"><label>Your ID<input name="id" required autocomplete="username"></label><label>Password<input name="password" type="password" required autocomplete="current-password"></label><button>Sign in</button></form><p><a href="/redeem">Redeem an invite</a></p>`,
+    `<h1>Sign in</h1><form data-api="/api/login" data-next="/"><label>Your ID<input name="id" required autocomplete="username"></label><label>Password<input name="password" type="password" required autocomplete="current-password"></label><button>Sign in</button></form>${oidc ? '<p><a class="button" href="/api/oidc/start">Sign in with your organization</a></p>' : ''}<p><a href="/redeem">Redeem an invite</a></p>`,
   );
 }
 

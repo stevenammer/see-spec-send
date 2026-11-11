@@ -17,6 +17,7 @@ export class Auth {
     this.store = store;
     this.db = store.db;
     this.clock = options.clock || now;
+    this.oidc = options.oidc || null;
     this.buckets = new Map();
     this.setup();
   }
@@ -36,11 +37,12 @@ export class Auth {
     CREATE TABLE IF NOT EXISTS sessions(
       digest TEXT PRIMARY KEY, person TEXT NOT NULL, csrf TEXT NOT NULL, created INTEGER NOT NULL,
       seen INTEGER NOT NULL, expires INTEGER NOT NULL, stepup INTEGER NOT NULL DEFAULT 0,
-      stepup_used INTEGER NOT NULL DEFAULT 0
+      stepup_used INTEGER NOT NULL DEFAULT 0, auth_method TEXT NOT NULL DEFAULT 'password'
     );
     CREATE TABLE IF NOT EXISTS api_tokens(
       digest TEXT PRIMARY KEY, kind TEXT NOT NULL, item TEXT NOT NULL
     );`);
+    try { this.db.exec("ALTER TABLE sessions ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'password'"); } catch {}
   }
 
   async passwordRecord(password) {
@@ -146,14 +148,35 @@ export class Auth {
     }
   }
 
-  newSession(person) {
+  newSession(person, authMethod = 'password') {
     const value = token();
     const csrf = token();
     const time = this.clock();
-    const insert = this.db.prepare(`INSERT INTO sessions(digest,person,csrf,created,seen,expires)
-      VALUES(?,?,?,?,?,?)`);
-    insert.run(hash(value), person, csrf, time, time, time + 8 * 60 * minute);
+    const insert = this.db.prepare(`INSERT INTO sessions(digest,person,csrf,created,seen,expires,auth_method)
+      VALUES(?,?,?,?,?,?,?)`);
+    insert.run(hash(value), person, csrf, time, time, time + 8 * 60 * minute, authMethod);
     return { value, csrf };
+  }
+
+  beginOidc() {
+    if (!this.oidc) throw new Error('OIDC unavailable');
+    return this.oidc.begin();
+  }
+
+  async completeOidc(response) {
+    if (!this.oidc) throw new Error('OIDC unavailable');
+    const identity = await this.oidc.complete(response);
+    // Claims never change an existing local account or grant leadership. An
+    // administrator may promote the opaque mapped ID through the normal path.
+    try {
+      const actor = this.store.actor(identity.id, '');
+      if (actor.kind !== 'person') throw new Error('OIDC identity collision');
+    } catch (error) {
+      if (error.message !== 'unknown actor') throw error;
+      this.store.registerPerson(identity.id, { leader: false });
+    }
+    this.revokePerson(identity.id);
+    return this.newSession(identity.id, 'oidc');
   }
 
   async login(id, password, ip = 'local') {
@@ -193,6 +216,7 @@ export class Auth {
     if (!session || !this.allowed(ip, session.person, 'stepup')) {
       throw new Error('step-up unavailable');
     }
+    if (session.auth_method !== 'password') throw new Error('step-up unavailable');
     const user = this.db.prepare('SELECT password FROM users WHERE id=?').get(session.person);
     if (!user || !await this.matches(password, user.password)) throw new Error('step-up unavailable');
     this.db.prepare('UPDATE sessions SET stepup=?,stepup_used=0 WHERE digest=?')

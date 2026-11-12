@@ -78,6 +78,7 @@ export class Ledger {
     demand(validRate(rate), 'invalid gateway rate');
     this.rate = Object.freeze({ ...rate });
     this.db.exec(`CREATE TABLE IF NOT EXISTS gateway_policy(id INTEGER PRIMARY KEY CHECK(id=1), bytes TEXT, seal TEXT);
+      CREATE TABLE IF NOT EXISTS gateway_policy_versions(version INTEGER PRIMARY KEY, bytes TEXT NOT NULL, seal TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS gateway_capabilities(
         digest TEXT PRIMARY KEY, run TEXT NOT NULL, item TEXT NOT NULL, approval INTEGER NOT NULL,
         spec_hash TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
@@ -89,7 +90,11 @@ export class Ledger {
         charged_micros INTEGER NOT NULL, state TEXT NOT NULL, usage TEXT, outcome TEXT, seal TEXT NOT NULL,
         UNIQUE(run,idem));
       CREATE TABLE IF NOT EXISTS gateway_integrity(id INTEGER PRIMARY KEY CHECK(id=1), receipt_count INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS gateway_hold_audit(id TEXT PRIMARY KEY, receipt TEXT NOT NULL, actor TEXT NOT NULL,
+        at INTEGER NOT NULL, action TEXT NOT NULL, refund INTEGER NOT NULL, reason TEXT NOT NULL, seal TEXT NOT NULL);
       INSERT OR IGNORE INTO gateway_integrity SELECT 1,0 WHERE NOT EXISTS(SELECT 1 FROM gateway_receipts);`);
+    const legacy = this.db.prepare('SELECT * FROM gateway_policy WHERE id=1').get();
+    if (legacy) this.db.prepare('INSERT OR IGNORE INTO gateway_policy_versions VALUES(1,?,?)').run(legacy.bytes, legacy.seal);
   }
 
   configure(policy) {
@@ -102,6 +107,27 @@ export class Ledger {
         return;
       }
       this.db.prepare('INSERT INTO gateway_policy VALUES(1,?,?)').run(bytes, digest(bytes));
+      this.db.prepare('INSERT INTO gateway_policy_versions VALUES(1,?,?)').run(bytes, digest(bytes));
+    });
+  }
+
+  setPolicy(policy) {
+    validatePolicy(policy);
+    return transaction(this.store, () => {
+      const current = this.db.prepare('SELECT * FROM gateway_policy WHERE id=1').get();
+      demand(current && current.seal === digest(current.bytes), 'gateway policy is not configured or corrupt');
+      const bytes = canonical(policy); const seal = digest(bytes);
+      const version = this.db.prepare('SELECT COALESCE(MAX(version),0)+1 AS version FROM gateway_policy_versions').get().version;
+      this.db.prepare('INSERT INTO gateway_policy_versions VALUES(?,?,?)').run(version, bytes, seal);
+      this.db.prepare('UPDATE gateway_policy SET bytes=?,seal=? WHERE id=1').run(bytes, seal);
+      return version;
+    });
+  }
+
+  policyVersions() {
+    return this.db.prepare('SELECT * FROM gateway_policy_versions ORDER BY version').all().map(row => {
+      demand(row.seal === digest(row.bytes), 'corrupt gateway policy version');
+      const policy = JSON.parse(row.bytes); validatePolicy(policy); return { version: row.version, policy };
     });
   }
 
@@ -178,11 +204,15 @@ export class Ledger {
     validatePolicy(policy);
     demand(validRate(rate) && row.worst_micros === rateCost(rate, row.input_bound, row.output_bound), 'corrupt reservation amount');
     demand(row.charged_micros <= row.worst_micros, 'corrupt accounting amount');
-    demand(['reserved', 'dispatched', 'settled', 'cancelled'].includes(row.state), 'corrupt receipt state');
+    demand(['reserved', 'dispatched', 'settled', 'cancelled', 'released'].includes(row.state), 'corrupt receipt state');
     if (['reserved', 'dispatched'].includes(row.state)) {
       demand(row.charged_micros === row.worst_micros && row.usage === null && row.outcome === null, 'corrupt hold');
     } else if (row.state === 'cancelled') {
       demand(row.charged_micros === 0 && row.usage === null && row.outcome === null, 'corrupt cancellation');
+    } else if (row.state === 'released') {
+      demand(row.usage === null && row.outcome === null, 'corrupt hold release');
+      const audit = this.db.prepare("SELECT * FROM gateway_hold_audit WHERE receipt=? AND action='release'").all(row.id);
+      demand(audit.length === 1 && audit[0].seal === digest(canonical(Object.fromEntries(Object.entries(audit[0]).filter(([key]) => key !== 'seal')))), 'corrupt hold release audit');
     } else {
       const usage = JSON.parse(row.usage);
       demand(row.charged_micros === this.cost(row, usage), 'corrupt settlement');
@@ -197,6 +227,18 @@ export class Ledger {
     demand(integrity && integer(integrity.receipt_count) && integrity.receipt_count === rows.length,
       'corrupt gateway receipt count');
     return rows.map(row => this.check(row));
+  }
+
+  questReceipts() {
+    const table = this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gateway_quest_receipts'").get();
+    if (!table) return [];
+    return this.db.prepare('SELECT * FROM gateway_quest_receipts ORDER BY id').all().map(row => {
+      demand(row.seal === sealed(row), 'corrupt Quest receipt');
+      demand(['reserved', 'dispatched', 'settled'].includes(row.state), 'corrupt Quest receipt state');
+      demand(integer(row.charged_micros) && integer(row.worst_micros) && row.charged_micros <= row.worst_micros,
+        'corrupt Quest accounting');
+      return row;
+    });
   }
 
   cost(row, usage) {
@@ -228,8 +270,9 @@ export class Ledger {
       const used = add(legacyMicros(this.store, run.item, run.approval),
         sum(rows.filter(row => row.run === run.id)));
       demand(add(used, worst) <= cap, 'run cap exceeded');
-      demand(add(sum(rows), worst) <= policy.global_micros, 'global cap exceeded');
-      demand(add(sum(rows.filter(row => row.day === day)), worst) <= policy.day_micros, 'day cap exceeded');
+      const combined = rows.concat(this.questReceipts());
+      demand(add(sum(combined), worst) <= policy.global_micros, 'global cap exceeded');
+      demand(add(sum(combined.filter(row => row.day === day)), worst) <= policy.day_micros, 'day cap exceeded');
       demand(rows.filter(row => ['reserved', 'dispatched'].includes(row.state)).length < policy.concurrency,
         'gateway concurrency exceeded');
       const row = {
@@ -254,6 +297,32 @@ export class Ledger {
     this.db.prepare('UPDATE gateway_receipts SET state=?,charged_micros=?,usage=?,outcome=?,seal=? WHERE id=?')
       .run(next.state, next.charged_micros, next.usage, next.outcome, next.seal, next.id);
     return next;
+  }
+
+  holds() {
+    return this.receipts().filter(row => ['reserved', 'dispatched'].includes(row.state));
+  }
+
+  holdAudits() {
+    return this.db.prepare('SELECT * FROM gateway_hold_audit ORDER BY at,id').all().map(row => {
+      const { seal: value, ...body } = row;
+      demand(value === digest(canonical(body)), 'corrupt hold audit'); return row;
+    });
+  }
+
+  releaseHold(id, { actor = 'cli', reason, refund = false, at = this.clock() } = {}) {
+    demand(typeof id === 'string' && /^[a-f0-9]{64}$/.test(id), 'invalid hold id');
+    demand(typeof actor === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(actor), 'invalid release actor');
+    demand(typeof reason === 'string' && reason.length > 0 && reason.length <= 2000, 'release reason required');
+    demand(typeof refund === 'boolean' && integer(at), 'invalid hold release');
+    return transaction(this.store, () => {
+      const row = this.check(this.db.prepare('SELECT * FROM gateway_receipts WHERE id=?').get(id));
+      demand(['reserved', 'dispatched'].includes(row.state), 'hold is not releasable');
+      const audit = { id: digest(canonical([id, actor, at, reason, refund])), receipt: id, actor, at, action: 'release', refund: refund ? 1 : 0, reason };
+      audit.seal = digest(canonical(audit));
+      this.db.prepare(`INSERT INTO gateway_hold_audit(${Object.keys(audit).join(',')}) VALUES(${Object.keys(audit).map(() => '?').join(',')})`).run(...Object.values(audit));
+      return this.update(row, { state: 'released', charged_micros: refund ? 0 : row.worst_micros });
+    });
   }
 
   dispatch(raw, id) {

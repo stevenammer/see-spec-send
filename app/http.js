@@ -115,7 +115,7 @@ const validEvent = input => {
   }
 };
 
-export function createHandler({ auth, store, integrations, secure = true, origin = 'https://localhost' }) {
+export function createHandler({ auth, store, integrations, questModel = null, secure = true, origin = 'https://localhost' }) {
   integrations ||= new Integrations(store, { origin });
   const sameOrigin = sameOriginAs(origin);
   const cookieName = secure ? '__Host-sss' : 'sss';
@@ -254,13 +254,14 @@ export function createHandler({ auth, store, integrations, secure = true, origin
         return json(res, 201, { id, state: store.read(id) });
       }
       if (req.method === 'POST' && url.pathname === '/api/quest/model/preflight') {
-        return json(res, 200, preflightQuestModel({ providerName: input.provider, org: input.org || 'default',
-          doc: input.quest, maxOutputTokens: input.max_output_tokens || 800 }));
+        if (!questModel) return json(res, 404, { error: 'not found' });
+        if (typeof questModel.preflight !== 'function') return json(res, 404, { error: 'not found' });
+        return json(res, 200, await questModel.preflight(input, session.person));
       }
       if (req.method === 'POST' && url.pathname === '/api/quest/model/draft') {
-        const output = await draftQuestModel({ providerName: input.provider, doc: input.quest,
-          approved: input.approved, maxOutputTokens: input.max_output_tokens || 800 });
-        return json(res, 200, output);
+        if (!questModel) return json(res, 404, { error: 'not found' });
+        if (typeof questModel.draft !== 'function') return json(res, 404, { error: 'not found' });
+        return json(res, 200, await questModel.draft(session.person, input, req.headers['idempotency-key'] || randomUUID()));
       }
       const artifact = url.pathname.match(/^\/api\/items\/([^/]+)\/artifact\/([a-f0-9]{64})$/);
       if (req.method === 'GET' && artifact) {

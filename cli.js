@@ -6,6 +6,7 @@ import { killed, setKill } from './worker/control.js';
 import { watchdog } from './worker/watchdog.js';
 import { Ledger, fixturePolicy } from './gateway/ledger.js';
 import { Gateway, createGatewayServer, providerGateway } from './gateway/http.js';
+import { QuestGateway } from './gateway/quest.js';
 import { fixtureProvider } from './gateway/fixture.js';
 import { readFileSync } from 'node:fs';
 import { readProviders, saveProviders, validateProvider, providerFor, meteredProviderFor } from './provider/config.js';
@@ -14,6 +15,8 @@ import { SYSTEM_PROMPT } from './worker/builder/index.js';
 import { Auth } from './app/auth.js';
 import { createServerFor } from './app/http.js';
 import { Integrations } from './app/integrations.js';
+import { questModelService } from './provider/quest-service.js';
+import { validateCompletion } from './provider/index.js';
 
 const fail = message => {
   throw new Error(message);
@@ -103,12 +106,22 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
     if (args[0] === 'fixture-enable') {
       ledger.configure(fixturePolicy());
       write('Local fixture enabled. No real provider is configured.');
+    } else if (args[0] === 'policy' && args[1] === 'set') {
+      const source = value('--file') || fail('missing --file');
+      const version = ledger.setPolicy(JSON.parse(readFileSync(source, 'utf8')));
+      write(`gateway policy version ${version} set`);
     } else if (args[0] === 'mint') {
       write(ledger.mint(value('--run') || fail('missing --run')));
     } else if (args[0] === 'revoke') {
       ledger.revokeDigest(value('--digest') || fail('missing --digest'));
     } else if (['status', 'verify'].includes(args[0])) {
       write(JSON.stringify(ledger.summary(value('--item'))));
+    } else if (args[0] === 'holds' && args[1] === 'list') {
+      for (const row of ledger.holds()) write(JSON.stringify(row));
+    } else if (args[0] === 'holds' && args[1] === 'release') {
+      const row = ledger.releaseHold(value('--id') || fail('missing --id'), { actor: value('--actor') || 'cli',
+        reason: value('--reason') || fail('missing --reason'), refund: args.includes('--refund') });
+      write(JSON.stringify({ id: row.id, state: row.state, charged_micros: row.charged_micros }));
     } else if (args[0] === 'serve-fixture') {
       const server = createGatewayServer(new Gateway(ledger, fixtureProvider));
       const port = Number(value('--port') || '8081');
@@ -129,7 +142,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
       const worst = Math.ceil((selected.rate.input_micros_per_million * 8192 + selected.rate.output_micros_per_million * providerLedger.policy().output_tokens) / 1_000_000);
       write(`Metered provider gateway http://127.0.0.1:${server.address().port}; provider=${name}; model=${selected.rate.model}; worst-case=${worst} micro-dollars before approval`);
       return;
-    } else fail('expected gateway fixture-enable, mint, revoke, status, verify, serve-fixture, or serve-provider');
+    } else fail('expected gateway fixture-enable, policy set, mint, revoke, status, verify, holds list, holds release, serve-fixture, or serve-provider');
   } else if (command === 'kill') {
     if (!['set', 'clear', 'status'].includes(args[0])) fail('expected kill set, clear, or status');
     if (args[0] !== 'status') setKill(store, args[0] === 'set');
@@ -182,7 +195,20 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
     // Loopback by default. A container needs --host 0.0.0.0 so its published port reaches the server.
     const host = value('--host') || '127.0.0.1';
     if (!/^[0-9a-fA-F:.]+$/.test(host)) fail('--host must be an IP address');
-    const server = createServerFor({ store, auth, integrations, secure: !insecure, origin });
+    let questModel = null;
+    if (args.includes('--enable-quest-model')) {
+      const name = value('--quest-provider') || readProviders(env).defaults.default || fail('missing --quest-provider or configured default');
+      const selected = meteredProviderFor(name, env); const ledger = new Ledger(store, { rate: selected.rate });
+      if (!ledger.policy().enabled) fail('gateway is disabled');
+      const gateway = new QuestGateway(ledger, async input => {
+        const result = validateCompletion(await selected.provider.complete({ system: 'Draft only. Never decide or claim verification. Return JSON only.',
+          messages: [{ role: 'user', content: input.input }], maxOutputTokens: input.max_output_tokens, model: input.model,
+          signal: AbortSignal.timeout(ledger.policy().timeout_ms) }));
+        return { output: result.text, usage: { input_tokens: result.usage.inputTokens, output_tokens: result.usage.outputTokens } };
+      });
+      questModel = questModelService(gateway, name, env);
+    }
+    const server = createServerFor({ store, auth, integrations, questModel, secure: !insecure, origin });
     await new Promise(resolve => server.listen(port, host, resolve));
     write(`Serving ${origin}`);
     if (insecure) write('WARNING: insecure cookies are enabled for local HTTP development only.');

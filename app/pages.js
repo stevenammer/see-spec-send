@@ -168,6 +168,9 @@ export function questPage(person) {
         <button type="button" id="quest-compact">Compact</button>
         <button type="button" id="quest-squirrel">Squirrel?</button>
         <button type="button" id="quest-export">Export draft</button>
+        <button type="button" id="quest-portable-export">Export portable prompt</button>
+        <label>Paste portable memo JSON<textarea id="quest-portable-memo" maxlength="120000"></textarea></label>
+        <button type="button" id="quest-portable-import">Check pasted memo</button>
         <button type="button" id="quest-new">Start another quest</button>
         <div id="quest-history"></div>
         <label>Restore your own draft file<input type="file" id="quest-restore"

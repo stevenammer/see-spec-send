@@ -23,6 +23,7 @@ token once. Only its digest is stored.
 
 `node cli.js verify` verifies each item's hash chain. `node cli.js export` prints JSONL.
 `node cli.js backup --to FILE` checkpoints SQLite then copies its database file.
+`node cli.js restore --from FILE` restores into a database path that doesn't already exist.
 
 Import trusts the actor registry inside the JSONL before replaying events. Import is an
 administrator action. Run it only on an export you made yourself.
@@ -52,6 +53,11 @@ stop in SQLite. It blocks new starts, charges, and try delivery. Existing runs g
 persistent stop requests. A running worker tells the adapter to stop on its next pass
 and retries until it observes a terminal status. If the worker isn't running, I have
 to start it to finish those stop requests. This isn't a host-level process watchdog.
+
+`node cli.js watchdog` is the host-level companion. It fails closed when a worker
+heartbeat is stale, a run is beyond its wall-clock cap, or an old dead or sending
+outbox entry is found. It calls the same kill latch and records `watchdog.stop`.
+Install the unit in `docs/systemd/` or use Compose. See [QUICKSTART_ORG.md](QUICKSTART_ORG.md).
 
 `node cli.js kill status` prints `stopped` or `clear`.
 `node cli.js kill clear` explicitly clears the latch. It never revives a stopped run.

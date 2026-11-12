@@ -18,6 +18,7 @@ Then open http://127.0.0.1:8080/. It can't run from a `file://` address, because
 
 - **The state machine.** `demo/lib/machine.js` is a generated copy of `core/machine.js`. Run `npm run sync:demo` to regenerate it. `npm run check:demo` fails if the copy has drifted, and CI runs it.
 - **The refusals.** When the author or the approver says "it helps", or anyone tries to mark it done, the machine refuses. The page says which rule fired. The same sequence as [WATCH_IT_REFUSE.md](WATCH_IT_REFUSE.md) plays at one click, and a test checks that it matches that file.
+- **Vision Quest, no model.** A fictional Quest memo is derived in the browser from the same deterministic guide copied from `public/vision-quest.js`. It makes no calls and isn't authority.
 
 ## What's close, but smaller
 
@@ -30,7 +31,7 @@ Then open http://127.0.0.1:8080/. It can't run from a `file://` address, because
 - The SQLite store and exports.
 - The leader password step-up before approving.
 - A playable try. In the demo, a try is a short note, so nothing a visitor types can run.
-- Builder runs, the cost gateway, and the model layer (none of those exist in the project yet either).
+- Builder runs, the cost gateway, provider configuration, and model calls.
 - Sending a spec back, changing the steward, and erasing text. The machine has them. The demo doesn't.
 - More than one item at a time.
 

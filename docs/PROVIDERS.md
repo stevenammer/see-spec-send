@@ -122,6 +122,12 @@ errors redact credential-shaped text.
 Model output is untrusted text. It is labeled as model output and can never
 approve work, alter the ledger, change a spec, or act as instructions.
 
+Vision Quest uses the same provider boundary. `POST /api/quest/model/preflight`
+returns the exact Quest packet and worst-case estimate for an enabled named provider.
+`POST /api/quest/model/draft` requires that exact caller to send `approved: true`.
+The response is draft text only and must still match the Quest's deterministic memo
+schema before the browser accepts it. No-model Quest remains the default.
+
 The offline tests use only loopback mock servers and local commands. They prove
 wire parsing and the controls described here. They do not make live vendor calls,
 verify a vendor's current API behavior, prove DNS-rebinding resistance after the

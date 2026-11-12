@@ -1,5 +1,5 @@
 import { STEPS, answerQuest, checkedFromQuest, compactQuest, deriveQuest,
-  emptyQuest, nextQuestion, playback, safetyStop, squirrel, validateQuest } from './vision-quest.js';
+  emptyQuest, nextQuestion, playback, safetyStop, squirrel, validateQuest, portableQuestPrompt, importPortableMemo } from './vision-quest.js';
 import { clearPending, loadDraft, loadPending, restoreDraft, saveDraft, savePending,
   sealQuest, readDraftHead, loadRevision, archivePending, loadArchivedPending,
   discardArchivedPending, startAnotherQuest, questHistory, postedQuestItem, markQuestPosted } from './quest-storage.js';
@@ -283,9 +283,9 @@ async function recoveryDoc() {
   return { ...saved.doc, pending: { step: activeForm.step.key,
     value: String(data.get('answer') || ''), note: String(data.get('note') || '') } };
 }
-function download(bytes, filename) {
+function download(bytes, filename, type = 'application/json') {
   const link = node('a');
-  link.href = URL.createObjectURL(new Blob([bytes], { type: 'application/json' }));
+  link.href = URL.createObjectURL(new Blob([bytes], { type }));
   link.download = filename;
   link.click();
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
@@ -328,6 +328,16 @@ document.getElementById('quest-export').addEventListener('click', async () => {
   try {
     const bytes = await sealQuest(await recoveryDoc());
     download(bytes, 'vision-quest.json');
+  } catch (err) { fail(err); }
+});
+document.getElementById('quest-portable-export').addEventListener('click', async () => {
+  try { download(portableQuestPrompt(await recoveryDoc()), 'vision-quest-portable-prompt.txt', 'text/plain'); }
+  catch (err) { fail(err); }
+});
+document.getElementById('quest-portable-import').addEventListener('click', async () => {
+  try {
+    const imported = importPortableMemo(document.getElementById('quest-portable-memo').value, await recoveryDoc());
+    document.getElementById('quest-note').textContent = `${imported.label}\nPortable memo matches this Quest schema.`;
   } catch (err) { fail(err); }
 });
 document.getElementById('quest-restore').addEventListener('change', async event => {

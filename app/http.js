@@ -1,5 +1,6 @@
 import { meteringSummary } from '../gateway/ledger.js';
 import { checkedFromQuest } from '../public/vision-quest.js';
+import { preflightQuestModel, draftQuestModel } from '../provider/vision-quest.js';
 import { createServer } from 'node:http';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -221,6 +222,15 @@ export function createHandler({ auth, store, integrations, secure = true, origin
           at: new Date().toISOString(), ...eventBody },
         { idem: input.quest ? `quest:${id}` : randomUUID() });
         return json(res, 201, { id, state: store.read(id) });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/quest/model/preflight') {
+        return json(res, 200, preflightQuestModel({ providerName: input.provider, org: input.org || 'default',
+          doc: input.quest, maxOutputTokens: input.max_output_tokens || 800 }));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/quest/model/draft') {
+        const output = await draftQuestModel({ providerName: input.provider, doc: input.quest,
+          approved: input.approved, maxOutputTokens: input.max_output_tokens || 800 });
+        return json(res, 200, output);
       }
       const artifact = url.pathname.match(/^\/api\/items\/([^/]+)\/artifact\/([a-f0-9]{64})$/);
       if (req.method === 'GET' && artifact) {

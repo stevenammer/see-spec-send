@@ -1,0 +1,16 @@
+[Unit]
+Description=See Spec Send watchdog
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/see-spec-send
+Environment=SSS_DB=/var/lib/see-spec-send/sss.db
+ExecStart=/bin/sh -c 'while true; do /usr/bin/node /opt/see-spec-send/cli.js watchdog; sleep 10; done'
+Restart=on-failure
+User=see-spec-send
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

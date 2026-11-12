@@ -5,9 +5,22 @@ this way?" problem and turns it into a checked problem and a decision memo. Some
 the memo says don't build anything: change a setting, use something you already have,
 or change how the work is done.
 
-This is the form with no AI model. It asks fixed questions in a fixed order, and it
-never calls a model or any outside service. A person can run the whole thing, and
-nothing is posted until they say so.
+No-model mode is the default. It asks fixed questions in a fixed order and never calls
+a model or outside service. A person can run the whole thing, and nothing is posted
+until they say so.
+
+## Optional model and portable modes
+
+An organization can export one portable prompt file and paste it into a chat tool it
+already uses. Pasting the memo back only succeeds when it matches the deterministic
+memo from this same Quest schema. A chat tool can't change the recommendation, facts,
+or workflow state through that import.
+
+An administrator can choose a reviewed provider. Before a call, the provider layer
+exposes the exact prompt packet, model, input bound and worst-case micro-dollar cost.
+The caller must explicitly approve that packet. The response is labeled model output,
+review required, and it isn't authority. It can't approve, post, change a spec, or
+establish a fact. The standard no-model guide remains available.
 
 ## How to run a session
 

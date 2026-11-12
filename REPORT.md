@@ -1,58 +1,29 @@
-# Slice 11 to 12 wiring report
+# Slice 14 report
+
+## Outcome check
+
+- Vision Quest keeps no-model mode as the default. Portable prompts and strict memo import use the same deterministic Quest schema. The opt-in provider seam preflights a reviewed provider packet and requires explicit approval. Model text is labeled as draft output and cannot change authority or state.
+- The anonymous demo has a fictional, no-model Quest memo derived from the shared generated core. It makes no network calls.
+- `watchdog` checks stale heartbeats, wall-clock run age, and old dead or sending outbox rows. It calls the existing kill latch and writes `watchdog.stop`. Offline tests cover stale heartbeat and outbox stop paths.
+- `compose.yaml`, the systemd unit, quickstart, and backup and restore drill are present. The drill has an offline test.
+- README now separates built and offline-proven seams from production identity, Postgres, and live provider work that remains unexercised.
 
 ## Assumptions
 
-- An administrator starts the gateway with the same organization default that
-  the container adapter reads. `provider default --org ORG --name NAME` records
-  that choice. No enabled default means the fixture remains the builder model.
-- The gateway policy has already been fixed before a provider gateway starts.
-- A provider's integer price table is the organization's reviewed estimate, not
-  a vendor invoice.
+- A portable chat tool is untrusted. Its pasted memo must exactly equal the local deterministic memo, so it can assist drafting but cannot alter a decision.
+- A dead or long-lived sending outbox row past the configured threshold is unrecoverable enough to fail closed. An operator investigates, then explicitly clears the latch.
+- The watchdog's defaults are 15 seconds for heartbeat and 15 minutes for runs and outbox. Operators can override them on the CLI.
+- Compose is a local or small-host quickstart, not a production container security profile. The optional container builder keeps its existing separate gateway setup.
 
-## What changed
+## Open questions
 
-- The container adapter resolves an enabled organization default to its reviewed
-  model name and passes only that non-secret model name to the builder.
-- The gateway server uses the configured provider upstream and a fixed static
-  page system instruction. Provider credentials remain in the gateway process.
-- The builder sends only `must`, `how_we_know`, and `out_of_scope` as its user
-  content. It strips surrounding model commentary or fences, validates the
-  static page, allows one separately metered repeat request, then fails.
-- Container-delivered tries are marked `model_output` and the work log says
-  “model output”. The command reports provider, model, and conservative
-  worst-case micro-dollar hold before approval.
-
-## Per-control proof
-
-| Control | Proof |
-| --- | --- |
-| Fixture stays default | `ContainerAdapter` uses `fixture:text-v1` unless an enabled org default is present. |
-| Provider key boundary | `test/container.test.mjs` checks provider-secret text is absent from Docker arguments, environment entries, and bind mounts. Provider adapters retain the key only on the gateway host. |
-| Cap, reservation, settlement, idempotency, kill | Existing `gateway/ledger.js` remains the sole admission and settlement path. No control was bypassed. |
-| Model output validation | `test/builder.test.mjs` proves deterministic extraction and script rejection. |
-| Model label | `Worker.deliver` records `model_output`; `app/pages.js` renders it. |
-| New mutants | `container gateway model binding` and `builder markdown extraction` were added to `scripts/mutate-check.mjs`. |
+- Do organizations want a less strict model-draft import that accepts a separately reviewed, schema-validated prose memo? That would need a human acceptance step and a new immutable record, not automatic overwrite.
+- What heartbeat and outbox limits fit the first real deployment's worker cadence and destination SLAs?
+- Which production identity provider and Postgres operational model should be exercised first?
 
 ## Verification
 
-- Passed in this checkout with Node 22: the suite reached and passed all files
-  through `test/demo-safety.test.mjs`, including new `test/builder.test.mjs` and
-  `test/container.test.mjs`.
-- Not verified here: gateway HTTP tests need a local loopback listener. This
-  restricted sandbox returns `EPERM` for `127.0.0.1`, so `test/gateway.test.mjs`
-  cannot complete here. Its existing local mock coverage includes success,
-  caps, missing usage, idempotency, and stop/kill cases.
-- Not verified here: `npm run test:container`. It requires the real Docker
-  daemon outside this sandbox. The existing acceptance test is intentionally
-  non-skipping and will fail loudly without its pinned image.
-- Unverified UI detail: the approval page states the gateway administrator must
-  review the printed provider/model/worst-case amount. It does not yet fetch
-  that data into the browser approval form. The CLI command is the source of
-  truth for that preflight display.
-
-## Remaining review points
-
-- Run `npm test`, `npm run check:mutants`, and `npm run test:container` on the
-  unrestricted host. Use only a local mock provider for those tests.
-- Before an actual vendor smoke, follow the live-smoke checklist in
-  `docs/PROVIDERS.md` and read the command's printed worst-case hold.
+- `npm run check:demo` passed.
+- `npm run check:public` passed.
+- Focused worker, Vision Quest, watchdog, backup, restore, and demo drift tests passed.
+- Full `npm test` reached existing local HTTP gateway tests that cannot bind `127.0.0.1` in this restricted sandbox (`EPERM`). No external call was attempted. The same restriction prevents a complete mutation-suite run here.

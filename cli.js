@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { Store } from './core/store.js';
 import { Worker } from './worker/runner.js';
 import { killed, setKill } from './worker/control.js';
+import { watchdog } from './worker/watchdog.js';
 import { Ledger, fixturePolicy } from './gateway/ledger.js';
 import { Gateway, createGatewayServer, providerGateway } from './gateway/http.js';
 import { fixtureProvider } from './gateway/fixture.js';
@@ -25,6 +26,16 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
     return index < 0 ? undefined : args[index + 1];
   };
   const file = env.SSS_DB || 'sss.db';
+  // Restore must run before opening SQLite. Opening a missing target would create it.
+  if (command === 'restore') {
+    const source = value('--from') || fail('missing --from');
+    if (!existsSync(source)) fail('backup missing');
+    if (existsSync(file)) fail('restore target already exists');
+    copyFileSync(source, file, constants.COPYFILE_EXCL);
+    chmodSync(file, 0o600);
+    write('restored');
+    return;
+  }
   const store = new Store(file);
   const auth = new Auth(store);
   const integrations = new Integrations(store);
@@ -129,6 +140,9 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
       worker.reconcile();
       if (!args.includes('--once')) await new Promise(resolve => setTimeout(resolve, 250));
     } while (!args.includes('--once'));
+  } else if (command === 'watchdog') {
+    const result = watchdog(store, { heartbeatMs: Number(value('--heartbeat-ms') || 15000), runMs: Number(value('--run-ms') || 900000), outboxMs: Number(value('--outbox-ms') || 900000) });
+    write(JSON.stringify(result));
   } else if (command === 'init') {
     if (auth.db.prepare('SELECT 1 FROM users LIMIT 1').get()) fail('already initialized');
     const password = `Start-${randomBytes(18).toString('base64url')}-9a`;

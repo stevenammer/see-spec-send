@@ -12,6 +12,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/worker-path.test.mjs', 'test/gateway.test.mjs', 'test/slice9.test.mjs', 'test/slice7.test.mjs', 'test/slice8.test.mjs',
   'test/provider.test.mjs',
   'test/slice13.test.mjs',
+  'test/slice14.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
@@ -46,6 +47,11 @@ const mutants = [
   ['worker stop retry', "if (!terminal(observed.state)) return;", 'if (false) return;'],
   ['worker stopped token', "run.status === 'stopped' || (event.type !== 'failed' && run.status !== 'active')", 'false'],
   ['worker store kill gate', "if (['tried', 'charged'].includes(event.type) && killed(store))", 'if (false)'],
+  ['watchdog stale heartbeat', 'now - heartbeat.at > heartbeatMs', 'false'],
+  ['watchdog unrecoverable outbox', "state IN ('dead','sending')", "state IN ('delivered')"],
+  ['watchdog emergency stop', 'setKill(store, true);', 'setKill(store, false);'],
+  ['portable Quest schema binding', 'JSON.stringify(value.memo) !== JSON.stringify(expected)', 'false'],
+  ['portable Quest explicit approval', "if (approved !== true) throw Error('explicit approval required');", 'if (false)'],
   ['fake idempotent start', 'INSERT OR IGNORE INTO fake_jobs VALUES(?,?,?,?)', 'INSERT INTO fake_jobs VALUES(?,?,?,?)'],
   ['fake identity binding', 'if (prior && prior.input !== input)', 'if (false)'],
   ['fake stop observed', "DO UPDATE SET status='stopped'", "DO UPDATE SET status='ready'"],
@@ -195,7 +201,7 @@ for (const [name, find, replace] of selected) {
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
   const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/store.js', 'cli.js',
     'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
-    'worker/control.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js'];
+    'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'provider/vision-quest.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {

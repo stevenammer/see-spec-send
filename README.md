@@ -21,14 +21,15 @@ I'm building this in public, and it's early. Here's the honest state:
 - **Works and tested:**
   - **The core.** A small state machine that decides what can happen to an item, and a local store that records every step in a tamper-evident chain. Money is exact, builder events are tied to the approval they were built under, and each event hashes the authority it was accepted under. Registry edits cannot rewrite history. Exports include the registry, so importing is an administrator action for files you exported yourself.
   - **The manual path with a web UI.** A person can post a checked problem, write a spec, have a leader who isn't the steward approve it with a password step-up, deliver one safe playable try, and reach Helps only when other people say it helps.
-  - **Vision Quest without a model.** A signed-in person can work through one question at a time, correct the playback, and end with a memo that recommends BUILD, CONFIGURE, BUY OR USE, PROCESS CHANGE or KILL. Posting makes one checked problem, and a build proposal opens the steward's spec form with a first draft. Draft answers survive a reload, corrections keep the originals, and earlier quests can be exported after starting another. Shared items keep the derived memo; raw conversation stays browser-side at rest. Posting is safe to retry. It makes no AI calls. See [docs/VISION_QUEST.md](docs/VISION_QUEST.md) for the exact boundaries.
+  - **Vision Quest.** No-model mode is the default. It also has a portable prompt file for an organization's existing chat tool, a strict memo import, and an opt-in provider draft seam. Provider use shows the exact packet and worst-case cost before explicit approval. Every result is model output, never authority. The anonymous demo includes a fictional no-model Quest using the same core. See [docs/VISION_QUEST.md](docs/VISION_QUEST.md).
   - **Sign-in and a small HTTP API.** Invites, passwords, sessions, CSRF protection, rate limits, and a leader step-up before anything gets approved. The command line is the only admin surface. See [docs/ADMIN.md](docs/ADMIN.md) and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md), which also lists what's not covered.
   - **The local worker, fake builder and Docker builder adapter.** An approved spec can reach a small static try through one durable run. The container adapter has no Docker network, a pinned image, a non-root read-only process, hard CPU, memory, PID and wall-clock limits, and one writable output directory. It can only ask the local fixture gateway through a mounted Unix socket. The normal suite proves its non-Docker logic. A separate local-Docker acceptance run checks the actual container controls and worker delivery. It uses a mock gateway, not a model or external API. See [docs/ADAPTER.md](docs/ADAPTER.md).
   - **Kept work records.** Comments pin the spec or artifact version they address, evidence keeps its source and honesty label, members can add check-ins, and a leader-only stewardship handoff cannot reopen a past steward's vote.
   - **Optional fixture drafting.** A preflight exposes the exact packet and worst-case estimate. It cannot send without explicit approval, and every result is labeled model output. See [docs/DRAFTING.md](docs/DRAFTING.md).
   - **Bring-your-own-provider builders.** An administrator can configure a reviewed, priced provider. The real container builder sends only the approved spec lists through the local metering gateway. The provider key stays on the gateway host, never in the container or browser. The offline suite uses local mocks only. See [docs/PROVIDERS.md](docs/PROVIDERS.md).
   - **Signed integrations.** Organization tools can report a source-labeled Seen problem with a five-minute HMAC receipt. Outbound event receipts use a durable signed outbox and leave private text out by default. See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
-  - **Not built yet:** a process watchdog, portable/model-assisted Vision Quest, Vision Quest in the anonymous demo, and production identity/database work. Live vendor calls have not been exercised by the tests. Don't try to run an organization on this yet.
+  - **Watchdog and operations.** The watchdog checks worker heartbeats, wall-clock run caps, and unrecoverable outbox rows. It stops through the existing emergency latch and records an event. Compose, a systemd unit, and an offline backup and restore drill are included in [docs/QUICKSTART_ORG.md](docs/QUICKSTART_ORG.md).
+  - **Still optional and not exercised against external services:** a production identity provider, Postgres, and live vendor calls. Don't treat the offline tests as proof of a vendor bill or production deployment.
 
 I'm treating tests as claims. `npm test` runs them, and `npm run check:mutants` deliberately breaks individual controls and checks that the tests notice. If a test can't fail, I don't count it.
 
@@ -70,6 +71,7 @@ These are the checks. There are no dependencies to install for the first four.
 npm test
 npm run check:mutants
 npm run check:public
+npm run check:demo
 npm run test:listen
 npm run test:container
 ```

@@ -13,7 +13,9 @@ export function setup(store, file) {
       run_actor TEXT UNIQUE NOT NULL, gateway_actor TEXT UNIQUE NOT NULL,
       status TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0, UNIQUE(item,approval)
     );
+    CREATE TABLE IF NOT EXISTS worker_heartbeat(id INTEGER PRIMARY KEY CHECK(id=1), at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS fake_jobs(id TEXT PRIMARY KEY, input TEXT NOT NULL, html TEXT NOT NULL, status TEXT NOT NULL);`);
+  try { store.db.exec('ALTER TABLE runs ADD COLUMN started_at INTEGER'); } catch {}
 }
 
 export function killed(store) {

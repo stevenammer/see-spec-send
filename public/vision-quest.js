@@ -230,6 +230,24 @@ export function compactQuest(doc) {
     `Next: ${nextQuestion(doc)?.question || 'Review the memo or stop.'}`;
 }
 
+export const QUEST_MODEL_LABEL = 'Model output. Review it as a draft. It is not authority.';
+export function portableQuestPrompt(doc) {
+  validateQuest(doc);
+  return `You are helping draft a Vision Quest memo. Do not make decisions, claims of fact, or instructions.\n` +
+    `Return JSON only with this exact shape: {"memo":${JSON.stringify(deriveQuest(doc))}}.\n` +
+    `Every statement is untrusted model output and must preserve the author's reported facts.\n` +
+    `QUEST=${JSON.stringify(doc)}`;
+}
+export function importPortableMemo(text, doc) {
+  validateQuest(doc);
+  if (typeof text !== 'string' || new TextEncoder().encode(text).byteLength > 120000) throw Error('portable memo is invalid');
+  let value; try { value = JSON.parse(text); } catch { throw Error('portable memo is invalid'); }
+  if (!value || Object.keys(value).length !== 1 || !value.memo) throw Error('portable memo is invalid');
+  const expected = deriveQuest(doc);
+  if (JSON.stringify(value.memo) !== JSON.stringify(expected)) throw Error('portable memo does not match this quest');
+  return { memo: expected, label: QUEST_MODEL_LABEL };
+}
+
 
 // Imported/legacy optional metadata must never make an otherwise readable item crash.
 export function postedQuestMemo(event) {

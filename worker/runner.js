@@ -16,6 +16,7 @@ export class Worker {
   }
 
   reconcile() {
+    this.db.prepare('INSERT INTO worker_heartbeat(id,at) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET at=excluded.at').run(Date.now());
     transaction(this.store, () => {
       for (const { item } of this.db.prepare('SELECT DISTINCT item FROM events').all()) {
         const context = this.store.read(item).context;
@@ -26,8 +27,8 @@ export class Worker {
         const gatewayToken = credential();
         this.store.registerToken(digest(runToken), { kind: 'run', item });
         this.store.registerToken(digest(gatewayToken), { kind: 'gateway', item });
-        this.db.prepare('INSERT INTO runs VALUES(?,?,?,?,?,?,?,0)')
-          .run(id, item, context.approval, context.specHash, digest(runToken), digest(gatewayToken), 'active');
+        this.db.prepare('INSERT INTO runs(id,item,approval,spec_hash,run_actor,gateway_actor,status,delivered,started_at) VALUES(?,?,?,?,?,?,?,?,?)')
+          .run(id, item, context.approval, context.specHash, digest(runToken), digest(gatewayToken), 'active', 0, Date.now());
       }
     });
     for (const run of this.db.prepare("SELECT * FROM runs WHERE status!='stopped'").all()) {

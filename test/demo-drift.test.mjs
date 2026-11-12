@@ -16,8 +16,10 @@ test('the check fails when the copy is edited, missing, or the source changes', 
   const root = mkdtempSync(join(tmpdir(), 'sss-drift-'));
   try {
     mkdirSync(join(root, 'core'));
+    mkdirSync(join(root, 'public'));
     cpSync(new URL('../core/machine.js', import.meta.url), join(root, 'core/machine.js'));
-    assert.deepEqual(drifted(root), ['demo/lib/machine.js'], 'missing copy counts as drift');
+    cpSync(new URL('../public/vision-quest.js', import.meta.url), join(root, 'public/vision-quest.js'));
+    assert.deepEqual(drifted(root), ['demo/lib/machine.js', 'demo/lib/vision-quest.js'], 'missing copies count as drift');
     sync(root);
     assert.deepEqual(drifted(root), []);
     const copy = join(root, 'demo/lib/machine.js');

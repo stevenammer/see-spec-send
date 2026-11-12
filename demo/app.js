@@ -4,6 +4,7 @@ import { createSession, perform, summary, checkKinds, restoreArtifacts } from '.
 import { item, makeRoster } from './lib/roster.js';
 import { tourSteps, playStep } from './lib/tour.js';
 import { renderEvents, renderRefusals, renderResult, renderStatus, renderTour, renderWho } from './lib/render.js';
+import { answerQuest, deriveQuest, emptyQuest } from './lib/vision-quest.js';
 
 const storageKey = 'sss-demo-v1';
 const $ = id => document.getElementById(id);
@@ -50,6 +51,13 @@ async function act(action, input) {
 const field = (form, name) => form.elements[name]?.value ?? '';
 
 function wire() {
+  $('quest-example').addEventListener('click', () => {
+    let quest = emptyQuest('fictional-maya');
+    const answers = { occurrence: 'A fictional refund is copied twice.', problem: 'A fictional team copies refunds twice.', chair: 'The workaround feels safe.', depends: 'A fictional billing screen.', baseline: 'Fictional duplicate effort.', better: 'One small fictional list.', have: 'unavailable', pay_for: 'unavailable', free: 'unavailable', setting: 'unavailable', playback: 'yes', priority: 'Keep the current queue.', frontline: 'Exceptions may be missed.', skeptic: 'Past changes caused noise.', strongest: 'It may not save enough time.', first_test: 'Try one read-only list.', stop: 'Stop if it misses a refund.', owner: 'Fictional queue lead.', informed: 'Fictional refund team.', risk: 'low', reversible: 'Turn off the list.', out_scope: 'No billing changes.', impact: '3', repeat: '4', control: '4', evidence: '3', approach: 'build' };
+    for (const [key, value] of Object.entries(answers)) quest = answerQuest(quest, key, value);
+    const memo = deriveQuest(quest);
+    $('quest-example-out').textContent = `Fictional result: ${memo.recommendation}. ${memo.reason}\n${JSON.stringify(memo.memo, null, 2)}`;
+  });
   $('who').addEventListener('change', event => {
     if (event.target.name === 'who') { app.current = event.target.value; app.result = null; paint(); }
   });

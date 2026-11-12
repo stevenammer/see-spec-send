@@ -53,13 +53,12 @@ same default. With no enabled default, the builder keeps using the local fixture
 so a new installation cannot spend by accident. The gateway host, not the
 container, resolves the provider URL and credential.
 
-`gateway serve-provider` only starts an enabled provider behind the existing
-capability gateway. Configure the gateway's operator policy first. It uses the
-provider's frozen price table for reservation and settlement, and the existing
-approval cap, concurrency, idempotency, dispatch, settle, and kill controls.
-It prints the provider name, model, and conservative worst-case micro-dollar
-hold before a leader approves a try. The approved cap remains frozen in the
-ledger, and every model-built artifact is labelled model output in the work log.
+`gateway serve-provider` is built but not usable as a production path. There is
+no CLI command to configure an operator policy: `fixture-enable` is the only
+policy-setting command. The worker ignores providers and always uses the fake
+adapter, so an administrator cannot start a provider-backed builder through the
+product. Slow or failed calls can also leave holds that permanently exhaust the
+fixed concurrency limit. Do not use this route for an organization provider.
 
 ## Admin live-smoke checklist
 
@@ -67,10 +66,7 @@ This is the only intentional live-provider path. It can charge the organization.
 
 1. Put the key in its protected environment variable or owner-readable key file.
 2. Add the reviewed provider entry and set its organization default.
-3. Configure the gateway policy, then start `gateway serve-provider --org YOUR_ORG`.
-4. Read the printed provider, model, and worst-case micro-dollar amount. Confirm it is within the amount the leader intends to approve.
-5. Approve one small spec with a cap at least that amount, run the worker with the matching organization default, and inspect `gateway status` afterward.
-6. Use `sss kill set` if the run must stop. Don't use a real key in tests.
+3. Stop here. The required operator-policy command and provider-backed worker do not exist yet.
 
 The builder sends a fixed system instruction plus exactly `must`, `how_we_know`,
 and `out_of_scope`. It does not send comments, people, browser data, or secrets.
@@ -116,17 +112,17 @@ local provider. URLs can't carry credentials or fragments. The only accepted
 query is Azure's single non-secret `api-version` parameter. Each
 request checks the configured host allowlist, resolves it, and refuses private,
 link-local, loopback, and metadata-style addresses unless `allowPrivate` is
-true. Redirects are refused. Requests and responses are capped, timed out, and
-errors redact credential-shaped text.
+true. Redirects are refused. Requests and responses are capped and timed out.
+Errors attempt to redact credential-shaped text, but the current redactor leaves a
+token following `Bearer` visible. Do not treat command output or errors as secret-safe.
 
 Model output is untrusted text. It is labeled as model output and can never
 approve work, alter the ledger, change a spec, or act as instructions.
 
-Vision Quest uses the same provider boundary. `POST /api/quest/model/preflight`
-returns the exact Quest packet and worst-case estimate for an enabled named provider.
-`POST /api/quest/model/draft` requires that exact caller to send `approved: true`.
-The response is draft text only and must still match the Quest's deterministic memo
-schema before the browser accepts it. No-model Quest remains the default.
+Vision Quest's model routes do not use this provider boundary. They call a provider
+directly, skip the gateway and ledger, accept caller-supplied `approved: true`, and
+are not behind an explicit serve-time opt-in. They are built but not usable yet;
+use no-model Quest instead.
 
 The offline tests use only loopback mock servers and local commands. They prove
 wire parsing and the controls described here. They do not make live vendor calls,

@@ -22,7 +22,10 @@ x-sss-signature: sha256=hex HMAC-SHA256(secret, timestamp + "." + raw body)
 idempotency-key: one unique retry key, up to 160 characters
 ```
 
-The timestamp must be within five minutes. A signed retry is refused. Bodies are capped at 16 KiB and each source has a default 30 requests per minute. Only this schema is accepted. Inbound text is never treated as HTML.
+The timestamp must be within five minutes. Exact repeats are refused, but changing
+the unsigned `idempotency-key` bypasses the current replay receipt. Bodies are capped
+at 16 KiB and each source has a default 30 requests per minute. Only this schema is
+accepted. Inbound text is never treated as HTML.
 
 ```json
 {"problem":"The handoff queue duplicates tickets.","source_label":"Slack workflow: #ops","honesty_label":"reported"}

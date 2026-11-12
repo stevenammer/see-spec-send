@@ -1,10 +1,11 @@
 # Slice 10 notes
 
-Slice 10 adds optional identity and storage seams. The default remains the existing
-SQLite `Store` and password/session plus item-scoped token authentication. Nothing
-selects OIDC or Postgres automatically.
+Slice 10 adds identity and storage seams that are built but not usable. The default
+remains the existing SQLite `Store` and password/session plus item-scoped token
+authentication. Identity-provider sign-in is not shipped, and See / Spec / Send is
+SQLite only.
 
-## OIDC login
+## Identity-provider seam, not shipped
 
 `app/oidc.js` implements an authorization-code flow with S256 PKCE, 256-bit
 single-use state, a separate nonce, and a ten-minute in-memory pending-login
@@ -47,7 +48,7 @@ fresh login.
 `FakeOidcProvider` is an in-process test fake. It validates PKCE and single-use
 codes but is not a real token-signature implementation.
 
-## Postgres seam
+## Postgres seam, not built
 
 `core/postgres-store.js` provides `PostgresStore` behind the existing synchronous
 `Store` interface. A production constructor requires a reviewed, injected

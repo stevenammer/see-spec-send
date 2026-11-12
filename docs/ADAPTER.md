@@ -57,9 +57,10 @@ The sole model-text path is a Unix-domain socket bind-mounted as
 `/gateway/gateway.sock`. There is no Docker network namespace, DNS, or general
 egress. The socket goes to the local metering gateway only. The adapter mints a
 fresh capability against the active run, so it is already bound to that run, item,
-approval and spec by the gateway ledger. The raw value is passed only as the
-builder's process environment. The database stores its digest. Completion and
-stop revoke the digest.
+approval and spec by the gateway ledger. The raw value is passed as the builder's
+process environment, which also places it on the `docker run` argument vector and
+in Docker inspection metadata. The database stores its digest. Completion and stop
+revoke the digest.
 
 The gateway owner must make that one socket connectable by UID 65532, or by a
 group that UID belongs to. The adapter doesn't loosen a gateway socket's host
@@ -68,10 +69,11 @@ directory as write-only for other host users so that the non-root builder can us
 its two mounts without gaining access to anything else.
 
 `worker/builder/index.js` reads exactly the approved three lists, sends them to
-the fixture gateway, and writes one `try.html`. It rejects oversized HTML,
-external or protocol-relative URLs, event handlers, and every script tag. It
-doesn't receive comments, a person credential, an item session, or permission to
-write the item. The worker alone delivers the resulting bytes as `tried`.
+the fixture gateway, and writes one `try.html`. Its current regex filter attempts
+to reject oversized HTML, external or protocol-relative URLs, event handlers, and
+script tags, but entity, backslash, and `srcdoc` bypasses exist. It doesn't receive
+comments, a person credential, an item session, or permission to write the item.
+The worker alone delivers the resulting bytes as `tried`.
 
 `npm test` covers the adapter's durable identity, fake-Docker command construction,
 deadline fencing, stop, output validation and worker delivery without Docker or a

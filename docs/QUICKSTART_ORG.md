@@ -1,6 +1,6 @@
 # Organization quickstart
 
-This is a local, single-host start. It uses SQLite and local passwords. Production identity and Postgres are optional seams, not exercised here.
+This is a local, single-host start. It uses SQLite and local passwords. Identity-provider and Postgres seams are built but not usable: neither has a real verifier or driver, respectively.
 
 ```sh
 export SSS_DB="$PWD/data/sss.db"
@@ -14,7 +14,7 @@ In other terminals, run `node cli.js worker` and `node cli.js watchdog`. The wat
 `compose.yaml` starts those three processes with the `sss-data` persistent volume:
 
 ```sh
-docker compose run --rm server node cli.js init --id leader   # prints the leader's one-time password
+docker compose run --rm server node cli.js init --id leader   # prints the leader's initial password
 docker compose up
 ```
 
@@ -32,4 +32,6 @@ SSS_DB="$PWD/data/drill.db" node cli.js restore --from "$PWD/data/sss.db.backup"
 SSS_DB="$PWD/data/drill.db" node cli.js verify
 ```
 
-The restore target must not exist. Keep the backup owner-readable only. `npm test` includes an offline backup and restore drill.
+The restore target must not exist. Keep the backup owner-readable only. `npm test`
+includes a minimal offline backup/restore check over an empty database, not a
+meaningful recovery drill. Do not rely on it as production restore proof.

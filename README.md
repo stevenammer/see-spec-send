@@ -1,4 +1,4 @@
-# See it. Spec it. Send it.
+# See / Spec / Send
 
 Everybody at work already knows the thing that's broken. The workaround has a name. Somebody has a spreadsheet for it. And nobody fixes it, because the people who feel it don't get to build anything, and the people who build things never feel it.
 
@@ -20,18 +20,22 @@ I'm building this in public, and it's early. Here's the honest state:
 
 - **Works and tested:**
   - **The core.** A small state machine that decides what can happen to an item, and a local store that records every step in a tamper-evident chain. Money is exact, builder events are tied to the approval they were built under, and each event hashes the authority it was accepted under. Registry edits cannot rewrite history. Exports include the registry, so importing is an administrator action for files you exported yourself.
-  - **The manual path with a web UI.** A person can post a checked problem, write a spec, have a leader who isn't the steward approve it with a password step-up, deliver one safe playable try, and reach Helps only when other people say it helps.
-  - **Vision Quest.** No-model mode is the default. It also has a portable prompt file for an organization's existing chat tool, a strict memo import, and an opt-in provider draft seam. Provider use shows the exact packet and worst-case cost before explicit approval. Every result is model output, never authority. The anonymous demo includes a fictional no-model Quest using the same core. See [docs/VISION_QUEST.md](docs/VISION_QUEST.md).
-  - **Sign-in and a small HTTP API.** Invites, passwords, sessions, CSRF protection, rate limits, and a leader step-up before anything gets approved. The command line is the only admin surface. See [docs/ADMIN.md](docs/ADMIN.md) and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md), which also lists what's not covered.
-  - **The local worker, fake builder and Docker builder adapter.** An approved spec can reach a small static try through one durable run. The container adapter has no Docker network, a pinned image, a non-root read-only process, hard CPU, memory, PID and wall-clock limits, and one writable output directory. It can only ask the local fixture gateway through a mounted Unix socket. The normal suite proves its non-Docker logic. A separate local-Docker acceptance run checks the actual container controls and worker delivery. It uses a mock gateway, not a model or external API. See [docs/ADAPTER.md](docs/ADAPTER.md).
+  - **The manual path with a web UI.** A person can post a checked problem, write a spec, have a leader who isn't the current steward approve it with a password step-up, deliver one safe playable try, and reach Helps only when other people say it helps. The stronger rule that neither a past steward nor a spec author may approve is not implemented yet.
+  - **Vision Quest, no-model mode.** The default is a portable prompt file for an organization's existing chat tool plus a strict memo import. Every imported result is model output, never authority. The anonymous demo includes a fictional no-model Quest using the same core. See [docs/VISION_QUEST.md](docs/VISION_QUEST.md).
+  - **Sign-in and a small HTTP API.** Invites, passwords, sessions, CSRF protection, rate limits for login, invite redemption, and step-up, and a leader step-up before approval. The API has no general rate limit. The command line is the only admin surface. See [docs/ADMIN.md](docs/ADMIN.md) and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md), which also lists what isn't covered.
+  - **The local worker and fake builder.** An approved spec can reach a small static try through one durable run. The Docker adapter exists, but is not a usable production builder yet. It has Docker network, CPU, memory, PID, and filesystem controls; its wall-clock stop depends on a live worker. See [docs/ADAPTER.md](docs/ADAPTER.md).
   - **Kept work records.** Comments pin the spec or artifact version they address, evidence keeps its source and honesty label, members can add check-ins, and a leader-only stewardship handoff cannot reopen a past steward's vote.
   - **Optional fixture drafting.** A preflight exposes the exact packet and worst-case estimate. It cannot send without explicit approval, and every result is labeled model output. See [docs/DRAFTING.md](docs/DRAFTING.md).
-  - **Bring-your-own-provider builders.** An administrator can configure a reviewed, priced provider. The real container builder sends only the approved spec lists through the local metering gateway. The provider key stays on the gateway host, never in the container or browser. The offline suite uses local mocks only. I also ran it once by hand against a free-tier provider: a real container built a page through the gateway and the key never entered the container. That run isn't part of the tests. See [docs/PROVIDERS.md](docs/PROVIDERS.md).
-  - **Signed integrations.** Organization tools can report a source-labeled Seen problem with a five-minute HMAC receipt. Outbound event receipts use a durable signed outbox and leave private text out by default. See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
-  - **Watchdog and operations.** The watchdog checks worker heartbeats, wall-clock run caps, and unrecoverable outbox rows. It stops through the existing emergency latch and records an event. Compose, a systemd unit, and an offline backup and restore drill are included in [docs/QUICKSTART_ORG.md](docs/QUICKSTART_ORG.md).
-  - **Still optional and not exercised against external services:** a production identity provider and Postgres. The automated tests make no live vendor calls, so don't treat them as proof of a vendor bill or a production deployment.
+  - **Signed integrations.** Organization tools can report a source-labeled Seen problem with a five-minute HMAC receipt. Outbound event receipts use a durable signed outbox and leave private text out by default. The inbound replay receipt is bypassable by changing the unsigned idempotency header. See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+  - **Watchdog and operations.** The watchdog checks worker heartbeats, worker-observed wall-clock caps, and unrecoverable outbox rows. It stops through the existing emergency latch and records an event. Compose, a systemd unit, and backup commands are included in [docs/QUICKSTART_ORG.md](docs/QUICKSTART_ORG.md). The current automated backup drill copies an empty database and is not proof of a usable restore procedure.
 
-I'm treating tests as claims. `npm test` runs them, and `npm run check:mutants` deliberately breaks individual controls and checks that the tests notice. If a test can't fail, I don't count it.
+- **Built but not usable yet:**
+  - **Bring-your-own-provider builders.** Provider configuration and a metering gateway exist, but `worker` always uses the fake builder, the CLI cannot set an operator policy beyond the fixture defaults, and slow calls can permanently consume all concurrency holds. A real provider builder cannot be started through the product.
+  - **Quest model draft.** The draft and preflight routes are present, but they call a provider directly, skip the gateway and ledger, accept caller-supplied `approved: true`, and have no explicit serve-time opt-in. The safe model route is not shipped.
+  - **Identity-provider seam.** Test-only OIDC flow pieces and an injected verifier seam exist. No built-in verifier, provider configuration, or real identity-provider run exists, so identity-provider sign-in is not shipped.
+  - **Postgres seam.** `PostgresStore` and a SQLite-backed behavioral fake exist. There is no PostgreSQL driver, connection path, migration, or real PostgreSQL test. See / Spec / Send is SQLite only.
+
+I'm treating local tests as claims. `npm test` runs them, and `npm run check:mutants` deliberately breaks individual controls and checks that the tests notice. Those checks are not currently run by CI. If a test can't fail, I don't count it.
 
 ## What it looks like
 
@@ -51,14 +55,14 @@ node cli.js init --id leader
 node cli.js serve --port 8787 --insecure-cookies
 ```
 
-`init` prints a one-time password for the leader, so copy it. `serve` keeps running, so use a second terminal for anything else. Then open http://127.0.0.1:8787/signin and sign in as `leader`. `--insecure-cookies` is for local http only. The database is in a temp folder, and deleting that folder removes everything.
+`init` prints the leader's initial password, so copy it. It remains valid indefinitely unless the database is changed directly, because no password-change command exists yet. `serve` keeps running, so use a second terminal for anything else. Then open http://127.0.0.1:8787/signin and sign in as `leader`. `--insecure-cookies` is for local http only. The database is in a temp folder, and deleting that folder removes everything.
 
 To see the main rule refused without clicking through it, run `node scripts/watch-it-refuse.mjs`. The output is in [docs/WATCH_IT_REFUSE.md](docs/WATCH_IT_REFUSE.md).
 
 ## Words used here
 
 - **Steward:** the person who made the first `checked` event for an item. A leader can hand it to someone else.
-- **Approver:** the person recorded on the `approved` event. It has to be a leader who isn't the steward.
+- **Approver:** the person recorded on the `approved` event. It has to be a leader who isn't the current steward. A prior steward or spec author can still approve after a handoff, which is a known gap.
 - **Step-up:** typing your password again, right before approving. It's good for five minutes and works once.
 - **Quorum:** how many different people must say "it helps". The approver sets it, and it's frozen with the approval.
 - **Artifact:** the one playable HTML try that gets delivered. A "helps" only counts for the current artifact.

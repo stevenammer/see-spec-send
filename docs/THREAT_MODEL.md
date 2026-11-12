@@ -5,7 +5,7 @@
 | Stolen database | Password, invite, session, and API tokens are digests | `auth rejects plaintext storage` |
 | Reused invite | Digest, expiry, transactional single use | `parallel invite redemption` |
 | Password guessing | Per-IP and per-account buckets plus exponential lockout | `login rate limit and lockout` |
-| Account discovery | Same generic login reply and scrypt work | `no user enumeration` |
+| Account discovery | Same generic login reply; equal scrypt work is not implemented yet | `no user enumeration` |
 | Session theft | HttpOnly, Secure, Strict cookie and rotation | `cookie attributes and session rotation` |
 | Cross-site write | Origin or Referer and session CSRF nonce | `csrf cases` |
 | Privilege spoofing | Server assigns person, core resolves authority | `client cannot send role or actor` |
@@ -15,7 +15,7 @@
 | Approval replay | Five-minute, server-side, single-use step-up | `step-up required, stale, single use` |
 | Parser abuse | JSON size limit and unsafe-key rejection | `oversized and malformed bodies` |
 | Forged or stale integration intake | HMAC-SHA256 over timestamp and raw body, five-minute window, source-only secrets | `integration intake refuses forged, stale, and unknown sources` |
-| Replayed integration intake | Durable per-source replay receipt plus idempotency key | `integration intake refuses forged, stale, and unknown sources` |
+| Replayed integration intake | Exact repeats have a durable per-source receipt; changing the unsigned idempotency key bypasses it | `integration intake refuses forged, stale, and unknown sources` |
 | Integration grants workflow authority | Source actors can only append a Seen receipt | `integration intake has no workflow authority` |
 | Outbound delivery loses an event | Destination rows are created in the event transaction and redelivered from the durable outbox | `integration outbox retries, dead-letters, and survives a restart` |
 | Comment rewrites history | Comments pin the current spec/artifact hash; changed versions render old anchors stale | `versioned comments become stale` |
@@ -24,26 +24,51 @@
 | Builder escape or egress request | Default policy has no egress and fake sandbox kills on synthetic escape | `fake sandbox refuses escape and egress attempts and fires the emergency kill` |
 | Builder reaches the internet or a host service | Docker `--network none`; only a mounted Unix socket reaches the local gateway | `test/container.acceptance.mjs` inspected container and egress probe |
 | Builder changes the host or other runs | Read-only root and mounts, non-root UID, one writable `/out` mount | `test/container.acceptance.mjs` host-read and write probes |
-| Builder consumes host resources forever | Dropped capabilities, no-new-privileges, PID, CPU, memory and wall-clock limits | `test/container.acceptance.mjs` PID, memory and deadline probes |
+| Builder consumes host resources forever | Dropped capabilities, no-new-privileges, PID, CPU, and memory limits; wall-clock enforcement depends on a live worker | `test/container.acceptance.mjs` PID, memory and deadline probes |
 | Draft silently spends or approves | Exact fixture preflight, explicit consent gate, and no machine command | `draft preflight is exact, fixture-only, labeled, and never sends without explicit approval` |
-| OIDC login response is replayed or swapped | 256-bit single-use state, nonce, and ten-minute expiry are consumed before exchange | `OIDC uses authorization-code PKCE, single-use state and verified issuer claims` |
-| Authorization code is intercepted | S256 PKCE binds the code exchange to the browser-created verifier | `OIDC uses authorization-code PKCE, single-use state and verified issuer claims` |
-| A token from another issuer or client grants access | Exact issuer, audience, multi-audience `azp`, nonce, expiry and issued-at checks after signature verification | `OIDC uses authorization-code PKCE, single-use state and verified issuer claims` |
-| Mutable OIDC claims take over an existing person or leader role | Opaque issuer-subject ID, no email linking, and no claim-derived leadership | `OIDC uses authorization-code PKCE, single-use state and verified issuer claims` |
-| OIDC session weakens approval proof | OIDC sessions cannot pass password step-up | `OIDC uses authorization-code PKCE, single-use state and verified issuer claims` |
+| Identity-provider login attacks | Not shipped: an injected test seam exists, but no verifier or provider configuration ships | No real identity-provider proof |
 
 Not covered yet: multi-factor authenticators, email delivery, distributed rate limits,
 external database checkpoints, recovery drills, encrypted backups, and
 protection from a host administrator who can alter the database and application.
-OIDC is optional and depends on an operator-supplied signature/JWKS verifier. The
-in-process fake proves no real IdP signature, discovery, key rotation, browser
-redirect registration, callback proxy behavior, logout propagation, or durable
-state storage. A process restart during login fails closed. The Postgres fake proves
-only the Store API contract, not real database isolation, migrations, TLS,
-least-privilege roles, backup/restore, or crash recovery.
+Identity-provider sign-in is not shipped. An in-process fake and an injected
+signature/JWKS-verifier seam exist, but there is no built-in verifier, CLI wiring,
+or real provider run. The Postgres fake proves only a Store API contract;
+See / Spec / Send is SQLite only and has no PostgreSQL driver or deployment path.
 Also not built: a trusted-proxy mode (behind a reverse proxy, per-IP limits see the proxy's
 address, so run it directly or add that mode first), and cutting off an oversized request
 body mid-stream (it is refused, but the connection is not dropped early).
+
+## Known gaps
+
+- **B1:** The approval screen doesn't bind the displayed spec hash or sequence, so a spec can change immediately before approval.
+- **B2:** Generic event input accepts unbounded unknown fields and can make history display a member as another actor.
+- **B3:** Person, integration, and identity-provider IDs share a namespace, allowing collisions and takeover of non-person actors.
+- **B4:** A spec author or former steward can hand off stewardship and then approve the item.
+- **B5:** Quest model drafting bypasses the gateway, ledger, budgets, kill latch, and serve-time opt-in.
+- **B6:** Gateway policy is fixture-only and unreleased timeout holds can permanently exhaust concurrency.
+- **B7:** The model builder cannot be started through the product; its socket and listener paths do not form a usable deployment.
+- **B8:** There is no safe HTTPS or trusted-proxy deployment path, and proxying breaks per-client login limits.
+- **B9:** There is no account disable, password reset/change, role lifecycle, or invite revocation workflow.
+- **B10:** Known and unknown logins have unequal KDF work and unequal failure bookkeeping.
+- **B11:** Password hashing cost is below the planned target and the common-password list is ineffective.
+- **B12:** Members can create unbounded writes and reads because item, event, feed, and API limits are missing.
+- **B13:** The worker repeatedly scans all items under a write lock and lock contention is not reported honestly.
+- **B14:** Request, authentication, and administrative audit logs are missing, and secret redaction and command arguments can leak credentials.
+- **B15:** Backup is a raw copy during writes and restore lacks integrity, manifest, latch, and meaningful drill checks.
+- **B16:** Emergency stop can report success for a wrong database path and cannot directly stop a builder when the worker is down.
+- **B17:** A dead or stuck webhook can repeatedly re-trigger the watchdog stop with no retry or drop recovery command.
+- **B18:** Database upgrades have no versioned migration protocol, compatibility refusal, or pre-migration backup.
+- **B19:** Integration secrets are plaintext in SQLite and command arguments, with no rotation, disable, or removal lifecycle.
+- **B20:** Changing an unsigned idempotency header bypasses inbound replay protection.
+- **B21:** Erasure exists only as a store method, not as an operator command or route.
+- **B22:** Artifacts share the app origin and the model-output HTML filter has known entity, backslash, and `srcdoc` bypasses.
+- **B23:** Builder output may follow symlinks or be read without a size cap, and the output directory lacks a sticky bit.
+- **B24:** Builder tokens leak through Docker arguments and inspection; Docker calls and wall-clock enforcement lack independent timeouts.
+- **B25:** Provider and webhook egress can be DNS-rebound, the private-range check is incomplete, and provider files are not permission-checked.
+- **B26:** The identity-provider seam is not shipped: no verifier, product wiring, real-provider proof, or usable SSO approval path exists.
+- **B27:** Postgres is not built: the seam uses SQLite-style behavior and there is no real driver, SQL path, or server proof.
+- **B28:** CI does not run mutation checking or the listener smoke test.
 
 One bug found while reviewing this slice: the same-origin check compared a string prefix, so
 `https://localhost.evil.test` passed for an origin of `https://localhost`. It now compares
@@ -60,7 +85,7 @@ A separate hostile review (a different AI, in its own sandbox, with a repro scri
 | Five failed logins from five other addresses locked the owner out | Lockout is per address with exponential backoff; account-wide guessing hits a high ceiling that expires on its own | two lockout tests |
 | The in-memory rate limiter grew without bound | Idle buckets are pruned and the map has a hard cap | `the rate limiter forgets idle identities` |
 
-I also found one the review missed: the first admin's one-time password came from `Math.random()`. It now uses `crypto.randomBytes`.
+I also found one the review missed: the first admin's initial password came from `Math.random()`. It now uses `crypto.randomBytes`, but it is not one-time because there is no password-change flow.
 
 Still true, on purpose: any signed-in person can read any item. The product is built around an open feed, so there is no per-item read control yet. If you need confidential items, that has to be designed in first. A host administrator who can edit both the database and the code can still recompute the hash chain; the chain detects accidents and partial tampering, not a determined insider with full access.
 

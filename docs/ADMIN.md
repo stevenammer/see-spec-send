@@ -2,8 +2,9 @@
 
 Set `SSS_DB` to the database path. The CLI is the only administrator surface.
 
-`node cli.js init --id leader` creates the first leader and prints a one-time password.
-Save it before closing the terminal. It is never stored as plaintext.
+`node cli.js init --id leader` creates the first leader and prints that leader's
+initial password. Save it before closing the terminal. It is never stored as
+plaintext, but it remains valid because no password-change or reset command exists.
 
 `node cli.js invite create --role member --expires 24h` prints one redeemable invite.
 Roles are `member` or `leader`.
@@ -37,9 +38,11 @@ hashes are preserved, so those historical roles cannot be independently authenti
 from the old chain. Migration rebuilds the derived context cache in the same transaction.
 Later registry edits and reopening do not recapture those roles.
 
-New erasure receipts bind the replacement tombstone bytes. Unknown body metadata is
-removed along with authored text; actor IDs and structural references remain. This does
-not guarantee removal from backups or earlier copies of the database.
+The store has erasure receipts that bind replacement tombstone bytes, but no CLI
+command invokes erasure. Erasure is not an operator feature yet. If it is invoked by
+code, unknown body metadata is removed along with authored text; actor IDs and
+structural references remain. It does not guarantee removal from backups or earlier
+copies of the database.
 
 ## Worker and emergency stop
 

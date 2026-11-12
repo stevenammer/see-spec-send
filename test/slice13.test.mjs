@@ -50,7 +50,7 @@ test('integration intake has no workflow authority', () => {
 test('integration outbox retries, dead-letters, and survives a restart', async t => {
   let now = 1_000_000; const directory = mkdtempSync(join(tmpdir(), 'sss-s13-')); t.after(() => rmSync(directory, { recursive: true, force: true }));
   const file = join(directory, 'db.sqlite'); let hits = 0; let received;
-  const receiver = async (_url, options) => { hits += 1; received = { body: options.body, timestamp: options.headers['x-sss-timestamp'], signature: options.headers['x-sss-signature'] }; const failing = JSON.parse(options.body).item_id === 'item2'; return { ok: hits !== 1 && !failing, status: hits === 1 || failing ? 500 : 204 }; };
+  const receiver = async (_url, options) => { hits += 1; received = { redirect: options.redirect, body: options.body, timestamp: options.headers['x-sss-timestamp'], signature: options.headers['x-sss-signature'] }; const failing = JSON.parse(options.body).item_id === 'item2'; return { ok: hits !== 1 && !failing, status: hits === 1 || failing ? 500 : 204 }; };
   let store = new Store(file); let integrations = new Integrations(store, { clock: () => now, fetcher: receiver }); integrations.addDestination('receiver', 'http://127.0.0.1/test', secret, { allowLoopback: true }); store.registerPerson('person');
   store.append('item', { type: 'checked', actor: 'person', problem: 'private problem', looked: ['checked'], found: [], verdict: 'build_needed', at: new Date().toISOString() }, { idem: 'event' });
   store.db.prepare('UPDATE integration_outbox SET next_at=?').run(now);
@@ -58,6 +58,7 @@ test('integration outbox retries, dead-letters, and survives a restart', async t
   await integrations.deliverOnce(); assert.equal(integrations.outbox()[0].state, 'pending');
   store.close(); store = new Store(file); now = 2_000_000; integrations = new Integrations(store, { clock: () => now, fetcher: receiver });
   await integrations.deliverOnce(); assert.equal(integrations.outbox()[0].state, 'delivered');
+  assert.equal(received.redirect, 'error', 'outbound deliveries must refuse redirects');
   assert.equal(hits, 2); assert.equal(JSON.parse(received.body).text, undefined); assert.equal(received.signature, `sha256=${hmac(secret, received.timestamp, Buffer.from(received.body))}`);
   // A permanently failing receiver becomes visible as a dead letter.
   store.registerPerson('other'); store.append('item2', { type: 'checked', actor: 'other', problem: 'x', looked: ['x'], found: [], verdict: 'build_needed', at: new Date().toISOString() }, { idem: 'event2' });

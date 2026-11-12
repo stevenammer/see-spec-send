@@ -158,7 +158,7 @@ const mutants = [
   ['provider command env isolation', "env: { PATH: process.env.PATH || '/usr/bin:/bin' }", 'env: process.env'],
   ['provider priced required', "if (!provider.price || !integer(provider.price.inputMicrosPerMillion) || !integer(provider.price.outputMicrosPerMillion)) throw Error('priced provider required');", ''],
   ['provider host allowlist', "if (!Array.isArray(hosts) || !hosts.includes(url.hostname)) throw Error('provider host is not allowlisted');", ''],
-  ['provider redirect refusal', "redirect: 'error'", "redirect: 'follow'"],
+  ['provider redirect refusal', "method: 'POST', redirect: 'error', signal: abort", "method: 'POST', redirect: 'follow', signal: abort"],
   ['provider response cap', "if (bytes > responseBytes)", "if (false)"],
   ['approval leader gate', "if (event.type === 'approved' && context.phase === 'SPECCED' && leader(who)",
     "if (event.type === 'approved' && context.phase === 'SPECCED' && true"],
@@ -175,7 +175,7 @@ const mutants = [
   ['integration strict schema', "!Object.keys(value).every(key => ['problem', 'source_label', 'honesty_label'].includes(key))", 'false'],
   ['integration source authority', "event.type === 'seen' && context.phase === 'SEEN' && sourceActor(who)", "event.type === 'seen' && context.phase === 'SEEN' && person(who)"],
   ['integration outbox transaction', 'this.enqueueIntegrationOutbox(item, event, outcome.state, seq);', ''],
-  ['integration outbound redirect refusal', "redirect: 'error'", "redirect: 'follow'"],
+  ['integration outbound redirect refusal', "method: 'POST', redirect: 'error', headers:", "method: 'POST', redirect: 'follow', headers:"],
 ];
 
 function run(cwd, args) {

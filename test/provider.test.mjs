@@ -18,7 +18,7 @@ test('wire adapters and webhook conform through local HTTP only', async t => {
     if (req.url === '/429') { res.statusCode = 429; return res.end(); }
     if (req.url === '/500') { res.statusCode = 500; return res.end(); }
     if (req.url === '/bad') return res.end('{');
-    if (req.url === '/large') return res.end('x'.repeat(2048));
+    if (req.url === '/large') return ok(res, { choices: [{ message: { content: 'o' } }], usage: { prompt_tokens: 1, completion_tokens: 1 }, pad: 'x'.repeat(2048) });
     if (req.url === '/slow') return setTimeout(() => ok(res, { text: 'late', usage: { inputTokens: 1, outputTokens: 1 } }), 100);
     if (req.url === '/drop') return res.destroy();
     if (req.url === '/redirect') { res.statusCode = 302; res.setHeader('location', '/'); return res.end(); }

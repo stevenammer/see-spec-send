@@ -15,3 +15,9 @@ test('extraction finds a doctype page after commentary even when the closing tag
   assert.equal(staticHtmlFromModel(`Here you go:\n\`\`\`html\n${page}\n\`\`\``), page);
   assert.equal(staticHtmlFromModel(`Sure.\n${page}</html> trailing words`), `${page}</html>`);
 });
+
+test('validation accepts the uppercase doctype that real models write, and still rejects a non-document', () => {
+  const page = '<!DOCTYPE html><html><head><title>t</title><style>h1{color:#333}</style></head><body><h1>t</h1></body></html>';
+  assert.equal(validateHtml(staticHtmlFromModel(`Here:\n${page}`)), page);
+  assert.throws(() => validateHtml('<html><body>no doctype</body></html>'), /not static HTML/);
+});

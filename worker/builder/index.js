@@ -8,7 +8,7 @@ const cap = 64 * 1024;
 export const SYSTEM_PROMPT = 'Return one self-contained static HTML page. Use only the approved specification in the user message. Do not include scripts, external URLs, commentary, markdown, people, or comments.';
 
 export function validateHtml(html) {
-  if (typeof html !== 'string' || !html.startsWith('<!doctype html>')) fail('builder response is not static HTML');
+  if (typeof html !== 'string' || !/^<!doctype html>/i.test(html)) fail('builder response is not static HTML');
   if (bytes(html) > cap) fail('builder response exceeds static HTML cap');
   // The artifact viewer already has a restrictive CSP. Rejecting all script is simpler
   // and means a generated page cannot fetch after it has been delivered.

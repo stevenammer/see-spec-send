@@ -14,6 +14,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/slice13.test.mjs',
   'test/slice14.test.mjs',
   'test/slice17.test.mjs',
+  'test/slice18.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
@@ -188,6 +189,26 @@ const mutants = [
   ['integration source authority', "event.type === 'seen' && context.phase === 'SEEN' && sourceActor(who)", "event.type === 'seen' && context.phase === 'SEEN' && person(who)"],
   ['integration outbox transaction', 'this.enqueueIntegrationOutbox(item, event, outcome.state, seq);', ''],
   ['integration outbound redirect refusal', "method: 'POST', redirect: 'error', headers:", "method: 'POST', redirect: 'follow', headers:"],
+  ['account disabled sign-in refused', 'user.disabled === 1 || temporaryUsed', 'false || temporaryUsed'],
+  ['account disable ends sessions', 'this.guardLeader(id);\n        this.revokePerson(id);', 'this.guardLeader(id);'],
+  ['account disabled session refused', 'row.disabled === 1 || row.expires', 'false || row.expires'],
+  ['account disabled OIDC refused', "if (this.isDisabled(identity.id)) throw new Error('person disabled');", "if (false) throw new Error('person disabled');"],
+  ['reset code single use', 'const temporaryUsed = user?.must_change === 1 && user?.temp_used === 1;', 'const temporaryUsed = false;'],
+  ['reset code marks itself used', "if (user.must_change === 1) this.db.prepare('UPDATE users SET temp_used=1 WHERE id=?').run(id);", 'undefined;'],
+  ['temporary password restricts the session', "if (session.must_change === 1) return json(res, 403, { error: 'request refused' });", ''],
+  ['init password is temporary', "await auth.createUser(value('--id') || 'leader', password, true, { mustChange: true });", "await auth.createUser(value('--id') || 'leader', password, true);"],
+  ['password change needs step-up', "if (!session || !this.useStepup(value)) throw new Error('step-up unavailable');", "if (!session) throw new Error('step-up unavailable');"],
+  ['password change ends old sessions', 'this.revokePerson(session.person);', 'undefined;'],
+  ['last enabled leader guard', "if (others < 1) throw new Error('at least one enabled leader must remain');", "if (others < 0) throw new Error('at least one enabled leader must remain');"],
+  ['revoked invite refused', "|| invite.revoked === 1) throw new Error('invite unavailable');", ") throw new Error('invite unavailable');"],
+  ['invite id needs 12 hex characters', '/^[a-f0-9]{12,64}$/.test(id)', '/^[a-f0-9]{1,64}$/.test(id)'],
+  ['unknown account failure recorded', '      this.recordFailure(id, ip);', '      if (user) this.recordFailure(id, ip);'],
+  ['one KDF run for every account ID', "const record = user?.password || decoyRecord();", "const record = user?.password || await this.passwordRecord('not-a-real-password');"],
+  ['account ID must be a string', "typeof id !== 'string' || this.loginBlocked(id, ip)", 'this.loginBlocked(id, ip)'],
+  ['failure rows bounded', 'if (excess > 0) {', 'if (excess > 0 && false) {'],
+  ['legacy hash re-hashed on next login', 'await this.rehash(user, password);', 'undefined;'],
+  ['new hashes use scrypt N=2^17', 'const SCRYPT_N = 2 ** 17;', 'const SCRYPT_N = 2 ** 14;'],
+  ['common password check covers 12+ characters', '|| common.has(password.toLowerCase())) {', '|| false) {'],
 ];
 
 function run(cwd, args) {

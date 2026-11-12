@@ -29,6 +29,9 @@ test('wire adapters and webhook conform through local HTTP only', async t => {
     ok(res, { choices: [{ message: { content: 'o' } }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
   });
   const config = path => ({ url: `${url}${path}`, hosts: ['127.0.0.1'], allowPrivate: true, timeoutMs: 50, responseBytes: 1024 });
+  // The first fetch in a process pays one-time setup that can exceed the 50 ms budget on a busy host.
+  // One unbudgeted warm-up request keeps the timed loop below about the request under test.
+  await openAICompatible({ ...config('/'), timeoutMs: 5000 }).complete(request);
   for (const [factory, path, expected] of [[openAICompatible, '/', 'o'], [anthropicMessages, '/anthropic', 'a'], [geminiGenerateContent, '/gemini', 'g'], [webhook, '/webhook', 'w']]) {
     const value = await factory(config(path)).complete(request); assert.equal(value.text, expected);
   }

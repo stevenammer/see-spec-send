@@ -159,15 +159,34 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
   } else if (command === 'init') {
     if (auth.db.prepare('SELECT 1 FROM users LIMIT 1').get()) fail('already initialized');
     const password = `Start-${randomBytes(18).toString('base64url')}-9a`;
-    await auth.createUser(value('--id') || 'leader', password, true);
+    await auth.createUser(value('--id') || 'leader', password, true, { mustChange: true });
     write(`one-time password: ${password}`);
   } else if (command === 'invite' && args[0] === 'create') {
     const role = value('--role');
     const hours = Number((value('--expires') || '24h').replace('h', ''));
     write(auth.createInvite(role, Date.now() + hours * 60 * 60 * 1000));
-  } else if (command === 'person' && args[0] === 'list') {
-    for (const row of auth.db.prepare('SELECT id,leader FROM users ORDER BY id').all())
-      write(JSON.stringify(row));
+  } else if (command === 'invite' && args[0] === 'list') {
+    for (const row of auth.listInvites()) write(JSON.stringify(row));
+  } else if (command === 'invite' && args[0] === 'revoke') {
+    const row = auth.revokeInvite(value('--id') || fail('missing --id'));
+    write(`invite ${row.id} revoked`);
+  } else if (command === 'person') {
+    const action = args[0];
+    const who = () => value('--id') || fail('missing --id');
+    if (action === 'list') {
+      for (const row of auth.listPeople()) write(JSON.stringify(row));
+    } else if (action === 'disable') {
+      auth.disablePerson(who()); write('person disabled; their sessions ended');
+    } else if (action === 'enable') {
+      auth.enablePerson(who()); write('person enabled');
+    } else if (action === 'promote') {
+      auth.setLeader(who(), true); write('person promoted to leader');
+    } else if (action === 'demote') {
+      auth.setLeader(who(), false); write('person demoted from leader');
+    } else if (action === 'reset') {
+      const code = await auth.resetPerson(who());
+      write(`single-use code: ${code}`);
+    } else fail('expected person list, disable, enable, promote, demote, or reset');
   } else if (command === 'session' && args[0] === 'revoke') {
     auth.revokePerson(value('--person') || fail('missing --person'));
   } else if (command === 'token' && args[0] === 'create') {

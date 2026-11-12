@@ -2,15 +2,28 @@ import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } fr
 import { promisify } from 'node:util';
 
 const scrypt = promisify(scryptCallback);
+// Entries of 12 or more characters matter: the policy's length floor is 12, so shorter entries never reach the check.
 const common = new Set(`password 123456 12345678 123456789 qwerty abc123 111111 1234567 password1
 12345 1234567890 000000 letmein welcome monkey dragon football iloveyou admin login
-princess solo passw0rd master sunshine ashley bailey shadow superman qazwsx trustno1`.split(/\s+/));
+princess solo passw0rd master sunshine ashley bailey shadow superman qazwsx trustno1
+password1234 password12345 iloveyou1234 letmein123456 welcome123456 changeme1234
+qwertyuiop12 monkey1234567 football12345 superman12345 sunshine12345 passw0rd1234
+administrator`.split(/\s+/));
 const hash = value => createHash('sha256').update(value).digest('hex');
 const token = () => randomBytes(32).toString('base64url');
 const now = () => Date.now();
 const minute = 60_000;
 const failureWindow = 15 * minute;
 const accountFailureCeiling = 30;
+// New hashes use the current cost. Older records keep verifying and are re-hashed on their next good login.
+const SCRYPT_N = 2 ** 17;
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
+const SCRYPT_MAXMEM = 256 * 1024 * 1024;
+// Failure rows are bounded so a flood of invented IDs cannot grow the table without limit.
+const failureRowCap = 100_000;
+// An unknown ID gets one scrypt run at the current cost, the same as a real account. It can never match.
+const decoyRecord = () => `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${randomBytes(16).toString('base64url')}$${randomBytes(64).toString('base64url')}`;
 const validAccountId = value => typeof value === 'string' && /^[a-z][a-z0-9._-]{0,63}$/.test(value)
   && !value.startsWith('source:') && !value.startsWith('oidc-') && !/^[a-f0-9]{64}$/.test(value);
 
@@ -44,22 +57,37 @@ export class Auth {
     );
     CREATE TABLE IF NOT EXISTS api_tokens(
       digest TEXT PRIMARY KEY, kind TEXT NOT NULL, item TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS person_state(
+      id TEXT PRIMARY KEY, disabled INTEGER NOT NULL DEFAULT 0
     );`);
     try { this.db.exec("ALTER TABLE sessions ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'password'"); } catch {}
     try { this.db.exec('ALTER TABLE sessions ADD COLUMN review_item TEXT'); } catch {}
     try { this.db.exec('ALTER TABLE sessions ADD COLUMN review_spec_hash TEXT'); } catch {}
     try { this.db.exec('ALTER TABLE sessions ADD COLUMN review_seq INTEGER'); } catch {}
+    // must_change: the password on record is temporary (init or a reset code) and must be replaced.
+    // temp_used: that temporary password has already signed someone in, so it cannot sign in again.
+    this.addColumn('users', 'must_change', 'INTEGER NOT NULL DEFAULT 0');
+    this.addColumn('users', 'temp_used', 'INTEGER NOT NULL DEFAULT 0');
+    this.addColumn('invites', 'revoked', 'INTEGER NOT NULL DEFAULT 0');
+  }
+
+  // Only adds a column that is missing. Any other failure still surfaces.
+  addColumn(table, column, definition) {
+    const present = this.db.prepare(`PRAGMA table_info(${table})`).all().some(row => row.name === column);
+    if (!present) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+
+  // The record format is scrypt$N$r$p$salt$value. This never applies the password policy.
+  async record(password) {
+    const salt = randomBytes(16).toString('base64url');
+    const value = await scrypt(password, salt, 64, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, maxmem: SCRYPT_MAXMEM });
+    return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt}$${value.toString('base64url')}`;
   }
 
   async passwordRecord(password) {
     this.checkPassword(password);
-    const salt = randomBytes(16).toString('base64url');
-    const n = 16384;
-    const r = 8;
-    const p = 1;
-    const options = { N: n, r, p, maxmem: 32 * 1024 * 1024 };
-    const value = await scrypt(password, salt, 64, options);
-    return `scrypt$${n}$${r}$${p}$${salt}$${value.toString('base64url')}`;
+    return this.record(password);
   }
 
   checkPassword(password) {
@@ -73,17 +101,17 @@ export class Auth {
     const [kind, n, r, p, salt, expected] = String(record).split('$');
     if (kind !== 'scrypt') return false;
     const value = await scrypt(password, salt, 64, {
-      N: Number(n), r: Number(r), p: Number(p), maxmem: 32 * 1024 * 1024,
+      N: Number(n), r: Number(r), p: Number(p), maxmem: SCRYPT_MAXMEM,
     });
     return timingSafeEqual(value, Buffer.from(expected, 'base64url'));
   }
 
-  async createUser(id, password, leader = false) {
+  async createUser(id, password, leader = false, { mustChange = false } = {}) {
     if (!validAccountId(id)) throw new Error('invalid account id');
     if (this.db.prepare('SELECT 1 FROM users WHERE lower(id)=lower(?)').get(id)) throw new Error('account id exists');
     const record = await this.passwordRecord(password);
-    this.db.prepare('INSERT INTO users(id,password,leader) VALUES(?,?,?)')
-      .run(id, record, leader ? 1 : 0);
+    this.db.prepare('INSERT INTO users(id,password,leader,must_change) VALUES(?,?,?,?)')
+      .run(id, record, leader ? 1 : 0, mustChange ? 1 : 0);
     this.store.registerPerson(id, { leader });
   }
 
@@ -147,7 +175,7 @@ export class Auth {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const invite = this.db.prepare('SELECT * FROM invites WHERE digest=?').get(digest);
-      if (!invite || invite.expires <= this.clock()) throw new Error('invite unavailable');
+      if (!invite || invite.expires <= this.clock() || invite.revoked === 1) throw new Error('invite unavailable');
       const changed = this.db.prepare('UPDATE invites SET used=1 WHERE digest=? AND used=0').run(digest);
       if (changed.changes !== 1) throw new Error('invite unavailable');
       this.db.prepare('INSERT INTO users(id,password,leader) VALUES(?,?,?)')
@@ -179,6 +207,7 @@ export class Auth {
   async completeOidc(response) {
     if (!this.oidc) throw new Error('OIDC unavailable');
     const identity = await this.oidc.complete(response);
+    if (this.isDisabled(identity.id)) throw new Error('person disabled');
     // Claims never change an existing local account or grant leadership. An
     // administrator may promote the opaque mapped ID through the normal path.
     try {
@@ -193,27 +222,55 @@ export class Auth {
   }
 
   async login(id, password, ip = 'local') {
-    if (!this.take(`login:ip:${ip}`) || this.loginBlocked(id, ip)) throw new Error('login unavailable');
-    const user = this.db.prepare('SELECT * FROM users WHERE id=?').get(id);
-    // Always run scrypt so an unknown id has comparable cost to a bad password.
-    const record = user?.password || await this.passwordRecord('not-a-real-password');
-    const valid = await this.matches(password, record);
-    if (!user || !valid) {
-      if (user) this.db.prepare('INSERT INTO login_failures(account,ip,at) VALUES(?,?,?)').run(id, ip, this.clock());
+    if (!this.take(`login:ip:${ip}`) || typeof id !== 'string' || this.loginBlocked(id, ip)) {
       throw new Error('login unavailable');
     }
+    const user = this.db.prepare(`SELECT u.*, coalesce(p.disabled, 0) AS disabled
+      FROM users u LEFT JOIN person_state p ON p.id=u.id WHERE u.id=?`).get(id);
+    // Every ID, known or not, runs exactly one scrypt at the current cost before any decision.
+    const record = user?.password || decoyRecord();
+    const valid = await this.matches(password, record);
+    const temporaryUsed = user?.must_change === 1 && user?.temp_used === 1;
+    if (!user || !valid || user.disabled === 1 || temporaryUsed) {
+      // Known and unknown IDs get the same failure row, so lockout and pruning behave the same.
+      this.recordFailure(id, ip);
+      throw new Error('login unavailable');
+    }
+    if (!record.startsWith(`scrypt$${SCRYPT_N}$`)) await this.rehash(user, password);
     this.db.prepare('DELETE FROM login_failures WHERE account=? AND ip=?').run(id, ip);
+    if (user.must_change === 1) this.db.prepare('UPDATE users SET temp_used=1 WHERE id=?').run(id);
     this.revokePerson(id);
     return this.newSession(id);
   }
 
+  recordFailure(id, ip) {
+    this.db.prepare('INSERT INTO login_failures(account,ip,at) VALUES(?,?,?)').run(id, ip, this.clock());
+    const { n } = this.db.prepare('SELECT count(*) AS n FROM login_failures').get();
+    const excess = n - failureRowCap;
+    if (excess > 0) {
+      this.db.prepare(`DELETE FROM login_failures WHERE rowid IN
+        (SELECT rowid FROM login_failures ORDER BY at ASC LIMIT ?)`).run(excess);
+    }
+  }
+
+  async rehash(user, password) {
+    const next = await this.record(password);
+    this.db.prepare('UPDATE users SET password=? WHERE id=? AND password=?').run(next, user.id, user.password);
+  }
+
   session(value) {
-    const row = this.db.prepare('SELECT * FROM sessions WHERE digest=?').get(hash(value));
-    if (!row || row.expires <= this.clock() || row.seen + 30 * minute <= this.clock()) {
+    const row = this.db.prepare(`SELECT s.*, coalesce(p.disabled, 0) AS disabled, coalesce(u.must_change, 0) AS must_change
+      FROM sessions s LEFT JOIN person_state p ON p.id=s.person LEFT JOIN users u ON u.id=s.person
+      WHERE s.digest=?`).get(hash(value));
+    if (!row || row.disabled === 1 || row.expires <= this.clock() || row.seen + 30 * minute <= this.clock()) {
       return null;
     }
     this.db.prepare('UPDATE sessions SET seen=? WHERE digest=?').run(this.clock(), row.digest);
     return row;
+  }
+
+  isDisabled(person) {
+    return this.db.prepare('SELECT disabled FROM person_state WHERE id=?').get(person)?.disabled === 1;
   }
 
   revoke(value) {
@@ -222,6 +279,128 @@ export class Auth {
 
   revokePerson(person) {
     this.db.prepare('DELETE FROM sessions WHERE person=?').run(person);
+  }
+
+  // A person changes their own password with a fresh step-up. The step-up is consumed, every
+  // session for the person ends, and the caller gets one new session.
+  async changePassword(value, password) {
+    this.checkPassword(password);
+    const session = this.session(value);
+    if (!session || !this.useStepup(value)) throw new Error('step-up unavailable');
+    const record = await this.record(password);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const changed = this.db.prepare('UPDATE users SET password=?, must_change=0, temp_used=0 WHERE id=?')
+        .run(record, session.person).changes;
+      if (changed !== 1) throw new Error('step-up unavailable');
+      this.revokePerson(session.person);
+      const next = this.newSession(session.person);
+      this.db.exec('COMMIT');
+      return next;
+    } catch (error) {
+      try { this.db.exec('ROLLBACK'); } catch {}
+      throw error;
+    }
+  }
+
+  // Administrator actions. Each one is a CLI command; none is reachable over HTTP.
+  listPeople() {
+    return this.db.prepare(`SELECT a.id, a.leader, coalesce(p.disabled, 0) AS disabled,
+      coalesce(u.must_change, 0) AS must_change
+      FROM actors a LEFT JOIN person_state p ON p.id=a.id LEFT JOIN users u ON u.id=a.id
+      WHERE a.kind='person' ORDER BY a.id`).all();
+  }
+
+  requirePerson(id) {
+    const row = this.db.prepare('SELECT kind FROM actors WHERE id=?').get(id);
+    if (!row || row.kind !== 'person') throw new Error('unknown person');
+  }
+
+  // Refuses the change when it would leave no enabled leader. Called before demoting or disabling.
+  guardLeader(id) {
+    const actor = this.db.prepare("SELECT leader FROM actors WHERE id=? AND kind='person'").get(id);
+    if (!actor || actor.leader !== 1) return;
+    const others = this.db.prepare(`SELECT count(*) AS n FROM actors a
+      WHERE a.kind='person' AND a.leader=1 AND a.id<>?
+      AND NOT EXISTS (SELECT 1 FROM person_state p WHERE p.id=a.id AND p.disabled=1)`).get(id).n;
+    if (others < 1) throw new Error('at least one enabled leader must remain');
+  }
+
+  setDisabled(id, disabled) {
+    this.requirePerson(id);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      if (disabled) {
+        this.guardLeader(id);
+        this.revokePerson(id);
+      }
+      this.db.prepare(`INSERT INTO person_state(id,disabled) VALUES(?,?)
+        ON CONFLICT(id) DO UPDATE SET disabled=excluded.disabled`).run(id, disabled ? 1 : 0);
+      this.db.exec('COMMIT');
+    } catch (error) {
+      try { this.db.exec('ROLLBACK'); } catch {}
+      throw error;
+    }
+  }
+
+  disablePerson(id) { this.setDisabled(id, true); }
+
+  enablePerson(id) { this.setDisabled(id, false); }
+
+  setLeader(id, leader) {
+    this.requirePerson(id);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      if (!leader) this.guardLeader(id);
+      this.store.registerPerson(id, { leader });
+      this.db.prepare('UPDATE users SET leader=? WHERE id=?').run(leader ? 1 : 0, id);
+      this.db.exec('COMMIT');
+    } catch (error) {
+      try { this.db.exec('ROLLBACK'); } catch {}
+      throw error;
+    }
+  }
+
+  // Returns a new temporary password (single-use, forces a change) and ends the person's sessions.
+  async resetPerson(id) {
+    const user = this.db.prepare('SELECT id FROM users WHERE id=?').get(id);
+    if (!user) throw new Error('unknown person');
+    const code = `Reset-${randomBytes(18).toString('base64url')}-9a`;
+    const record = await this.record(code);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db.prepare('UPDATE users SET password=?, must_change=1, temp_used=0 WHERE id=?').run(record, id);
+      this.db.prepare('DELETE FROM login_failures WHERE account=?').run(id);
+      this.revokePerson(id);
+      this.db.exec('COMMIT');
+    } catch (error) {
+      try { this.db.exec('ROLLBACK'); } catch {}
+      throw error;
+    }
+    return code;
+  }
+
+  // Shows a prefix of each invite's digest. The token itself is never stored or listed.
+  listInvites() {
+    const current = this.clock();
+    return this.db.prepare('SELECT digest, role, expires, used, revoked FROM invites ORDER BY expires, digest').all()
+      .map(row => ({ id: row.digest.slice(0, 12), role: row.role, expires: row.expires,
+        status: row.revoked === 1 ? 'revoked' : row.used === 1 ? 'used'
+          : row.expires <= current ? 'expired' : 'open' }));
+  }
+
+  revokeInvite(id) {
+    if (typeof id !== 'string' || !/^[a-f0-9]{12,64}$/.test(id)) {
+      throw new Error('invite id must be at least 12 hex characters');
+    }
+    const matches = this.db.prepare('SELECT digest, used, revoked FROM invites WHERE substr(digest,1,?)=?').all(id.length, id);
+    if (matches.length !== 1) throw new Error('invite id matches no invite or more than one');
+    const [invite] = matches;
+    if (invite.used === 1 || invite.revoked === 1) throw new Error('invite is not open');
+    if (this.db.prepare('UPDATE invites SET revoked=1 WHERE digest=? AND used=0 AND revoked=0').run(invite.digest).changes !== 1) {
+      throw new Error('invite is not open');
+    }
+    return { id: invite.digest.slice(0, 12), status: 'revoked' };
   }
 
   async stepup(value, password, ip = 'local') {

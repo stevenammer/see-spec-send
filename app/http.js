@@ -211,6 +211,13 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         await auth.stepup(sessionToken, input.password, ip);
         return json(res, 204, {});
       }
+      if (req.method === 'POST' && url.pathname === '/api/password') {
+        const next = await auth.changePassword(sessionToken, input.password);
+        res.setHeader('set-cookie', cookie(next.value));
+        return json(res, 200, { csrf: next.csrf });
+      }
+      // A temporary password (init or a reset code) can reach only the routes above until it is replaced.
+      if (session.must_change === 1) return json(res, 403, { error: 'request refused' });
       let leader = false;
       try { leader = store.actor(session.person, '').leader === true; } catch { /* unregistered session holder is not a leader */ }
       if (req.method === 'GET' && url.pathname === '/')

@@ -1,5 +1,23 @@
+import { readProviders } from '../provider/config.js';
 // Optional drafting is deliberately a small client of the existing gateway boundary.
 const rate = Object.freeze({ input_micros: 1, output_micros: 2, framing_tokens: 8 });
+export function preflightProviderDraft({ provider, item, spec_hash, prompt, max_output_tokens }) {
+  if (!provider?.enabled || !provider.price || !item || !spec_hash || typeof prompt !== 'string' ||
+    !Number.isSafeInteger(max_output_tokens) || max_output_tokens < 1) throw Error('provider draft packet refused');
+  const input_tokens_bound = Buffer.byteLength(prompt);
+  const numerator = input_tokens_bound * provider.price.inputMicrosPerMillion
+    + max_output_tokens * provider.price.outputMicrosPerMillion;
+  if (!Number.isSafeInteger(numerator)) throw Error('provider draft estimate unsafe');
+  return Object.freeze({ provider: provider.name, model: provider.model, input: prompt, max_output_tokens, item, spec_hash,
+    input_tokens_bound, worst_case_micros: Math.ceil(numerator / 1_000_000),
+    label: 'Model output, review required. It cannot approve or change state.' });
+}
+// Draft callers select a name, never a browser-supplied endpoint or model.
+export function preflightConfiguredDraft({ providerName, ...packet }, env = process.env) {
+  const provider = readProviders(env).providers.find(entry => entry.name === providerName && entry.enabled);
+  if (!provider) throw Error('provider is not enabled');
+  return preflightProviderDraft({ ...packet, provider });
+}
 export function preflightDraft({ item, spec_hash, prompt, max_output_tokens }) {
   if (!item || !spec_hash || typeof prompt !== 'string' || !Number.isInteger(max_output_tokens) || max_output_tokens < 1)
     throw Error('draft packet refused');

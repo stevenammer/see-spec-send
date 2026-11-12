@@ -10,6 +10,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/quest-storage-faults.test.mjs', 'test/quest-attack.test.mjs', 'test/quest-spec.test.mjs',
   'test/quest-review-regressions.test.mjs', 'test/worker.test.mjs', 'test/container.test.mjs',
   'test/worker-path.test.mjs', 'test/gateway.test.mjs', 'test/slice9.test.mjs', 'test/slice7.test.mjs', 'test/slice8.test.mjs',
+  'test/provider.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
@@ -144,6 +145,11 @@ const mutants = [
   ['oidc nonce check', 'claims.nonce !== nonce', 'false'],
   ['oidc token expiry', 'claims.exp <= now', 'false'],
   ['draft explicit approval', "if (approved !== true) throw Error('explicit approval required');", ''],
+  ['provider command env isolation', "env: { PATH: process.env.PATH || '/usr/bin:/bin' }", 'env: process.env'],
+  ['provider priced required', "if (!provider.price || !integer(provider.price.inputMicrosPerMillion) || !integer(provider.price.outputMicrosPerMillion)) throw Error('priced provider required');", ''],
+  ['provider host allowlist', "if (!Array.isArray(hosts) || !hosts.includes(url.hostname)) throw Error('provider host is not allowlisted');", ''],
+  ['provider redirect refusal', "redirect: 'error'", "redirect: 'follow'"],
+  ['provider response cap', "if (bytes > responseBytes)", "if (false)"],
   ['approval leader gate', "if (event.type === 'approved' && context.phase === 'SPECCED' && leader(who)",
     "if (event.type === 'approved' && context.phase === 'SPECCED' && true"],
   ['approval separation gate', '&& event.actor !== context.steward && nonempty(event.spec_hash)',
@@ -179,7 +185,7 @@ for (const [name, find, replace] of selected) {
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
   const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/store.js', 'cli.js',
     'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
-    'worker/control.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js'];
+    'worker/control.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {

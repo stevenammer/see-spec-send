@@ -42,6 +42,22 @@ export class Gateway {
   }
 }
 
+// This keeps provider credentials outside the ledger and turns the narrow
+// completion contract into the legacy gateway response shape. Construct the
+// Ledger with the matching provider/config priceRate before exposing this path.
+export function providerGateway(ledger, provider, options) {
+  return new Gateway(ledger, async input => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ledger.policy().timeout_ms);
+    try {
+      const result = await provider.complete({ system: options?.system || '',
+        messages: [{ role: 'user', content: input.input }], maxOutputTokens: input.max_output_tokens,
+        model: input.model, signal: controller.signal });
+      return { output: result.text, usage: { input_tokens: result.usage.inputTokens, output_tokens: result.usage.outputTokens } };
+    } finally { clearTimeout(timeout); }
+  });
+}
+
 export function createGatewayServer(gateway) {
   const server = createServer(async (req, res) => {
     try {

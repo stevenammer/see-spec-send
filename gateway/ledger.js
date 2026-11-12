@@ -17,7 +17,21 @@ const multiply = (a, b) => {
   return a * b;
 };
 const sealed = row => { const { seal, ...data } = row; return digest(canonical(data)); };
-const rates = Object.freeze({ model: 'fixture:text-v1', input_micros: 1, output_micros: 2, framing_tokens: 8 });
+export const fixtureRates = Object.freeze({ model: 'fixture:text-v1', input_micros: 1, output_micros: 2, framing_tokens: 8 });
+export function priceRate({ model, inputMicrosPerMillion, outputMicrosPerMillion, framingTokens = 0 }) {
+  demand(typeof model === 'string' && model.length > 0, 'priced model required');
+  demand(integer(inputMicrosPerMillion) && integer(outputMicrosPerMillion) && integer(framingTokens), 'invalid provider price');
+  return Object.freeze({ model, input_micros_per_million: inputMicrosPerMillion,
+    output_micros_per_million: outputMicrosPerMillion, framing_tokens: framingTokens });
+}
+const rateCost = (rate, input, output) => {
+  if (Number.isSafeInteger(rate.input_micros)) return add(multiply(input, rate.input_micros), multiply(output, rate.output_micros));
+  const numerator = add(multiply(input, rate.input_micros_per_million), multiply(output, rate.output_micros_per_million));
+  return Math.ceil(numerator / 1_000_000);
+};
+const validRate = rate => rate && typeof rate.model === 'string' && integer(rate.framing_tokens)
+  && ((integer(rate.input_micros) && integer(rate.output_micros))
+    || (integer(rate.input_micros_per_million) && integer(rate.output_micros_per_million)));
 export const fixturePolicy = overrides => ({
   enabled: true, global_micros: 1_000_000, day_micros: 100_000, concurrency: 4,
   input_bytes: 8192, output_tokens: 1024, response_bytes: 8192, timeout_ms: 2000, ...overrides,
@@ -57,10 +71,12 @@ export function legacyMicros(store, item, approval) {
 }
 
 export class Ledger {
-  constructor(store, { clock = Date.now } = {}) {
+  constructor(store, { clock = Date.now, rate = fixtureRates } = {}) {
     this.store = store;
     this.db = store.db;
     this.clock = clock;
+    demand(validRate(rate), 'invalid gateway rate');
+    this.rate = Object.freeze({ ...rate });
     this.db.exec(`CREATE TABLE IF NOT EXISTS gateway_policy(id INTEGER PRIMARY KEY CHECK(id=1), bytes TEXT, seal TEXT);
       CREATE TABLE IF NOT EXISTS gateway_capabilities(
         digest TEXT PRIMARY KEY, run TEXT NOT NULL, item TEXT NOT NULL, approval INTEGER NOT NULL,
@@ -133,11 +149,11 @@ export class Ledger {
   validateInput(input, policy) {
     demand(input && !Array.isArray(input) && typeof input === 'object', 'invalid payload');
     demand(canonical(Object.keys(input).sort()) === canonical(['input', 'max_output_tokens', 'model']), 'invalid payload keys');
-    demand(input.model === rates.model, 'model has no reviewed fixture price');
+    demand(input.model === this.rate.model, 'model has no reviewed price');
     demand(typeof input.input === 'string' && Buffer.byteLength(input.input) <= policy.input_bytes, 'input byte limit');
     demand(integer(input.max_output_tokens, policy.output_tokens) && input.max_output_tokens > 0, 'output token limit');
-    const inputBound = add(Buffer.byteLength(input.input), rates.framing_tokens);
-    const worst = add(multiply(inputBound, rates.input_micros), multiply(input.max_output_tokens, rates.output_micros));
+    const inputBound = add(Buffer.byteLength(input.input), this.rate.framing_tokens);
+    const worst = rateCost(this.rate, inputBound, input.max_output_tokens);
     return { inputBound, worst };
   }
 
@@ -146,7 +162,10 @@ export class Ledger {
     for (const key of ['cap_micros', 'approval', 'input_bound', 'output_bound', 'worst_micros', 'charged_micros']) {
       demand(integer(row[key]), 'corrupt receipt integer');
     }
-    demand(row.rate === canonical(rates), 'corrupt rate snapshot');
+    const rate = JSON.parse(row.rate);
+    // The receipt seals its own immutable reviewed rate. A later provider
+    // configuration change must not make older receipts unverifiable.
+    demand(validRate(rate), 'corrupt rate snapshot');
     const run = this.db.prepare('SELECT * FROM runs WHERE id=?').get(row.run);
     demand(run && run.item === row.item && run.approval === row.approval && run.spec_hash === row.spec_hash,
       'corrupt receipt run binding');
@@ -157,8 +176,7 @@ export class Ledger {
       'corrupt receipt identity');
     const policy = JSON.parse(row.policy);
     validatePolicy(policy);
-    demand(row.worst_micros === add(multiply(row.input_bound, rates.input_micros),
-      multiply(row.output_bound, rates.output_micros)), 'corrupt reservation amount');
+    demand(validRate(rate) && row.worst_micros === rateCost(rate, row.input_bound, row.output_bound), 'corrupt reservation amount');
     demand(row.charged_micros <= row.worst_micros, 'corrupt accounting amount');
     demand(['reserved', 'dispatched', 'settled', 'cancelled'].includes(row.state), 'corrupt receipt state');
     if (['reserved', 'dispatched'].includes(row.state)) {
@@ -184,7 +202,8 @@ export class Ledger {
   cost(row, usage) {
     demand(usage && canonical(Object.keys(usage).sort()) === canonical(['input_tokens', 'output_tokens']), 'invalid usage keys');
     demand(integer(usage.input_tokens, row.input_bound) && integer(usage.output_tokens, row.output_bound), 'invalid usage');
-    return add(multiply(usage.input_tokens, rates.input_micros), multiply(usage.output_tokens, rates.output_micros));
+    const rate = JSON.parse(row.rate);
+    return rateCost(rate, usage.input_tokens, usage.output_tokens);
   }
 
   reserve(raw, idem, input) {
@@ -216,7 +235,7 @@ export class Ledger {
       const row = {
         id: digest(canonical([run.id, idem])), run: run.id, idem, item: run.item, approval: run.approval,
         spec_hash: run.spec_hash, approval_hash: approved.body_hash, cap_micros: cap,
-        payload_hash: payloadHash, rate: canonical(rates), policy: canonical(policy), day,
+        payload_hash: payloadHash, rate: canonical(this.rate), policy: canonical(policy), day,
         input_bound: inputBound, output_bound: input.max_output_tokens, worst_micros: worst,
         charged_micros: worst, state: 'reserved', usage: null, outcome: null,
       };

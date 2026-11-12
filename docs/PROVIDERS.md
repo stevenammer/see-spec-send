@@ -1,0 +1,107 @@
+# Bring your own provider
+
+See / Spec / Send doesn't keep provider keys in its database. It reads a plain
+`sss.providers.json` file, normally from the directory where you run the CLI.
+Set `SSS_PROVIDERS_FILE` to use another absolute or relative location. The file
+contains provider names, hosts, prices, and references to credentials. It must
+not contain a key itself. The CLI writes it with owner-only file permissions.
+
+Every enabled provider has an explicit table in integer micro-dollars per million
+tokens. Zero is valid and is how an organization declares an entirely local
+model. There is no unpriced path. Metering reserves the input bound and requested
+maximum output before a call, then settles reported usage. If usage is absent or
+invalid, the reservation remains held. Prices are estimates, not invoices.
+
+```json
+{
+  "providers": [{
+    "name": "openai",
+    "kind": "openai",
+    "enabled": true,
+    "url": "https://api.openai.com/v1/chat/completions",
+    "hosts": ["api.openai.com"],
+    "apiKeyEnv": "OPENAI_API_KEY",
+    "model": "your-reviewed-model",
+    "price": { "inputMicrosPerMillion": 0, "outputMicrosPerMillion": 0 }
+  }],
+  "defaults": { "your-org-id": "openai" }
+}
+```
+
+Create the JSON entry in a protected file, then add it. This deliberately keeps
+the secret out of shell history too.
+
+```sh
+node cli.js provider add --file ./openai.provider.json --default-org your-org-id
+node cli.js provider list
+node cli.js provider test --name openai --max-output 1
+node cli.js provider disable --name openai
+node cli.js provider remove --name openai
+node cli.js gateway serve-provider --name openai --port 8081
+```
+
+`provider test` is the only command that makes a provider call. It makes exactly
+one short call after printing its worst-case reservation. It doesn't test during
+add, list, disable, or remove. A default is command-line configuration, never a
+browser setting. Callers must reject a provider that isn't enabled, including a
+stale default.
+
+The existing drafting path resolves its provider by this configured name before
+it creates a packet. The current fake builder remains deliberately model-free,
+so it cannot select or contact any provider at all. A real builder must receive
+an already enabled provider name and use this same resolver. It never receives a
+URL, key, or browser choice.
+
+`gateway serve-provider` only starts an enabled provider behind the existing
+capability gateway. Configure the gateway's operator policy first. It uses the
+provider's frozen price table for reservation and settlement, and the existing
+approval cap, concurrency, idempotency, dispatch, settle, and kill controls.
+
+## Recipes
+
+OpenAI, Azure OpenAI, Ollama, vLLM, LiteLLM, Groq, OpenRouter, and most company
+gateways use `"kind": "openai"`. Use their chat-completions URL and list only
+the exact DNS host in `hosts`. Azure's deployment URL is allowed as its `url`.
+Ollama or another local server needs `"allowPrivate": true`; use its exact
+loopback hostname in `hosts` and its local model may legally be priced at zero.
+
+Anthropic uses `"kind": "anthropic"` and the Messages endpoint. Gemini uses
+`"kind": "gemini"` and a generateContent endpoint. Both use the same fields
+above. Put the key's environment-variable name in `apiKeyEnv`, or an absolute
+owner-readable key file in `apiKeyFile`, never both.
+
+For a custom HTTPS service, use `"kind": "webhook"`. It receives this JSON:
+
+```json
+{"system":"...","messages":[{"role":"user","content":"..."}],"maxOutputTokens":64,"model":"your-model"}
+```
+
+It must return:
+
+```json
+{"text":"untrusted model text","usage":{"inputTokens":12,"outputTokens":8}}
+```
+
+`"kind": "command"` runs an organization-owned executable from a configured
+argument array. It receives the same request JSON on standard input and writes
+exactly that response JSON on standard output. It has a wall-clock timeout and
+output cap. It receives no database credential, worker credential, browser data,
+or provider key unless the organization itself gives its process one.
+
+## Network boundary
+
+HTTPS is required. Plain HTTP is only available to an explicitly private-enabled
+local provider. URLs can't carry credentials or fragments. The only accepted
+query is Azure's single non-secret `api-version` parameter. Each
+request checks the configured host allowlist, resolves it, and refuses private,
+link-local, loopback, and metadata-style addresses unless `allowPrivate` is
+true. Redirects are refused. Requests and responses are capped, timed out, and
+errors redact credential-shaped text.
+
+Model output is untrusted text. It is labeled as model output and can never
+approve work, alter the ledger, change a spec, or act as instructions.
+
+The offline tests use only loopback mock servers and local commands. They prove
+wire parsing and the controls described here. They do not make live vendor calls,
+verify a vendor's current API behavior, prove DNS-rebinding resistance after the
+initial lookup, or certify a provider bill.

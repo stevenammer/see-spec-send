@@ -11,7 +11,9 @@ import { Store } from '../core/store.js';
 import { Worker } from '../worker/runner.js';
 import { ContainerAdapter, DockerCli } from '../worker/container.js';
 import { Ledger, fixturePolicy } from '../gateway/ledger.js';
-import { Gateway, createGatewayServer } from '../gateway/http.js';
+import { Gateway, createGatewayServer, providerGateway } from '../gateway/http.js';
+import { createServer } from 'node:http';
+import { saveProviders, meteredProviderFor } from '../provider/config.js';
 
 const sh = (args, options = {}) => execFileSync('docker', args, { encoding: 'utf8', ...options }).trim();
 const image = readFileSync(new URL('../worker/builder-image.digest', import.meta.url), 'utf8').trim();
@@ -82,6 +84,44 @@ async function listenSocket(t, path) {
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(path, resolve); });
   chmodSync(path, 0o666); t.after(() => server.close());
 }
+
+test('a real container builds a page through the gateway and a configured provider, and never holds its key', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'sss-container-provider-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const SECRET = 'provider-credential-must-not-leak-9f3a';
+  t.after(() => { try { const ids = sh(['ps', '-aq', '--filter', 'name=sss-builder']); if (ids) sh(['rm', '-f', ...ids.split('\n')]); } catch {} });
+  let seenAuth = null; let calls = 0;
+  const upstream = createServer(async (req, res) => {
+    let body = ''; for await (const chunk of req) body += chunk; calls++; seenAuth = req.headers.authorization;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ choices: [{ message: { content: 'Here you go:\n```html\n<!doctype html><title>Model try</title><h1>Model try</h1>\n```' } }], usage: { prompt_tokens: 30, completion_tokens: 12 } }));
+  });
+  await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve)); t.after(() => upstream.close());
+  const env = { ...process.env, SSS_PROVIDERS_FILE: join(dir, 'providers.json'), SSS_TEST_PROVIDER_KEY: SECRET };
+  saveProviders({ providers: [{ name: 'mock', kind: 'openai', model: 'mock-model', enabled: true, url: `http://127.0.0.1:${upstream.address().port}/v1/chat/completions`,
+    hosts: ['127.0.0.1'], allowPrivate: true, apiKeyEnv: 'SSS_TEST_PROVIDER_KEY', price: { inputMicrosPerMillion: 100_000, outputMicrosPerMillion: 200_000 } }], defaults: { default: 'mock' } }, env);
+  const store = new Store(join(dir, 'db')); t.after(() => store.close()); approved(store);
+  const selected = meteredProviderFor('mock', env);
+  const ledger = new Ledger(store, { rate: selected.rate }); ledger.configure(fixturePolicy());
+  const server = createGatewayServer(providerGateway(ledger, selected.provider, { system: 'Return one static HTML page.' }));
+  const socket = join(dir, 'gateway.sock');
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve); }); chmodSync(socket, 0o666); t.after(() => server.close());
+  const adapter = new ContainerAdapter(store, { root: join(dir, 'jobs'), gatewaySocket: socket, wallMs: 20_000, providerEnv: env, providerName: 'mock' });
+  const worker = new Worker(store, adapter); worker.reconcile();
+  let sawContainerEnv = '';
+  for (let i = 0; i < 60 && store.read('item').state !== 'TRYING'; i++) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    try { const names = sh(['ps', '-a', '--filter', 'name=sss-builder', '--format', '{{.Names}}']).split('\n').filter(Boolean);
+      for (const name of names) sawContainerEnv += sh(['inspect', name, '--format', '{{json .Config.Env}}{{json .Args}}{{json .Mounts}}']); } catch {}
+    worker.reconcile();
+  }
+  let logs = ''; if (store.read('item').state !== 'TRYING') { try { for (const name of sh(['ps', '-a', '--filter', 'name=sss-builder', '--format', '{{.Names}}']).split('\n').filter(Boolean)) logs += execFileSync('docker', ['logs', name], { encoding: 'utf8' }); } catch {} }
+  assert.equal(store.read('item').state, 'TRYING', `a model-built page was not delivered (state ${store.read('item').state}, provider calls ${calls}, builder logs: ${logs})`);
+  assert.match(store.artifact('item', store.read('item').context.artifact), /Model try/);
+  assert.ok(calls >= 1, 'the configured provider was never called');
+  assert.equal(seenAuth, `Bearer ${SECRET}`, 'the gateway did not authenticate to the provider');
+  assert.ok(sawContainerEnv.length > 0, 'could not inspect the builder container');
+  assert.equal(sawContainerEnv.includes(SECRET), false, 'the provider key reached the container');
+});
 
 function mkdir(path) { try { execFileSync('mkdir', ['-p', path]); } catch {} }
 

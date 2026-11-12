@@ -18,7 +18,7 @@ export function validateHtml(html) {
 
 export function gateway(socket, token, input, key, model = 'fixture:text-v1') {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({ model, input, max_output_tokens: 128 });
+    const body = JSON.stringify({ model, input, max_output_tokens: 1024 });
     const req = request({ socketPath: socket, path: '/v1/generate', method: 'POST', headers: {
       'content-type': 'application/json', 'content-length': Buffer.byteLength(body),
       authorization: `Bearer ${token}`, 'idempotency-key': key,
@@ -42,8 +42,12 @@ export function gateway(socket, token, input, key, model = 'fixture:text-v1') {
 // This is deliberately narrow: only a complete doctype document is extracted.
 export function staticHtmlFromModel(text) {
   if (typeof text !== 'string') fail('gateway did not return model text');
-  const match = /<!doctype html[\s\S]*?<\/html\s*>/i.exec(text);
-  return match ? match[0] : text.trim().replace(/^```(?:html)?\s*/i, '').replace(/\s*```\s*$/i, '');
+  const start = text.search(/<!doctype html/i);
+  if (start < 0) return text.trim();
+  const rest = text.slice(start);
+  const end = /<\/html\s*>/i.exec(rest);
+  // Take the document through its closing tag. Without one, drop a trailing fence and keep the rest.
+  return end ? rest.slice(0, end.index + end[0].length) : rest.replace(/\s*```[\s\S]*$/, '').trim();
 }
 
 export async function build({ specPath, outputPath, socket, token, model = 'fixture:text-v1' }) {

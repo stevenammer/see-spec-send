@@ -30,9 +30,18 @@ test('portable Quest prompt imports only the deterministic shared memo', async (
   await assert.rejects(draftQuestModel({ providerName:'local', doc, approved:false }, { SSS_PROVIDERS_FILE: config }), /explicit approval/);
 });
 
+test('watchdog leaves a fresh install with no run in flight alone, even with no heartbeat', () => {
+  const store = new Store(); const now = 1_000_000;
+  const result = watchdog(store, { now, heartbeatMs: 10, runMs: 10, outboxMs: 10 });
+  assert.equal(result.stopped, false); assert.equal(result.staleHeartbeat, false); assert.equal(killed(store), false);
+  store.close();
+});
+
 test('watchdog stops stale heartbeat through emergency stop', () => {
   const store = new Store(); const now = 1_000_000;
   store.db.prepare('INSERT INTO worker_heartbeat VALUES(1,?)').run(now - 100);
+  // A run is in flight, so the missing heartbeat is a real emergency.
+  store.db.prepare("INSERT INTO runs(id,item,approval,spec_hash,run_actor,gateway_actor,status,delivered,started_at) VALUES('r','item',1,'h','a','b','active',0,?)").run(now);
   const result = watchdog(store, { now, heartbeatMs: 10, runMs: 10, outboxMs: 10 });
   assert.equal(result.stopped, true); assert.equal(result.staleHeartbeat, true);
   assert.equal(killed(store), true); assert.ok(store.db.prepare("SELECT 1 FROM worker_history WHERE action='watchdog.stop'").get());

@@ -179,8 +179,11 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
     const port = Number(value('--port') || '8080');
     const origin = value('--origin') || `http://127.0.0.1:${port}`;
     const insecure = args.includes('--insecure-cookies');
+    // Loopback by default. A container needs --host 0.0.0.0 so its published port reaches the server.
+    const host = value('--host') || '127.0.0.1';
+    if (!/^[0-9a-fA-F:.]+$/.test(host)) fail('--host must be an IP address');
     const server = createServerFor({ store, auth, integrations, secure: !insecure, origin });
-    await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
+    await new Promise(resolve => server.listen(port, host, resolve));
     write(`Serving ${origin}`);
     if (insecure) write('WARNING: insecure cookies are enabled for local HTTP development only.');
     return;

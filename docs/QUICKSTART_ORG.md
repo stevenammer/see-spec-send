@@ -14,8 +14,11 @@ In other terminals, run `node cli.js worker` and `node cli.js watchdog`. The wat
 `compose.yaml` starts those three processes with the `sss-data` persistent volume:
 
 ```sh
+docker compose run --rm server node cli.js init --id leader   # prints the leader's one-time password
 docker compose up
 ```
+
+Then open http://127.0.0.1:8787/signin. The compose file serves on all interfaces inside its container (`--host 0.0.0.0`) with insecure cookies, which is for trying it on your own machine. Put it behind HTTPS and drop `--insecure-cookies` before real use.
 
 The container builder is optional. It needs its pinned image, a Unix gateway socket, and the separate setup in [ADAPTER.md](ADAPTER.md). Don't turn it on just because Compose is running.
 

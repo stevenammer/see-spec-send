@@ -56,6 +56,7 @@ const mutants = [
   ['fake identity binding', 'if (prior && prior.input !== input)', 'if (false)'],
   ['fake stop observed', "DO UPDATE SET status='stopped'", "DO UPDATE SET status='ready'"],
   ['container repeated start resumes', "if (row.state === 'running') return;", ''],
+  ['watchdog ignores idle installs', 'const staleHeartbeat = inFlight > 0 && (', 'const staleHeartbeat = ('],
   ['container network isolation', "'--network', 'none'", "'--network', 'bridge'"],
   ['container read only root', "'--read-only'", "'--read-write'"],
   ['container drops capabilities', "'--cap-drop', 'ALL'", "'--cap-add', 'ALL'"],

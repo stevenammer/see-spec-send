@@ -7,7 +7,7 @@ services:
       - sss-data:/data
     environment:
       SSS_DB: /data/sss.db
-    command: ["node", "cli.js", "serve", "--port", "8787", "--origin", "http://127.0.0.1:8787", "--insecure-cookies"]
+    command: ["node", "cli.js", "serve", "--port", "8787", "--host", "0.0.0.0", "--origin", "http://127.0.0.1:8787", "--insecure-cookies"]
     ports: ["8787:8787"]
   worker:
     image: node:22-alpine

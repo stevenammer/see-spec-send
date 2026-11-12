@@ -15,6 +15,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/slice14.test.mjs',
   'test/slice17.test.mjs',
   'test/slice18.test.mjs',
+  'test/slice21.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
@@ -23,8 +24,8 @@ const suite = workerOnly ? ['--test', '--test-concurrency=1',
 const mutants = [
   ['gateway disabled default', "demand(policy.enabled, 'gateway disabled');", ''],
   ['gateway run cap', "demand(add(used, worst) <= cap, 'run cap exceeded');", ''],
-  ['gateway global cap', "demand(add(sum(rows), worst) <= policy.global_micros, 'global cap exceeded');", ''],
-  ['gateway day cap', "demand(add(sum(rows.filter(row => row.day === day)), worst) <= policy.day_micros, 'day cap exceeded');", ''],
+  ['gateway global cap', "demand(add(sum(combined), worst) <= policy.global_micros, 'global cap exceeded');", ''],
+  ['gateway day cap', "demand(add(sum(combined.filter(row => row.day === day)), worst) <= policy.day_micros, 'day cap exceeded');", ''],
   ['gateway concurrency', "['reserved', 'dispatched'].includes(row.state)).length < policy.concurrency", "['reserved', 'dispatched'].includes(row.state)).length < policy.concurrency + 1000"],
   ['gateway legacy spend counted', 'add(legacyMicros(this.store, run.item, run.approval),', 'add(0,'],
   ['gateway idempotency payload', "demand(existing.payload_hash === payloadHash, 'idempotency payload conflict');", ''],
@@ -105,7 +106,7 @@ const mutants = [
   ['artifact size limit', "Buffer.byteLength(html, 'utf8') > 256 * 1024", 'false'],
   ['HTML CSP', "'content-security-policy': htmlHeaders", "'content-security-policy': \"default-src *\""],
   ['helper count privacy', 'quorum: context.quorum, helpers: context.helpers.length };', 'quorum: context.quorum, helpers: context.helpers.length, helper_names: context.helpers };'],
-  ['history shows token hash', 'event.delivered_by || event.actor', 'event.actor'],
+  ['history shows token hash', "event.type === 'tried' && event.delivered_by ? event.delivered_by : event.actor", "event.delivered_by ? event.delivered_by : event.actor"],
   ['approver and steward can vote', 'const canVote = !context.ineligibleHelpers.includes(person);', 'const canVote = true;'],
   ['artifact stored before stage check', "if (state.state !== 'SENDING') throw new Error('event not allowed');", ''],
   ['checked problem requirement', '&& nonempty(event.problem) && event.problem.length <= 2000', ''],
@@ -152,7 +153,7 @@ const mutants = [
   ['oidc state expiry', 'pending.expires <= this.clock()', 'false'],
   ['oidc issuer check', 'claims.iss !== this.issuer', 'false'],
   ['oidc pending cap', "if (this.pending.size >= maxPending) throw new Error('too many pending OIDC handshakes');", ''],
-  ['account id bound on create', "async createUser(id, password, leader = false) {\n    if (!validAccountId(id)) throw new Error('invalid account id');", "async createUser(id, password, leader = false) {"],
+  ['account id bound on create', "async createUser(id, password, leader = false, { mustChange = false } = {}) {\n    if (!validAccountId(id)) throw new Error('invalid account id');", "async createUser(id, password, leader = false, { mustChange = false } = {}) {"],
   ['account id bound on redeem', "async redeem(value, id, password, ip = 'local') {\n    if (!validAccountId(id)) throw new Error('invalid account id');", "async redeem(value, id, password, ip = 'local') {"],
   ['oidc audience check', '!audience.includes(this.clientId)', 'false'],
   ['oidc nonce check', 'claims.nonce !== nonce', 'false'],
@@ -209,6 +210,15 @@ const mutants = [
   ['legacy hash re-hashed on next login', 'await this.rehash(user, password);', 'undefined;'],
   ['new hashes use scrypt N=2^17', 'const SCRYPT_N = 2 ** 17;', 'const SCRYPT_N = 2 ** 14;'],
   ['common password check covers 12+ characters', '|| common.has(password.toLowerCase())) {', '|| false) {'],
+  ["migration refuses a newer database", "if (version > SCHEMA_VERSION) {", "if (false) {"],
+  ["migration rolls back a failed upgrade", "try { db.exec('ROLLBACK'); /* migration-rollback */ } catch {}", "try { db.exec('COMMIT'); /* migration-rollback */ } catch {}"],
+  ["migration backs up before migrating", "const backup = backupBeforeMigration(store, file);", "const backup = null;"],
+  ["migration takes the write lock first", "db.exec('BEGIN IMMEDIATE'); // migration-lock", "db.exec('BEGIN DEFERRED'); // migration-lock"],
+  ["routine open skips the version check", "if (version === SCHEMA_VERSION) return { from: version, to: version, applied: [], backup: null };", "if (false) return { from: version, to: version, applied: [], backup: null };"],
+  ["migration stamps the schema version", "db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);", "db.exec('PRAGMA user_version = 0');"],
+  ["migrate check changes the database", "if (command === 'migrate' && args.includes('--check')) {", "if (false) {"],
+  ["legacy column errors are swallowed", "if (!present) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);", "if (!present) { try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`); } catch {} }"],
+  ["migration trusts the unlocked version read", "const current = userVersion(db); // in-lock-recheck", "const current = version; // in-lock-recheck"],
 ];
 
 function run(cwd, args) {
@@ -233,9 +243,9 @@ let failed = false;
 for (const [name, find, replace] of selected) {
   const copy = mkdtempSync(join(tmpdir(), 'sss-mutant-'));
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
-  const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/store.js', 'cli.js',
+  const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'cli.js',
     'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
-    'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js'];
+    'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {

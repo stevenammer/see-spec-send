@@ -2,7 +2,8 @@ import { chmodSync, closeSync, openSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { fold, initial, step } from './machine.js';
-import { guard, setup } from '../worker/control.js';
+import { attach, guard } from '../worker/control.js';
+import { migrate } from './migrations.js';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 const stable = value => {
@@ -63,76 +64,40 @@ export class Store {
     }
     this.kind = kind;
     this.db = database || new DatabaseSync(file);
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
-      CREATE TABLE IF NOT EXISTS actors(
-        id TEXT PRIMARY KEY, kind TEXT CHECK(kind IN ('person','gateway','run','source')),
-        leader INTEGER DEFAULT 0, item TEXT NULL
-      );
-      CREATE TABLE IF NOT EXISTS events(
-        item TEXT, seq INTEGER, type TEXT, actor TEXT, body_hash TEXT,
-        prev_hash TEXT, hash TEXT, at TEXT, idem TEXT, submitted_hash TEXT,
-        actor_kind TEXT, actor_leader INTEGER, authority_version INTEGER NOT NULL DEFAULT 1,
-        PRIMARY KEY(item,seq), UNIQUE(item,idem)
-      );
-      CREATE TABLE IF NOT EXISTS bodies(
-        hash TEXT PRIMARY KEY, bytes TEXT, erased INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE TABLE IF NOT EXISTS items(
-        item TEXT PRIMARY KEY, state TEXT, head TEXT, seq INTEGER, context TEXT
-      );
-      CREATE TABLE IF NOT EXISTS integration_sources(
-        name TEXT PRIMARY KEY, secret TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, rate_limit INTEGER NOT NULL DEFAULT 30
-      );
-      CREATE TABLE IF NOT EXISTS integration_replays(
-        source TEXT NOT NULL, digest TEXT NOT NULL, expires INTEGER NOT NULL, PRIMARY KEY(source,digest)
-      );
-      CREATE TABLE IF NOT EXISTS integration_destinations(
-        name TEXT PRIMARY KEY, url TEXT NOT NULL, secret TEXT NOT NULL, include_text INTEGER NOT NULL DEFAULT 0,
-        enabled INTEGER NOT NULL DEFAULT 1, allow_loopback INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE TABLE IF NOT EXISTS integration_outbox(
-        id INTEGER PRIMARY KEY AUTOINCREMENT, destination TEXT NOT NULL, item TEXT NOT NULL, seq INTEGER NOT NULL,
-        event_type TEXT NOT NULL, stage TEXT NOT NULL, payload TEXT NOT NULL, state TEXT NOT NULL, attempts INTEGER NOT NULL,
-        next_at INTEGER NOT NULL, created INTEGER NOT NULL, delivered INTEGER, last_error TEXT,
-        UNIQUE(destination,item,seq)
-      );`);
-    try { this.db.exec('ALTER TABLE items ADD COLUMN context TEXT'); } catch {}
-    try { this.db.exec('ALTER TABLE events ADD COLUMN submitted_hash TEXT'); } catch {}
-    try { this.db.exec('ALTER TABLE events ADD COLUMN actor_kind TEXT'); } catch {}
-    try { this.db.exec('ALTER TABLE events ADD COLUMN actor_leader INTEGER'); } catch {}
-    try { this.db.exec('ALTER TABLE events ADD COLUMN authority_version INTEGER NOT NULL DEFAULT 0'); } catch {}
-    try { this.db.exec('ALTER TABLE bodies ADD COLUMN erased INTEGER NOT NULL DEFAULT 0'); } catch {}
-    this.migrateActorKinds();
-    setup(this, file);
-    this.backfillSubmittedHashes();
-    this.backfillAuthoritySnapshots();
+    try {
+      this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;');
+      // Schema, backfills and the version check all live in core/migrations.js.
+      migrate(this, database ? '' : file);
+    } catch (error) {
+      if (!database) this.db.close();
+      throw error;
+    }
+    attach(this, file);
   }
 
   migrateActorKinds() {
     const schema = this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='actors'").get()?.sql || '';
     if (schema.includes("'source'")) return;
     // SQLite cannot alter a CHECK constraint. Keep the registry bytes intact while
-    // adding the deliberately non-person integration source kind.
-    this.db.exec(`BEGIN IMMEDIATE;
-      ALTER TABLE actors RENAME TO actors_legacy_kind;
+    // adding the deliberately non-person integration source kind. Runs in the migration transaction.
+    this.db.exec(`ALTER TABLE actors RENAME TO actors_legacy_kind;
       CREATE TABLE actors(id TEXT PRIMARY KEY, kind TEXT CHECK(kind IN ('person','gateway','run','source')),
         leader INTEGER DEFAULT 0, item TEXT NULL);
       INSERT INTO actors(id,kind,leader,item) SELECT id,kind,leader,item FROM actors_legacy_kind;
-      DROP TABLE actors_legacy_kind;
-      COMMIT;`);
+      DROP TABLE actors_legacy_kind;`);
   }
 
+  // Runs as the authority migration step on every upgrade. The runner holds the transaction,
+  // so any throw here rolls the whole upgrade back.
   backfillAuthoritySnapshots() {
     const rows = this.db.prepare(`SELECT * FROM events
       WHERE (authority_version=0 OR authority_version IS NULL)
       AND (actor_kind IS NULL OR actor_leader IS NULL)`).all();
-    if (!rows.length) return;
     const actor = this.db.prepare('SELECT kind,leader FROM actors WHERE id=?');
     const fillSnapshots = this.db.prepare(`UPDATE events
       SET actor_kind=?, actor_leader=?, authority_version=0 WHERE item=? AND seq=?`);
-    // Legacy hashes cannot recover past roles. Capture today's registry once, atomically.
-    this.db.exec('BEGIN IMMEDIATE');
     try {
+      // Legacy hashes cannot recover past roles. Capture today's registry once.
       for (const row of rows) {
         const snapshot = actor.get(row.actor);
         if (!snapshot) throw new Error('legacy authority migration requires a known actor');
@@ -141,12 +106,11 @@ export class Store {
       for (const { item } of this.db.prepare('SELECT DISTINCT item FROM events').all()) {
         if (!this.verify(item).ok) throw new Error('legacy migration found an invalid chain');
       }
-      // The machine now records past shapers; refresh only its derived cache.
+      // The machine now records past shapers, and releases change item contexts. Refresh the
+      // derived cache from events on every upgrade, including databases with no legacy rows.
       this.rebuild();
-      this.db.exec('COMMIT');
     } catch (error) {
-      this.db.exec('ROLLBACK');
-      throw error;
+      throw new Error(`authority migration failed: ${error.message}`, { cause: error });
     }
   }
 

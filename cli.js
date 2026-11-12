@@ -17,6 +17,7 @@ import { createServerFor } from './app/http.js';
 import { Integrations } from './app/integrations.js';
 import { questModelService } from './provider/quest-service.js';
 import { validateCompletion } from './provider/index.js';
+import { migrationStatus, SCHEMA_VERSION, userVersion } from './core/migrations.js';
 
 const fail = message => {
   throw new Error(message);
@@ -39,7 +40,16 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
     write('restored');
     return;
   }
+  // Reporting never opens the store for writing. --check reads the file and nothing else.
+  if (command === 'migrate' && args.includes('--check')) {
+    write(JSON.stringify(migrationStatus(file)));
+    return;
+  }
   const store = new Store(file);
+  if (command === 'migrate') {
+    write(JSON.stringify({ current: userVersion(store.db), target: SCHEMA_VERSION }));
+    return;
+  }
   const auth = new Auth(store);
   const integrations = new Integrations(store);
   if (command === 'integration') {

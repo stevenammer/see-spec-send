@@ -34,49 +34,8 @@ export class Auth {
     this.clock = options.clock || now;
     this.oidc = options.oidc || null;
     this.buckets = new Map();
-    this.setup();
   }
 
-  setup() {
-    this.db.exec(`CREATE TABLE IF NOT EXISTS users(
-      id TEXT PRIMARY KEY, password TEXT NOT NULL, leader INTEGER NOT NULL DEFAULT 0,
-      lock_until INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS login_failures(
-      account TEXT NOT NULL, ip TEXT NOT NULL, at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS login_failures_account ON login_failures(account, at);
-    CREATE TABLE IF NOT EXISTS invites(
-      digest TEXT PRIMARY KEY, role TEXT NOT NULL, expires INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS sessions(
-      digest TEXT PRIMARY KEY, person TEXT NOT NULL, csrf TEXT NOT NULL, created INTEGER NOT NULL,
-      seen INTEGER NOT NULL, expires INTEGER NOT NULL, stepup INTEGER NOT NULL DEFAULT 0,
-      stepup_used INTEGER NOT NULL DEFAULT 0, auth_method TEXT NOT NULL DEFAULT 'password',
-      review_item TEXT, review_spec_hash TEXT, review_seq INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS api_tokens(
-      digest TEXT PRIMARY KEY, kind TEXT NOT NULL, item TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS person_state(
-      id TEXT PRIMARY KEY, disabled INTEGER NOT NULL DEFAULT 0
-    );`);
-    try { this.db.exec("ALTER TABLE sessions ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'password'"); } catch {}
-    try { this.db.exec('ALTER TABLE sessions ADD COLUMN review_item TEXT'); } catch {}
-    try { this.db.exec('ALTER TABLE sessions ADD COLUMN review_spec_hash TEXT'); } catch {}
-    try { this.db.exec('ALTER TABLE sessions ADD COLUMN review_seq INTEGER'); } catch {}
-    // must_change: the password on record is temporary (init or a reset code) and must be replaced.
-    // temp_used: that temporary password has already signed someone in, so it cannot sign in again.
-    this.addColumn('users', 'must_change', 'INTEGER NOT NULL DEFAULT 0');
-    this.addColumn('users', 'temp_used', 'INTEGER NOT NULL DEFAULT 0');
-    this.addColumn('invites', 'revoked', 'INTEGER NOT NULL DEFAULT 0');
-  }
-
-  // Only adds a column that is missing. Any other failure still surfaces.
-  addColumn(table, column, definition) {
-    const present = this.db.prepare(`PRAGMA table_info(${table})`).all().some(row => row.name === column);
-    if (!present) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-  }
 
   // The record format is scrypt$N$r$p$salt$value. This never applies the password policy.
   async record(password) {

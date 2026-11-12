@@ -41,10 +41,6 @@ export class ContainerAdapter {
     this.gatewayModel = gatewayModel || provider?.model || 'fixture:text-v1';
     this.command = command;
     this.image = pinnedImage(imageFile);
-    this.db.exec(`CREATE TABLE IF NOT EXISTS container_jobs(
-      id TEXT PRIMARY KEY, input TEXT NOT NULL, state TEXT NOT NULL, container_name TEXT NOT NULL,
-      token_digest TEXT, deadline INTEGER NOT NULL, output_path TEXT NOT NULL, error TEXT
-    )`);
   }
 
   paths(id) {

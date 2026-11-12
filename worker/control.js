@@ -2,20 +2,10 @@ import { createHash } from 'node:crypto';
 import { usdToMicros } from '../core/machine.js';
 import { readFileSync, realpathSync, writeFileSync, unlinkSync } from 'node:fs';
 
-export function setup(store, file) {
+// Schema lives in core/schema.js and is created by the migration runner, not here.
+export function attach(store, file) {
   // Resolve symbolic links so a database alias shares the independent stop latch.
   store.killFile = file && file !== ':memory:' ? `${realpathSync(file)}.kill` : null;
-  store.db.exec(`CREATE TABLE IF NOT EXISTS worker_control(id INTEGER PRIMARY KEY CHECK(id=1), killed INTEGER NOT NULL);
-    INSERT OR IGNORE INTO worker_control VALUES(1,0);
-    CREATE TABLE IF NOT EXISTS worker_history(seq INTEGER PRIMARY KEY, action TEXT NOT NULL, at TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS runs(
-      id TEXT PRIMARY KEY, item TEXT NOT NULL, approval INTEGER NOT NULL, spec_hash TEXT NOT NULL,
-      run_actor TEXT UNIQUE NOT NULL, gateway_actor TEXT UNIQUE NOT NULL,
-      status TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0, UNIQUE(item,approval)
-    );
-    CREATE TABLE IF NOT EXISTS worker_heartbeat(id INTEGER PRIMARY KEY CHECK(id=1), at INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS fake_jobs(id TEXT PRIMARY KEY, input TEXT NOT NULL, html TEXT NOT NULL, status TEXT NOT NULL);`);
-  try { store.db.exec('ALTER TABLE runs ADD COLUMN started_at INTEGER'); } catch {}
 }
 
 export function killed(store) {

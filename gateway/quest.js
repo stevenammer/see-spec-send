@@ -14,11 +14,6 @@ export class QuestGateway {
   constructor(ledger, provider, { clock = Date.now } = {}) {
     demand(typeof provider === 'function', 'Quest provider required');
     this.ledger = ledger; this.store = ledger.store; this.db = ledger.db; this.provider = provider; this.clock = clock;
-    this.db.exec(`CREATE TABLE IF NOT EXISTS gateway_quest_receipts(
-      id TEXT PRIMARY KEY, person TEXT NOT NULL, idem TEXT NOT NULL, payload_hash TEXT NOT NULL,
-      policy TEXT NOT NULL, day TEXT NOT NULL, input_bound INTEGER NOT NULL, output_bound INTEGER NOT NULL,
-      worst_micros INTEGER NOT NULL, charged_micros INTEGER NOT NULL, state TEXT NOT NULL,
-      usage TEXT, outcome TEXT, seal TEXT NOT NULL, UNIQUE(person,idem));`);
   }
 
   receipts() {

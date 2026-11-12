@@ -77,24 +77,6 @@ export class Ledger {
     this.clock = clock;
     demand(validRate(rate), 'invalid gateway rate');
     this.rate = Object.freeze({ ...rate });
-    this.db.exec(`CREATE TABLE IF NOT EXISTS gateway_policy(id INTEGER PRIMARY KEY CHECK(id=1), bytes TEXT, seal TEXT);
-      CREATE TABLE IF NOT EXISTS gateway_policy_versions(version INTEGER PRIMARY KEY, bytes TEXT NOT NULL, seal TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS gateway_capabilities(
-        digest TEXT PRIMARY KEY, run TEXT NOT NULL, item TEXT NOT NULL, approval INTEGER NOT NULL,
-        spec_hash TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
-      CREATE TABLE IF NOT EXISTS gateway_receipts(
-        id TEXT PRIMARY KEY, run TEXT NOT NULL, idem TEXT NOT NULL, item TEXT NOT NULL, approval INTEGER NOT NULL,
-        spec_hash TEXT NOT NULL, approval_hash TEXT NOT NULL, cap_micros INTEGER NOT NULL,
-        payload_hash TEXT NOT NULL, rate TEXT NOT NULL, policy TEXT NOT NULL, day TEXT NOT NULL,
-        input_bound INTEGER NOT NULL, output_bound INTEGER NOT NULL, worst_micros INTEGER NOT NULL,
-        charged_micros INTEGER NOT NULL, state TEXT NOT NULL, usage TEXT, outcome TEXT, seal TEXT NOT NULL,
-        UNIQUE(run,idem));
-      CREATE TABLE IF NOT EXISTS gateway_integrity(id INTEGER PRIMARY KEY CHECK(id=1), receipt_count INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS gateway_hold_audit(id TEXT PRIMARY KEY, receipt TEXT NOT NULL, actor TEXT NOT NULL,
-        at INTEGER NOT NULL, action TEXT NOT NULL, refund INTEGER NOT NULL, reason TEXT NOT NULL, seal TEXT NOT NULL);
-      INSERT OR IGNORE INTO gateway_integrity SELECT 1,0 WHERE NOT EXISTS(SELECT 1 FROM gateway_receipts);`);
-    const legacy = this.db.prepare('SELECT * FROM gateway_policy WHERE id=1').get();
-    if (legacy) this.db.prepare('INSERT OR IGNORE INTO gateway_policy_versions VALUES(1,?,?)').run(legacy.bytes, legacy.seal);
   }
 
   configure(policy) {

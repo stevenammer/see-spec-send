@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Ledger, digest as capabilityDigest } from '../gateway/ledger.js';
 import { validateHtml } from './builder/index.js';
+import { readProviders } from '../provider/config.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const terminal = state => ['stopped', 'failed'].includes(state);
@@ -26,13 +27,18 @@ export function pinnedImage(file = new URL('./builder-image.digest', import.meta
 // builder, so the socket is the sole model-text channel and is not a general egress path.
 export class ContainerAdapter {
   constructor(store, { docker = new DockerCli(), ledger = new Ledger(store), root = null,
-    gatewaySocket = null, imageFile, wallMs = 30_000, now = Date.now, command = ['node', '/builder/index.js'] } = {}) {
+    gatewaySocket = null, gatewayModel = null, providerName = null, providerOrg = 'default', providerEnv = process.env, imageFile, wallMs = 30_000, now = Date.now, command = ['node', '/builder/index.js'] } = {}) {
     this.store = store; this.db = store.db; this.docker = docker; this.ledger = ledger; this.now = now;
     this.externalStart = true;
+    this.modelOutput = true;
     this.wallMs = wallMs;
     this.timers = new Map();
     this.root = resolve(root || join(process.cwd(), '.sss-builder'));
     this.gatewaySocket = gatewaySocket;
+    const configured = providerName || readProviders(providerEnv).defaults[providerOrg];
+    const provider = configured && readProviders(providerEnv).providers.find(entry => entry.name === configured && entry.enabled);
+    if (configured && !provider) throw Error('configured provider is not enabled');
+    this.gatewayModel = gatewayModel || provider?.model || 'fixture:text-v1';
     this.command = command;
     this.image = pinnedImage(imageFile);
     this.db.exec(`CREATE TABLE IF NOT EXISTS container_jobs(
@@ -77,6 +83,7 @@ export class ContainerAdapter {
       '--mount', `type=bind,src=${builder},dst=/builder,readonly`,
       '--mount', `type=bind,src=${this.gatewaySocket},dst=/gateway/gateway.sock,readonly`,
       '--env', 'SSS_GATEWAY_SOCKET=/gateway/gateway.sock', '--env', `SSS_GATEWAY_TOKEN=${token}`,
+      '--env', `SSS_GATEWAY_MODEL=${this.gatewayModel}`,
       this.image, ...this.command];
   }
   start(request) {

@@ -33,29 +33,50 @@ the secret out of shell history too.
 
 ```sh
 node cli.js provider add --file ./openai.provider.json --default-org your-org-id
+node cli.js provider default --org your-org-id --name openai
 node cli.js provider list
 node cli.js provider test --name openai --max-output 1
 node cli.js provider disable --name openai
 node cli.js provider remove --name openai
-node cli.js gateway serve-provider --name openai --port 8081
+node cli.js gateway serve-provider --org your-org-id --port 8081
 ```
 
-`provider test` is the only command that makes a provider call. It makes exactly
+`provider test` is the only configuration command that makes a provider call. It makes exactly
 one short call after printing its worst-case reservation. It doesn't test during
 add, list, disable, or remove. A default is command-line configuration, never a
 browser setting. Callers must reject a provider that isn't enabled, including a
 stale default.
 
-The existing drafting path resolves its provider by this configured name before
-it creates a packet. The current fake builder remains deliberately model-free,
-so it cannot select or contact any provider at all. A real builder must receive
-an already enabled provider name and use this same resolver. It never receives a
-URL, key, or browser choice.
+The container builder resolves the organization's enabled CLI default to its
+reviewed model name. Start `gateway serve-provider --org your-org-id` with that
+same default. With no enabled default, the builder keeps using the local fixture,
+so a new installation cannot spend by accident. The gateway host, not the
+container, resolves the provider URL and credential.
 
 `gateway serve-provider` only starts an enabled provider behind the existing
 capability gateway. Configure the gateway's operator policy first. It uses the
 provider's frozen price table for reservation and settlement, and the existing
 approval cap, concurrency, idempotency, dispatch, settle, and kill controls.
+It prints the provider name, model, and conservative worst-case micro-dollar
+hold before a leader approves a try. The approved cap remains frozen in the
+ledger, and every model-built artifact is labelled model output in the work log.
+
+## Admin live-smoke checklist
+
+This is the only intentional live-provider path. It can charge the organization.
+
+1. Put the key in its protected environment variable or owner-readable key file.
+2. Add the reviewed provider entry and set its organization default.
+3. Configure the gateway policy, then start `gateway serve-provider --org YOUR_ORG`.
+4. Read the printed provider, model, and worst-case micro-dollar amount. Confirm it is within the amount the leader intends to approve.
+5. Approve one small spec with a cap at least that amount, run the worker with the matching organization default, and inspect `gateway status` afterward.
+6. Use `sss kill set` if the run must stop. Don't use a real key in tests.
+
+The builder sends a fixed system instruction plus exactly `must`, `how_we_know`,
+and `out_of_scope`. It does not send comments, people, browser data, or secrets.
+It accepts one HTML document only. Markdown fences and surrounding commentary
+are stripped deterministically. A failed validation gets one separately metered
+repair request, then the run fails without another retry.
 
 ## Recipes
 

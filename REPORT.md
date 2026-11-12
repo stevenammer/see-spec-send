@@ -1,32 +1,58 @@
-# Slice 12 report
+# Slice 11 to 12 wiring report
 
 ## Assumptions
 
-- An organization supplies reviewed prices in integer micro-dollars per million tokens. Zero means a local model with no provider charge.
-- The existing gateway's capability, approval, cap, reservation, settlement, and kill rules remain the authority boundary. A configured provider is an adapter behind that boundary, never an authority source.
-- A local model is intentional only when its provider entry says `allowPrivate: true`.
-- The current fake builder stays model-free and can't choose a provider. A future real builder must resolve an enabled name through the same configuration boundary.
+- An administrator starts the gateway with the same organization default that
+  the container adapter reads. `provider default --org ORG --name NAME` records
+  that choice. No enabled default means the fixture remains the builder model.
+- The gateway policy has already been fixed before a provider gateway starts.
+- A provider's integer price table is the organization's reviewed estimate, not
+  a vendor invoice.
 
-## Open questions
+## What changed
 
-- An organization needs to decide who owns price review and how it updates prices.
-- A production deployment needs a DNS connection-pinning strategy or a restricted egress proxy to close the post-resolution rebinding gap called out in PROVIDERS.md.
+- The container adapter resolves an enabled organization default to its reviewed
+  model name and passes only that non-secret model name to the builder.
+- The gateway server uses the configured provider upstream and a fixed static
+  page system instruction. Provider credentials remain in the gateway process.
+- The builder sends only `must`, `how_we_know`, and `out_of_scope` as its user
+  content. It strips surrounding model commentary or fences, validates the
+  static page, allows one separately metered repeat request, then fails.
+- Container-delivered tries are marked `model_output` and the work log says
+  “model output”. The command reports provider, model, and conservative
+  worst-case micro-dollar hold before approval.
 
-## Controls and proof
+## Per-control proof
 
-| Control | Test that fails without it |
+| Control | Proof |
 | --- | --- |
-| Provider must be priced | `provider priced required` mutant, `test/provider.test.mjs` |
-| Host allowlist and private-address gate | `provider host allowlist` mutant, `test/provider.test.mjs` |
-| Redirect refusal | `provider redirect refusal` mutant, `test/provider.test.mjs` |
-| Response-size cap | `provider response cap` mutant, `test/provider.test.mjs` |
-| HTTP status, malformed JSON, missing usage, slow response, and mid-stream drop | `test/provider.test.mjs` local mock cases |
-| Private address and URL-credential refusal | `test/provider.test.mjs` checked-URL cases |
-| Local command timeout and output cap | `test/provider.test.mjs` command adapter conformance |
-| Secret-shaped text redaction | `test/provider.test.mjs` and `provider/safe-http.js` |
-| Existing reserve, cap, settle, kill and idempotency rules | Existing gateway mutants and `test/gateway.test.mjs` |
-| Explicit draft consent | `draft explicit approval` mutant and drafting tests |
+| Fixture stays default | `ContainerAdapter` uses `fixture:text-v1` unless an enabled org default is present. |
+| Provider key boundary | `test/container.test.mjs` checks provider-secret text is absent from Docker arguments, environment entries, and bind mounts. Provider adapters retain the key only on the gateway host. |
+| Cap, reservation, settlement, idempotency, kill | Existing `gateway/ledger.js` remains the sole admission and settlement path. No control was bypassed. |
+| Model output validation | `test/builder.test.mjs` proves deterministic extraction and script rejection. |
+| Model label | `Worker.deliver` records `model_output`; `app/pages.js` renders it. |
+| New mutants | `container gateway model binding` and `builder markdown extraction` were added to `scripts/mutate-check.mjs`. |
 
-## Outcome check
+## Verification
 
-The repository now has a narrow provider contract, built-in wire adapters, a secret-reference-only config and CLI administration path, price declarations, safety checks, conformance checks, offline adapter tests, and copy-paste provider documentation. No live vendor call was made.
+- Passed in this checkout with Node 22: the suite reached and passed all files
+  through `test/demo-safety.test.mjs`, including new `test/builder.test.mjs` and
+  `test/container.test.mjs`.
+- Not verified here: gateway HTTP tests need a local loopback listener. This
+  restricted sandbox returns `EPERM` for `127.0.0.1`, so `test/gateway.test.mjs`
+  cannot complete here. Its existing local mock coverage includes success,
+  caps, missing usage, idempotency, and stop/kill cases.
+- Not verified here: `npm run test:container`. It requires the real Docker
+  daemon outside this sandbox. The existing acceptance test is intentionally
+  non-skipping and will fail loudly without its pinned image.
+- Unverified UI detail: the approval page states the gateway administrator must
+  review the printed provider/model/worst-case amount. It does not yet fetch
+  that data into the browser approval form. The CLI command is the source of
+  truth for that preflight display.
+
+## Remaining review points
+
+- Run `npm test`, `npm run check:mutants`, and `npm run test:container` on the
+  unrestricted host. Use only a local mock provider for those tests.
+- Before an actual vendor smoke, follow the live-smoke checklist in
+  `docs/PROVIDERS.md` and read the command's printed worst-case hold.

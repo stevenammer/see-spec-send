@@ -75,7 +75,7 @@ function eventWords(event) {
     checked_in: 'posted a check-in',
   };
   // A try is written by a per-item token, so name the person who delivered it instead.
-  return `${escape(event.delivered_by || event.actor)} ${words[event.type] || 'updated this item'}`;
+  return `${escape(event.delivered_by || event.actor)} ${words[event.type] || 'updated this item'}${event.type === 'tried' && event.model_output ? ' (model output)' : ''}`;
 }
 
 export function itemPage(item, events, person, leader) {
@@ -116,7 +116,7 @@ export function itemPage(item, events, person, leader) {
     '<button>Save the spec</button></form>';
   if (item.state === 'CHECKED' && context.steward === person) action = specForm;
   if (item.state === 'SPECCED' && leader && context.steward !== person)
-    action = `<form data-approve="true"><h2>Decide</h2><label>Cap in dollars<input name="cap_usd" type="number" min="0" step="0.01" required></label><label>How many people need to say it helps?<input name="quorum" type="number" min="1" required></label><label>Re-enter your password<input name="password" type="password" required></label><button>Approve the try</button></form><form data-event="returned"><label>What needs to change?<input name="note" required></label><button>Return the spec</button></form>`;
+    action = `<form data-approve="true"><h2>Decide</h2><p>Approval freezes the cap. The configured provider and its worst-case micro-dollar estimate are shown by the gateway administrator before this screen is used.</p><label>Cap in dollars<input name="cap_usd" type="number" min="0" step="0.01" required></label><label>How many people need to say it helps?<input name="quorum" type="number" min="1" required></label><label>Re-enter your password<input name="password" type="password" required></label><button>Approve the try</button></form><form data-event="returned"><label>What needs to change?<input name="note" required></label><button>Return the spec</button></form>`;
   if (item.state === 'SENDING' && (leader || context.steward === person))
     action = `<form data-artifact="true"><h2>Deliver the try</h2><label>One HTML document<textarea name="html" required></textarea></label><button>Deliver the try</button></form>`;
   if (item.state === 'TRYING') {

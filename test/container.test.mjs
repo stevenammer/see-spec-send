@@ -53,6 +53,12 @@ test('container adapter persists before Docker and supplies every locked-down Do
     ['--tmpfs', '/tmp:rw,nosuid,nodev,noexec,size=16m']]) assert.equal(has(flag, value), true, `${flag} is missing or weakened`);
   assert.equal(args.includes('--security-opt') && args[args.indexOf('--security-opt') + 1] === 'no-new-privileges=true', true);
   assert.ok(args.some(value => /^node:22-alpine@sha256:/.test(value)));
+  assert.equal(args[args.indexOf('SSS_GATEWAY_MODEL=fixture:text-v1')], 'SSS_GATEWAY_MODEL=fixture:text-v1');
+  process.env.SSS_TEST_PROVIDER_SECRET = 'provider-secret-must-not-enter-container';
+  assert.equal(args.join(' ').includes(process.env.SSS_TEST_PROVIDER_SECRET), false, 'provider secret entered container arguments');
+  assert.equal(args.some(value => /PROVIDER|API.?KEY|SECRET/.test(value)), false, 'provider credential environment was mounted');
+  assert.equal(args.filter(value => value.includes('type=bind')).some(value => /providers|secret|key/i.test(value)), false, 'provider credential mount was added');
+  delete process.env.SSS_TEST_PROVIDER_SECRET;
   assert.match(readFileSync(join(root, request.id, 'spec.json'), 'utf8'), /"must"/);
   assert.equal(a.status(request.id).state, 'ready');
   a.stop(request.id); assert.ok(ledger.revoked.length >= 1);

@@ -9,6 +9,7 @@ import { fixtureProvider } from './gateway/fixture.js';
 import { readFileSync } from 'node:fs';
 import { readProviders, saveProviders, validateProvider, providerFor, meteredProviderFor } from './provider/config.js';
 import { redact } from './provider/safe-http.js';
+import { SYSTEM_PROMPT } from './worker/builder/index.js';
 import { Auth } from './app/auth.js';
 import { createServerFor } from './app/http.js';
 
@@ -42,6 +43,11 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
       const org = value('--default-org');
       if (org) data.defaults[org] = candidate.name;
       saveProviders(data, env); write(`provider ${candidate.name} added${org ? ` and set as ${org} default` : ''}`);
+    } else if (subcommand === 'default') {
+      const org = value('--org') || fail('missing --org'); const name = value('--name') || fail('missing --name');
+      const data = readProviders(env); const entry = data.providers.find(provider => provider.name === name && provider.enabled);
+      if (!entry) fail('provider is not enabled'); data.defaults[org] = name; saveProviders(data, env);
+      write(`provider ${name} set as ${org} default`);
     } else if (subcommand === 'remove' || subcommand === 'disable') {
       const name = value('--name') || fail('missing --name'); const data = readProviders(env);
       const index = data.providers.findIndex(provider => provider.name === name);
@@ -60,7 +66,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
       write(`One test call will reserve at most ${worst} micro-dollars. Continuing.`);
       const result = await providerFor(name, env).complete({ system: 'Reply with OK.', messages: [{ role: 'user', content: 'OK' }], maxOutputTokens, model: entry.model, signal: AbortSignal.timeout(entry.timeoutMs || 10_000) });
       write(JSON.stringify({ provider: name, usage: result.usage, text: redact(result.text) }));
-    } else fail('expected provider add, list, test, remove, or disable');
+    } else fail('expected provider add, list, test, default, remove, or disable');
   } else if (command === 'gateway') {
     const ledger = new Ledger(store);
     if (args[0] === 'fixture-enable') {
@@ -82,13 +88,15 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
       write(`Fixture gateway http://127.0.0.1:${server.address().port}; no real provider`);
       return;
     } else if (args[0] === 'serve-provider') {
-      const selected = meteredProviderFor(value('--name') || fail('missing --name'), env);
+      const name = value('--name') || readProviders(env).defaults[value('--org') || 'default'] || fail('missing --name or configured --org default');
+      const selected = meteredProviderFor(name, env);
       const providerLedger = new Ledger(store, { rate: selected.rate });
       if (!providerLedger.policy().enabled) fail('gateway is disabled');
-      const server = createGatewayServer(providerGateway(providerLedger, selected.provider));
+      const server = createGatewayServer(providerGateway(providerLedger, selected.provider, { system: SYSTEM_PROMPT }));
       const port = Number(value('--port') || '8081');
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
-      write(`Metered provider gateway http://127.0.0.1:${server.address().port}; provider name is not a browser setting`);
+      const worst = Math.ceil((selected.rate.input_micros_per_million * 8192 + selected.rate.output_micros_per_million * providerLedger.policy().output_tokens) / 1_000_000);
+      write(`Metered provider gateway http://127.0.0.1:${server.address().port}; provider=${name}; model=${selected.rate.model}; worst-case=${worst} micro-dollars before approval`);
       return;
     } else fail('expected gateway fixture-enable, mint, revoke, status, verify, serve-fixture, or serve-provider');
   } else if (command === 'kill') {

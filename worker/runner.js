@@ -77,6 +77,7 @@ export class Worker {
       const artifact_hash = this.store.putArtifact(run.item, html);
       this.store.appendInTransaction(run.item, { type: 'tried', actor: run.run_actor,
         approval: run.approval, spec_hash: run.spec_hash, artifact_hash, at: new Date().toISOString(),
+        model_output: this.adapter.modelOutput === true,
       }, { idem: `run:${id}:tried` });
       this.db.prepare("UPDATE runs SET delivered=1,status='stop_requested' WHERE id=?").run(id);
       return true;

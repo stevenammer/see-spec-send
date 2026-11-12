@@ -56,6 +56,8 @@ const mutants = [
   ['container pid limit', "'--pids-limit', '32'", "'--pids-limit', '32000'"],
   ['container memory limit', "'--memory', '64m'", "'--memory', '640m'"],
   ['container cpu limit', "'--cpus', '0.50'", "'--cpus', '50'"],
+  ['container gateway model binding', "'--env', `SSS_GATEWAY_MODEL=${this.gatewayModel}`", "'--env', 'SSS_GATEWAY_MODEL=unreviewed'"],
+  ['builder markdown extraction', 'return match ? match[0] : text.trim()', 'return text.trim()'],
   ['container wall clock limit', 'expired(row) { return this.now() >= row.deadline; }', 'expired(row) { return false; }'],
   ['CSRF token check', "req.headers['x-csrf-token'] !== session?.csrf", 'false'],
   ['Origin check', 'new URL(value).origin === new URL(expected).origin', 'true'],

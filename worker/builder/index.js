@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 const fail = message => { throw new Error(message); };
 const bytes = value => Buffer.byteLength(value, 'utf8');
 const cap = 64 * 1024;
+export const SYSTEM_PROMPT = 'Return one self-contained static HTML page. Use only the approved specification in the user message. Do not include scripts, external URLs, commentary, markdown, people, or comments.';
 
 export function validateHtml(html) {
   if (typeof html !== 'string' || !html.startsWith('<!doctype html>')) fail('builder response is not static HTML');
@@ -15,9 +16,9 @@ export function validateHtml(html) {
   return html;
 }
 
-export function gateway(socket, token, input, key) {
+export function gateway(socket, token, input, key, model = 'fixture:text-v1') {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({ model: 'fixture:text-v1', input, max_output_tokens: 128 });
+    const body = JSON.stringify({ model, input, max_output_tokens: 128 });
     const req = request({ socketPath: socket, path: '/v1/generate', method: 'POST', headers: {
       'content-type': 'application/json', 'content-length': Buffer.byteLength(body),
       authorization: `Bearer ${token}`, 'idempotency-key': key,
@@ -37,18 +38,33 @@ export function gateway(socket, token, input, key) {
   });
 }
 
-export async function build({ specPath, outputPath, socket, token }) {
+// Providers often wrap an otherwise valid page in fences or a short sentence.
+// This is deliberately narrow: only a complete doctype document is extracted.
+export function staticHtmlFromModel(text) {
+  if (typeof text !== 'string') fail('gateway did not return model text');
+  const match = /<!doctype html[\s\S]*?<\/html\s*>/i.exec(text);
+  return match ? match[0] : text.trim().replace(/^```(?:html)?\s*/i, '').replace(/\s*```\s*$/i, '');
+}
+
+export async function build({ specPath, outputPath, socket, token, model = 'fixture:text-v1' }) {
   const spec = JSON.parse(await readFile(specPath, 'utf8'));
   if (!spec || Object.keys(spec).sort().join(',') !== 'how_we_know,must,out_of_scope') fail('approved spec lists required');
   for (const list of Object.values(spec)) if (!Array.isArray(list) || list.some(value => typeof value !== 'string')) fail('approved spec lists required');
   const input = JSON.stringify({ must: spec.must, how_we_know: spec.how_we_know, out_of_scope: spec.out_of_scope });
   const key = `builder:${createHash('sha256').update(input).digest('hex')}`;
-  const html = validateHtml(await gateway(socket, token, input, key));
+  let html;
+  try { html = validateHtml(staticHtmlFromModel(await gateway(socket, token, input, key, model))); }
+  catch (first) {
+    // One repair is a separately metered, deterministic request. It sees only
+    // the approved lists and the rejected model text, never comments or people.
+    try { html = validateHtml(staticHtmlFromModel(await gateway(socket, token, input, `${key}:repair`, model))); }
+    catch (error) { fail(`model output failed static-page validation after one repair: ${error.message}`); }
+  }
   await writeFile(outputPath, html, { mode: 0o644, flag: 'wx' });
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   build({ specPath: process.env.SSS_SPEC_PATH || '/work/spec.json', outputPath: process.env.SSS_OUTPUT_PATH || '/out/try.html',
-    socket: process.env.SSS_GATEWAY_SOCKET, token: process.env.SSS_GATEWAY_TOKEN })
+    socket: process.env.SSS_GATEWAY_SOCKET, token: process.env.SSS_GATEWAY_TOKEN, model: process.env.SSS_GATEWAY_MODEL })
     .catch(error => { process.stderr.write(`builder refused: ${error.message}\n`); process.exitCode = 1; });
 }

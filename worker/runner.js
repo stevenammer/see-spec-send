@@ -37,6 +37,7 @@ export class Worker {
 
   advance(id) {
     // No await inside the lock. Later adapters must persist an idempotent request, not wait for a build here.
+    let externalRequest;
     transaction(this.store, () => {
       const run = this.db.prepare('SELECT * FROM runs WHERE id=?').get(id);
       const context = this.store.read(run.item).context;
@@ -47,11 +48,16 @@ export class Worker {
       }
       const spec = this.store.events(run.item).find(event => event.type === 'specced' && event.body_hash === run.spec_hash);
       if (!spec) throw new Error('approved spec missing');
-      this.adapter.start({ id, item: run.item, approval: run.approval, spec_hash: run.spec_hash,
+      const request = { id, item: run.item, approval: run.approval, spec_hash: run.spec_hash,
         cap_micros: context.capMicros, spec: {
           must: spec.must, how_we_know: spec.how_we_know, out_of_scope: spec.out_of_scope,
-        } });
+        } };
+      // External adapters must mint capabilities and start a process after the worker
+      // lock is released. The fake stays transactional for its crash-proof contract.
+      if (this.adapter.externalStart) externalRequest = request;
+      else this.adapter.start(request);
     });
+    if (externalRequest) this.adapter.start(externalRequest);
     const run = this.db.prepare('SELECT * FROM runs WHERE id=?').get(id);
     if (run.status === 'stop_requested') return this.stop(run);
     const observed = this.adapter.status(id);

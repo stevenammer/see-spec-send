@@ -18,6 +18,9 @@
 | Self-reported evidence becomes fact | Source-linked records require a claim and an honesty kind; reports name their reporter | `versioned comments become stale` |
 | Handoff restores self-certification | Leader-only handoff keeps all past stewards excluded from Helps | `check-ins cannot approve, vote, or weaken a stewardship handoff` |
 | Builder escape or egress request | Default policy has no egress and fake sandbox kills on synthetic escape | `fake sandbox refuses escape and egress attempts and fires the emergency kill` |
+| Builder reaches the internet or a host service | Docker `--network none`; only a mounted Unix socket reaches the local gateway | `test/container.acceptance.mjs` inspected container and egress probe |
+| Builder changes the host or other runs | Read-only root and mounts, non-root UID, one writable `/out` mount | `test/container.acceptance.mjs` host-read and write probes |
+| Builder consumes host resources forever | Dropped capabilities, no-new-privileges, PID, CPU, memory and wall-clock limits | `test/container.acceptance.mjs` PID, memory and deadline probes |
 | Draft silently spends or approves | Exact fixture preflight, explicit consent gate, and no machine command | `draft preflight is exact, fixture-only, labeled, and never sends without explicit approval` |
 | OIDC login response is replayed or swapped | 256-bit single-use state, nonce, and ten-minute expiry are consumed before exchange | `OIDC uses authorization-code PKCE, single-use state and verified issuer claims` |
 | Authorization code is intercepted | S256 PKCE binds the code exchange to the browser-created verifier | `OIDC uses authorization-code PKCE, single-use state and verified issuer claims` |

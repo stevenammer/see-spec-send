@@ -31,10 +31,10 @@ class Waiting extends FakeAdapter {
 }
 
 // Reusable contract: substitute another factory here before accepting another adapter.
-export function adapterConformance(name, factory) {
+export function adapterConformance(name, factory, persisted = s => s.db.prepare('SELECT count(*) AS n FROM fake_jobs').get().n) {
   test(`${name} adapter conformance: identity, recovery, deterministic artifact, stop fence`, () => {
     const s = new Store(file());
-    const request = { id: 'fixed', item: 'i', approval: 1, spec_hash: 'a'.repeat(64), cap_micros: 0,
+    const request = { id: 'f'.repeat(64), item: 'i', approval: 1, spec_hash: 'a'.repeat(64), cap_micros: 0,
       spec: { must: ['x'], how_we_know: ['yes'], out_of_scope: [] } };
     let adapter = factory(s);
     adapter.start(request); adapter.start(request);
@@ -45,15 +45,17 @@ export function adapterConformance(name, factory) {
     adapter = factory(s);
     assert.deepEqual(adapter.status(request.id), first);
     assert.throws(() => adapter.start({ ...request, item: 'other' }), /different input/);
-    assert.equal(s.db.prepare('SELECT count(*) AS n FROM fake_jobs').get().n, 1);
-    adapter.start({ ...request, id: 'second' });
-    assert.deepEqual(adapter.status('second'), first);
-    adapter.stop('fixed'); adapter.stop('fixed');
+    assert.equal(persisted(s), 1);
+    const second = 'e'.repeat(64);
+    adapter.start({ ...request, id: second });
+    assert.deepEqual(adapter.status(second), first);
+    adapter.stop(request.id); adapter.stop(request.id);
     adapter.start(request);
-    assert.equal(adapter.status('fixed').state, 'stopped');
-    adapter.stop('unstarted');
-    assert.throws(() => adapter.start({ ...request, id: 'unstarted' }), /different input/);
-    assert.equal(adapter.status('unstarted').state, 'stopped');
+    assert.equal(adapter.status(request.id).state, 'stopped');
+    const unstarted = 'd'.repeat(64);
+    adapter.stop(unstarted);
+    assert.throws(() => adapter.start({ ...request, id: unstarted }), /different input/);
+    assert.equal(adapter.status(unstarted).state, 'stopped');
     s.close();
   });
 }

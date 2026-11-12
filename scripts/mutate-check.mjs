@@ -8,13 +8,13 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/machine.test.mjs', 'test/oracle.test.mjs', 'test/web.test.mjs', 'test/web-pages.test.mjs',
   'test/review-regressions.test.mjs', 'test/legacy-migration.test.mjs', 'test/vision-quest.test.mjs', 'test/quest-http.test.mjs',
   'test/quest-storage-faults.test.mjs', 'test/quest-attack.test.mjs', 'test/quest-spec.test.mjs',
-  'test/quest-review-regressions.test.mjs', 'test/worker.test.mjs',
+  'test/quest-review-regressions.test.mjs', 'test/worker.test.mjs', 'test/container.test.mjs',
   'test/worker-path.test.mjs', 'test/gateway.test.mjs', 'test/slice9.test.mjs', 'test/slice7.test.mjs', 'test/slice8.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
-  'test/worker.test.mjs', 'test/worker-path.test.mjs'] : fullSuite;
+  'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
 const mutants = [
   ['gateway disabled default', "demand(policy.enabled, 'gateway disabled');", ''],
   ['gateway run cap', "demand(add(used, worst) <= cap, 'run cap exceeded');", ''],
@@ -47,6 +47,15 @@ const mutants = [
   ['fake idempotent start', 'INSERT OR IGNORE INTO fake_jobs VALUES(?,?,?,?)', 'INSERT INTO fake_jobs VALUES(?,?,?,?)'],
   ['fake identity binding', 'if (prior && prior.input !== input)', 'if (false)'],
   ['fake stop observed', "DO UPDATE SET status='stopped'", "DO UPDATE SET status='ready'"],
+  ['container repeated start resumes', "if (row.state === 'running') return;", ''],
+  ['container network isolation', "'--network', 'none'", "'--network', 'bridge'"],
+  ['container read only root', "'--read-only'", "'--read-write'"],
+  ['container drops capabilities', "'--cap-drop', 'ALL'", "'--cap-add', 'ALL'"],
+  ['container no new privileges', "'no-new-privileges=true'", "'no-new-privileges=false'"],
+  ['container pid limit', "'--pids-limit', '32'", "'--pids-limit', '32000'"],
+  ['container memory limit', "'--memory', '64m'", "'--memory', '640m'"],
+  ['container cpu limit', "'--cpus', '0.50'", "'--cpus', '50'"],
+  ['container wall clock limit', 'expired(row) { return this.now() >= row.deadline; }', 'expired(row) { return false; }'],
   ['CSRF token check', "req.headers['x-csrf-token'] !== session?.csrf", 'false'],
   ['Origin check', 'new URL(value).origin === new URL(expected).origin', 'true'],
   ['Origin prefix match', 'new URL(value).origin === new URL(expected).origin', 'String(value).startsWith(expected)'],
@@ -154,7 +163,7 @@ const onlyAt = process.argv.indexOf('--only');
 const only = onlyAt < 0 ? null : process.argv[onlyAt + 1];
 if (onlyAt >= 0 && !only) throw new Error('--only requires a mutant name');
 const selected = mutants.filter(([name]) => (!only || name.includes(only)) &&
-  (!workerOnly || name.startsWith('worker ') || name.startsWith('fake ')));
+  (!workerOnly || name.startsWith('worker ') || name.startsWith('fake ') || name.startsWith('container ')));
 if (!selected.length) throw new Error('no mutant matches the requested name');
 
 const baseline = run(root, [...suite, 'test/check-public.test.mjs']);
@@ -170,7 +179,7 @@ for (const [name, find, replace] of selected) {
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
   const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/store.js', 'cli.js',
     'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
-    'worker/control.js', 'worker/policy.js', 'drafting/preflight.js', 'app/oidc.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js'];
+    'worker/control.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {

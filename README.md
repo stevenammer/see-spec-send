@@ -23,10 +23,10 @@ I'm building this in public, and it's early. Here's the honest state:
   - **The manual path with a web UI.** A person can post a checked problem, write a spec, have a leader who isn't the steward approve it with a password step-up, deliver one safe playable try, and reach Helps only when other people say it helps.
   - **Vision Quest without a model.** A signed-in person can work through one question at a time, correct the playback, and end with a memo that recommends BUILD, CONFIGURE, BUY OR USE, PROCESS CHANGE or KILL. Posting makes one checked problem, and a build proposal opens the steward's spec form with a first draft. Draft answers survive a reload, corrections keep the originals, and earlier quests can be exported after starting another. Shared items keep the derived memo; raw conversation stays browser-side at rest. Posting is safe to retry. It makes no AI calls. See [docs/VISION_QUEST.md](docs/VISION_QUEST.md) for the exact boundaries.
   - **Sign-in and a small HTTP API.** Invites, passwords, sessions, CSRF protection, rate limits, and a leader step-up before anything gets approved. The command line is the only admin surface. See [docs/ADMIN.md](docs/ADMIN.md) and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md), which also lists what's not covered.
-  - **The local worker and fake builder.** An approved spec can reach a small static try through one durable run. The worker recovers after a crash and can be stopped from the command line. Crash, race, stale-output, and adapter-contract tests cover that path. The fake uses no network, model, or money. See [docs/ADAPTER.md](docs/ADAPTER.md).
+  - **The local worker, fake builder and Docker builder adapter.** An approved spec can reach a small static try through one durable run. The container adapter has no Docker network, a pinned image, a non-root read-only process, hard CPU, memory, PID and wall-clock limits, and one writable output directory. It can only ask the local fixture gateway through a mounted Unix socket. The normal suite proves its non-Docker logic. A separate local-Docker acceptance run checks the actual container controls and worker delivery. It uses a mock gateway, not a model or external API. See [docs/ADAPTER.md](docs/ADAPTER.md).
   - **Kept work records.** Comments pin the spec or artifact version they address, evidence keeps its source and honesty label, members can add check-ins, and a leader-only stewardship handoff cannot reopen a past steward's vote.
   - **Optional fixture drafting.** A preflight exposes the exact packet and worst-case estimate. It cannot send without explicit approval, and every result is labeled model output. See [docs/DRAFTING.md](docs/DRAFTING.md).
-- **Not built yet:** a real external builder adapter, a process watchdog, portable/model-assisted Vision Quest, Vision Quest in the anonymous demo, and production identity/database work. Don't try to run an organization on this yet.
+  - **Not built yet:** a real model provider, portable/model-assisted Vision Quest, Vision Quest in the anonymous demo, and production identity/database work. Don't try to run an organization on this yet.
 
 I'm treating tests as claims. `npm test` runs them, and `npm run check:mutants` deliberately breaks individual controls and checks that the tests notice. If a test can't fail, I don't count it.
 
@@ -69,9 +69,14 @@ npm test
 npm run check:mutants
 npm run check:public
 npm run test:listen
+npm run test:container
 ```
 
 `test:listen` starts a real server on a local port and runs a short end-to-end check. `check:public` is a guard that scans the files and the git history for secrets, private paths, personal emails and backup files before anything gets published.
+
+`test:container` is separate from `npm test`. It needs the local Docker daemon and
+the exact digest in `worker/builder-image.digest`, so it can't run in restricted
+sandboxes. It uses a local mock gateway and never calls an external API.
 
 `npm run test:e2e` is separate and isn't part of the no-dependency path. It drives a real browser, so it needs an existing Playwright install (set `PLAYWRIGHT_DIR` to the folder that holds it) and Chrome (set `CHROME_PATH` if it isn't at `/usr/bin/google-chrome`).
 

@@ -98,15 +98,18 @@ export class Ledger {
     return policy;
   }
 
-  mint(runId, ttlMs = 15 * 60_000) {
+  mint(runId, ttlMs = 15 * 60_000, persist = () => {}) {
     demand(integer(ttlMs, 60 * 60_000) && ttlMs > 0, 'invalid capability lifetime');
     const raw = randomBytes(32).toString('base64url');
     transaction(this.store, () => {
       const run = this.db.prepare('SELECT * FROM runs WHERE id=?').get(runId);
       live(this.store, run);
       const expires = add(this.clock(), ttlMs);
+      const rawDigest = digest(raw);
       this.db.prepare('INSERT INTO gateway_capabilities VALUES(?,?,?,?,?,?,0)')
-        .run(digest(raw), run.id, run.item, run.approval, run.spec_hash, expires);
+        .run(rawDigest, run.id, run.item, run.approval, run.spec_hash, expires);
+      // Keep the adapter's revocation digest in the same transaction as minting.
+      persist(rawDigest);
     });
     return raw;
   }

@@ -10,7 +10,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/quest-storage-faults.test.mjs', 'test/quest-attack.test.mjs', 'test/quest-spec.test.mjs',
   'test/quest-review-regressions.test.mjs', 'test/worker.test.mjs', 'test/container.test.mjs',
   'test/worker-path.test.mjs', 'test/gateway.test.mjs', 'test/slice9.test.mjs', 'test/slice7.test.mjs', 'test/slice8.test.mjs',
-  'test/provider.test.mjs',
+  'test/provider.test.mjs', 'test/builder.test.mjs',
   'test/slice13.test.mjs',
   'test/slice14.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
@@ -65,7 +65,8 @@ const mutants = [
   ['container memory limit', "'--memory', '64m'", "'--memory', '640m'"],
   ['container cpu limit', "'--cpus', '0.50'", "'--cpus', '50'"],
   ['container gateway model binding', "'--env', `SSS_GATEWAY_MODEL=${this.gatewayModel}`", "'--env', 'SSS_GATEWAY_MODEL=unreviewed'"],
-  ['builder markdown extraction', 'return match ? match[0] : text.trim()', 'return text.trim()'],
+  ['builder markdown extraction', 'const start = text.search(/<!doctype html/i);', 'const start = -1;'],
+  ['builder accepts uppercase doctype', '!/^<!doctype html>/i.test(html)', "!html.startsWith('<!doctype html>')"],
   ['container wall clock limit', 'expired(row) { return this.now() >= row.deadline; }', 'expired(row) { return false; }'],
   ['CSRF token check', "req.headers['x-csrf-token'] !== session?.csrf", 'false'],
   ['Origin check', 'new URL(value).origin === new URL(expected).origin', 'true'],
@@ -202,7 +203,7 @@ for (const [name, find, replace] of selected) {
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
   const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/store.js', 'cli.js',
     'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
-    'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'provider/vision-quest.js'];
+    'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {

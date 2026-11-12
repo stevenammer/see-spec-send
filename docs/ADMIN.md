@@ -10,6 +10,12 @@ Roles are `member` or `leader`.
 
 `node cli.js person list` prints registered people and leader flags.
 
+`node cli.js integration source add --name NAME --secret SECRET` creates an inbound
+source. `integration destination add --name NAME --url HTTPS_URL --secret SECRET`
+creates an outbound receiver. Add `--include-text` only when that receiver may
+receive item text. `integration outbox list` shows pending, delivered, and dead
+letters. `integration outbox deliver` attempts ready rows. See [INTEGRATIONS.md](INTEGRATIONS.md).
+
 `node cli.js session revoke --person ID` removes every session for that person.
 
 `node cli.js token create --kind gateway --item ID` and `--kind run` print an item-scoped

@@ -27,7 +27,8 @@ I'm building this in public, and it's early. Here's the honest state:
   - **Kept work records.** Comments pin the spec or artifact version they address, evidence keeps its source and honesty label, members can add check-ins, and a leader-only stewardship handoff cannot reopen a past steward's vote.
   - **Optional fixture drafting.** A preflight exposes the exact packet and worst-case estimate. It cannot send without explicit approval, and every result is labeled model output. See [docs/DRAFTING.md](docs/DRAFTING.md).
   - **Bring-your-own-provider builders.** An administrator can configure a reviewed, priced provider. The real container builder sends only the approved spec lists through the local metering gateway. The provider key stays on the gateway host, never in the container or browser. The offline suite uses local mocks only. See [docs/PROVIDERS.md](docs/PROVIDERS.md).
-  - **Not built yet:** a process watchdog, portable/model-assisted Vision Quest, Vision Quest in the anonymous demo, and production identity/database work. Don't try to run an organization on this yet.
+  - **Signed integrations.** Organization tools can report a source-labeled Seen problem with a five-minute HMAC receipt. Outbound event receipts use a durable signed outbox and leave private text out by default. See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+  - **Not built yet:** a process watchdog, portable/model-assisted Vision Quest, Vision Quest in the anonymous demo, and production identity/database work. Live vendor calls have not been exercised by the tests. Don't try to run an organization on this yet.
 
 I'm treating tests as claims. `npm test` runs them, and `npm run check:mutants` deliberately breaks individual controls and checks that the tests notice. If a test can't fail, I don't count it.
 

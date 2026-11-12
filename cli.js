@@ -12,6 +12,7 @@ import { redact } from './provider/safe-http.js';
 import { SYSTEM_PROMPT } from './worker/builder/index.js';
 import { Auth } from './app/auth.js';
 import { createServerFor } from './app/http.js';
+import { Integrations } from './app/integrations.js';
 
 const fail = message => {
   throw new Error(message);
@@ -26,7 +27,26 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
   const file = env.SSS_DB || 'sss.db';
   const store = new Store(file);
   const auth = new Auth(store);
-  if (command === 'provider') {
+  const integrations = new Integrations(store);
+  if (command === 'integration') {
+    const kind = args[0]; const action = args[1];
+    if (kind === 'source' && action === 'add') {
+      integrations.addSource(value('--name') || fail('missing --name'), value('--secret') || fail('missing --secret'), Number(value('--rate-limit') || '30'));
+      write(`integration source ${value('--name')} added`);
+    } else if (kind === 'source' && action === 'list') {
+      for (const row of integrations.list('source')) write(JSON.stringify(row));
+    } else if (kind === 'destination' && action === 'add') {
+      integrations.addDestination(value('--name') || fail('missing --name'), value('--url') || fail('missing --url'), value('--secret') || fail('missing --secret'), { includeText: args.includes('--include-text'), allowLoopback: args.includes('--allow-loopback') });
+      write(`integration destination ${value('--name')} added`);
+    } else if (kind === 'destination' && action === 'list') {
+      for (const row of integrations.list('destination')) write(JSON.stringify(row));
+    } else if (kind === 'outbox' && action === 'list') {
+      for (const row of integrations.outbox()) write(JSON.stringify(row));
+    } else if (kind === 'outbox' && action === 'deliver') {
+      let delivered = 0; while (await integrations.deliverOnce()) delivered += 1;
+      write(`outbox attempts: ${delivered}`);
+    } else fail('expected integration source, destination, or outbox command');
+  } else if (command === 'provider') {
     const subcommand = args[0];
     if (subcommand === 'list') {
       const data = readProviders(env);
@@ -145,7 +165,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
     const port = Number(value('--port') || '8080');
     const origin = value('--origin') || `http://127.0.0.1:${port}`;
     const insecure = args.includes('--insecure-cookies');
-    const server = createServerFor({ store, auth, secure: !insecure, origin });
+    const server = createServerFor({ store, auth, integrations, secure: !insecure, origin });
     await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
     write(`Serving ${origin}`);
     if (insecure) write('WARNING: insecure cookies are enabled for local HTTP development only.');

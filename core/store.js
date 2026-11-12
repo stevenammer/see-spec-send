@@ -65,7 +65,7 @@ export class Store {
     this.db = database || new DatabaseSync(file);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS actors(
-        id TEXT PRIMARY KEY, kind TEXT CHECK(kind IN ('person','gateway','run')),
+        id TEXT PRIMARY KEY, kind TEXT CHECK(kind IN ('person','gateway','run','source')),
         leader INTEGER DEFAULT 0, item TEXT NULL
       );
       CREATE TABLE IF NOT EXISTS events(
@@ -79,6 +79,22 @@ export class Store {
       );
       CREATE TABLE IF NOT EXISTS items(
         item TEXT PRIMARY KEY, state TEXT, head TEXT, seq INTEGER, context TEXT
+      );
+      CREATE TABLE IF NOT EXISTS integration_sources(
+        name TEXT PRIMARY KEY, secret TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, rate_limit INTEGER NOT NULL DEFAULT 30
+      );
+      CREATE TABLE IF NOT EXISTS integration_replays(
+        source TEXT NOT NULL, digest TEXT NOT NULL, expires INTEGER NOT NULL, PRIMARY KEY(source,digest)
+      );
+      CREATE TABLE IF NOT EXISTS integration_destinations(
+        name TEXT PRIMARY KEY, url TEXT NOT NULL, secret TEXT NOT NULL, include_text INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 1, allow_loopback INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS integration_outbox(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, destination TEXT NOT NULL, item TEXT NOT NULL, seq INTEGER NOT NULL,
+        event_type TEXT NOT NULL, stage TEXT NOT NULL, payload TEXT NOT NULL, state TEXT NOT NULL, attempts INTEGER NOT NULL,
+        next_at INTEGER NOT NULL, created INTEGER NOT NULL, delivered INTEGER, last_error TEXT,
+        UNIQUE(destination,item,seq)
       );`);
     try { this.db.exec('ALTER TABLE items ADD COLUMN context TEXT'); } catch {}
     try { this.db.exec('ALTER TABLE events ADD COLUMN submitted_hash TEXT'); } catch {}
@@ -86,9 +102,24 @@ export class Store {
     try { this.db.exec('ALTER TABLE events ADD COLUMN actor_leader INTEGER'); } catch {}
     try { this.db.exec('ALTER TABLE events ADD COLUMN authority_version INTEGER NOT NULL DEFAULT 0'); } catch {}
     try { this.db.exec('ALTER TABLE bodies ADD COLUMN erased INTEGER NOT NULL DEFAULT 0'); } catch {}
+    this.migrateActorKinds();
     setup(this, file);
     this.backfillSubmittedHashes();
     this.backfillAuthoritySnapshots();
+  }
+
+  migrateActorKinds() {
+    const schema = this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='actors'").get()?.sql || '';
+    if (schema.includes("'source'")) return;
+    // SQLite cannot alter a CHECK constraint. Keep the registry bytes intact while
+    // adding the deliberately non-person integration source kind.
+    this.db.exec(`BEGIN IMMEDIATE;
+      ALTER TABLE actors RENAME TO actors_legacy_kind;
+      CREATE TABLE actors(id TEXT PRIMARY KEY, kind TEXT CHECK(kind IN ('person','gateway','run','source')),
+        leader INTEGER DEFAULT 0, item TEXT NULL);
+      INSERT INTO actors(id,kind,leader,item) SELECT id,kind,leader,item FROM actors_legacy_kind;
+      DROP TABLE actors_legacy_kind;
+      COMMIT;`);
   }
 
   backfillAuthoritySnapshots() {
@@ -142,10 +173,16 @@ export class Store {
       .run(id, kind, item);
   }
 
+  registerSource(id) {
+    if (!id) throw new Error('source id required');
+    this.db.prepare(`INSERT INTO actors(id,kind,leader,item) VALUES(?, 'source', 0, NULL)
+      ON CONFLICT(id) DO UPDATE SET kind='source', leader=0, item=NULL`).run(id);
+  }
+
   actor(id, item) {
     const row = this.db.prepare('SELECT id,kind,leader,item FROM actors WHERE id=?').get(id);
     if (!row) throw new Error('unknown actor');
-    if (row.kind !== 'person' && row.item !== item) throw new Error('token is scoped to another item');
+    if (!['person', 'source'].includes(row.kind) && row.item !== item) throw new Error('token is scoped to another item');
     return { kind: row.kind, leader: row.leader === 1 };
   }
 
@@ -195,7 +232,7 @@ export class Store {
   listItems() {
     return this.db.prepare('SELECT item,state,context FROM items ORDER BY item').all().map(row => {
       const context = JSON.parse(row.context);
-      const first = this.events(row.item).find(event => event.type === 'checked');
+      const first = this.events(row.item).find(event => event.type === 'checked' || event.type === 'seen');
       return { id: row.item, state: row.state, problem: first?.problem || '', steward: context.steward,
         spent: context.spentMicros / 1_000_000, quorum: context.quorum, helpers: context.helpers.length };
     });
@@ -274,11 +311,29 @@ export class Store {
       ON CONFLICT(item) DO UPDATE SET state=excluded.state,head=excluded.head,
       seq=excluded.seq,context=excluded.context`)
       .run(item, outcome.state, hash, seq, stable(outcome.context));
+    this.enqueueIntegrationOutbox(item, event, outcome.state, seq);
     if (outcome.effects.some(effect => effect.kind === 'build.stop')) {
       this.db.prepare("UPDATE runs SET status='stop_requested' WHERE item=? AND approval=? AND status='active'")
         .run(item, prior.context.approval);
     }
     return { seq, hash, ...this.read(item), effects: outcome.effects };
+  }
+
+  // These rows are deliberately written before the event transaction commits. A
+  // process can die after commit, but it cannot leave a delivered event without a
+  // durable delivery record for a configured destination.
+  enqueueIntegrationOutbox(item, event, stage, seq) {
+    const destinations = this.db.prepare('SELECT name,include_text FROM integration_destinations WHERE enabled=1').all();
+    const insert = this.db.prepare(`INSERT OR IGNORE INTO integration_outbox(destination,item,seq,event_type,stage,payload,state,attempts,next_at,created)
+      VALUES(?,?,?,?,?,?, 'pending',0,?,?)`);
+    for (const destination of destinations) {
+      const payload = { item_id: item, stage, event_type: event.type, link: `/items/${encodeURIComponent(item)}` };
+      const text = event.problem || event.note || event.comment;
+      if (destination.include_text && typeof text === 'string') payload.text = text;
+      const created = new Date(event.at).getTime();
+      if (!Number.isSafeInteger(created)) throw new Error('event timestamp is invalid');
+      insert.run(destination.name, item, seq, event.type, stage, stable(payload), created, created);
+    }
   }
 
   verify(item) {
@@ -411,10 +466,10 @@ export class Store {
   }
 
   importActor(actor) {
-    if (!actor.id || !['person', 'gateway', 'run'].includes(actor.kind)) {
+    if (!actor.id || !['person', 'gateway', 'run', 'source'].includes(actor.kind)) {
       throw new Error('bad import actor');
     }
-    if (actor.kind !== 'person' && !actor.item) throw new Error('bad import actor');
+    if (!['person', 'source'].includes(actor.kind) && !actor.item) throw new Error('bad import actor');
     this.db.prepare(`INSERT INTO actors(id,kind,leader,item) VALUES(?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, leader=excluded.leader, item=excluded.item`)
       .run(actor.id, actor.kind, actor.leader ? 1 : 0, actor.item || null);

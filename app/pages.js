@@ -75,12 +75,13 @@ function eventWords(event) {
     checked_in: 'posted a check-in',
   };
   // A try is written by a per-item token, so name the person who delivered it instead.
+  if (event.type === 'seen') return `${escape(event.source_label)} reported this as ${escape(event.honesty_label)} evidence`;
   return `${escape(event.delivered_by || event.actor)} ${words[event.type] || 'updated this item'}${event.type === 'tried' && event.model_output ? ' (model output)' : ''}`;
 }
 
 export function itemPage(item, events, person, leader) {
   const context = item.context;
-  const problem = events.find(event => event.type === 'checked')?.problem || '';
+  const problem = events.find(event => event.type === 'checked' || event.type === 'seen')?.problem || '';
   const current = events.at(-1);
   const questEvent = events.find(event => event.type === 'checked');
   let questMemo = '';

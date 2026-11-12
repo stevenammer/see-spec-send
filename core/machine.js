@@ -13,6 +13,7 @@ const nonempty = value => typeof value === 'string' && value.length > 0;
 const array = value => Array.isArray(value);
 const result = (context, effects = []) => ({ state: context.phase, context, effects });
 const person = who => who?.kind === 'person';
+const sourceActor = who => who?.kind === 'source';
 const leader = who => person(who) && who.leader === true;
 const steward = (state, event, who) => person(who) && event.actor === state.steward;
 const addIneligible = (state, id) => state.ineligibleHelpers.includes(id)
@@ -71,6 +72,12 @@ export function step(state, event, who) {
   if (event.type === 'checked_in' && person(who) && nonempty(event.note) && event.note.length <= 2000)
     return result(context);
   if (event.type === 'erased' && (leader(who) || steward(context, event, who))) return result(context);
+  // An integration may report a problem, but it has no person authority. It
+  // cannot choose a steward or move the item beyond the feed's earliest stage.
+  if (event.type === 'seen' && context.phase === 'SEEN' && sourceActor(who)
+      && nonempty(event.problem) && event.problem.length <= 2000
+      && nonempty(event.source_label) && event.source_label.length <= 120
+      && ['observed', 'reported', 'documented'].includes(event.honesty_label)) return result(context);
   if (event.type === 'steward_changed' && leader(who) && nonempty(event.steward)) {
     const ineligibleHelpers = addIneligible(context, event.steward);
     const helpers = context.helpers.filter(id => id !== event.steward);

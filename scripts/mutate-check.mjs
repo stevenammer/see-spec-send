@@ -11,6 +11,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/quest-review-regressions.test.mjs', 'test/worker.test.mjs', 'test/container.test.mjs',
   'test/worker-path.test.mjs', 'test/gateway.test.mjs', 'test/slice9.test.mjs', 'test/slice7.test.mjs', 'test/slice8.test.mjs',
   'test/provider.test.mjs',
+  'test/slice13.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
@@ -161,6 +162,13 @@ const mutants = [
     "if (event.anchor_kind === 'artifact') return true;"],
   ['OIDC redirect URI validation', "this.redirectUri = validUrl(config.redirectUri, 'redirect URI');",
     'this.redirectUri = config.redirectUri;'],
+  ['integration signature', "!equal(signature(row.secret, timestamp, bytes), String(supplied || '').replace(/^sha256=/, ''))", 'false'],
+  ['integration timestamp window', 'Math.abs(this.clock() - time) > WINDOW', 'false'],
+  ['integration replay protection', "if (accepted.changes !== 1) throw Error('inbound refused');", 'if (false) throw Error(\'inbound refused\');'],
+  ['integration strict schema', "!Object.keys(value).every(key => ['problem', 'source_label', 'honesty_label'].includes(key))", 'false'],
+  ['integration source authority', "event.type === 'seen' && context.phase === 'SEEN' && sourceActor(who)", "event.type === 'seen' && context.phase === 'SEEN' && person(who)"],
+  ['integration outbox transaction', 'this.enqueueIntegrationOutbox(item, event, outcome.state, seq);', ''],
+  ['integration outbound redirect refusal', "redirect: 'error'", "redirect: 'follow'"],
 ];
 
 function run(cwd, args) {
@@ -187,7 +195,7 @@ for (const [name, find, replace] of selected) {
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
   const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/store.js', 'cli.js',
     'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
-    'worker/control.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js'];
+    'worker/control.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {

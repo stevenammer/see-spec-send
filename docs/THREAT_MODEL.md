@@ -14,6 +14,10 @@
 | Redaction corrupts replay | Erasure stores a replayable tombstone and receipt | `redacted critical bodies replay` |
 | Approval replay | Five-minute, server-side, single-use step-up | `step-up required, stale, single use` |
 | Parser abuse | JSON size limit and unsafe-key rejection | `oversized and malformed bodies` |
+| Forged or stale integration intake | HMAC-SHA256 over timestamp and raw body, five-minute window, source-only secrets | `integration intake refuses forged, stale, and unknown sources` |
+| Replayed integration intake | Durable per-source replay receipt plus idempotency key | `integration intake refuses forged, stale, and unknown sources` |
+| Integration grants workflow authority | Source actors can only append a Seen receipt | `integration intake has no workflow authority` |
+| Outbound delivery loses an event | Destination rows are created in the event transaction and redelivered from the durable outbox | `integration outbox retries, dead-letters, and survives a restart` |
 | Comment rewrites history | Comments pin the current spec/artifact hash; changed versions render old anchors stale | `versioned comments become stale` |
 | Self-reported evidence becomes fact | Source-linked records require a claim and an honesty kind; reports name their reporter | `versioned comments become stale` |
 | Handoff restores self-certification | Leader-only handoff keeps all past stewards excluded from Helps | `check-ins cannot approve, vote, or weaken a stewardship handoff` |

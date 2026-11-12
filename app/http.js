@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Integrations } from './integrations.js';
 import { feedPage, htmlHeaders, itemPage, newItemPage, questPage, redeemPage, signInPage } from './pages.js';
 
 // Object key order does not change a retry identity. Array order is meaningful.
@@ -37,26 +38,22 @@ const safeObject = value =>
   (Array.isArray(value)
     ? value.every(safeObject)
     : Object.keys(value).every(key => !unsafe.has(key) && safeObject(value[key])));
-const body = (req, limit = 300 * 1024) =>
+const bytes = (req, limit = 300 * 1024) =>
   new Promise((resolve, reject) => {
-    let size = 0;
-    let text = '';
+    let size = 0; const chunks = []; let refused = false;
     req.on('data', chunk => {
       size += chunk.length;
-      if (size > limit) reject(new Error('body too large'));
-      else text += chunk;
+      if (size > limit && !refused) { refused = true; reject(new Error('body too large')); }
+      else if (!refused) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
-    req.on('end', () => {
-      try {
-        const value = JSON.parse(text || '{}');
-        if (!safeObject(value)) throw new Error('bad json');
-        resolve(value);
-      } catch {
-        reject(new Error('bad json'));
-      }
-    });
+    req.on('end', () => { if (!refused) resolve(Buffer.concat(chunks)); });
     req.on('error', reject);
   });
+const body = async (req, limit) => {
+  try { const value = JSON.parse((await bytes(req, limit)).toString('utf8') || '{}');
+    if (!safeObject(value)) throw new Error('bad json'); return value;
+  } catch { throw new Error('bad json'); }
+};
 const cookies = req =>
   Object.fromEntries(
     (req.headers.cookie || '')
@@ -90,7 +87,8 @@ const checked = input => {
   return { problem: input.problem, looked, found: [], verdict: input.verdict };
 };
 
-export function createHandler({ auth, store, secure = true, origin = 'https://localhost' }) {
+export function createHandler({ auth, store, integrations, secure = true, origin = 'https://localhost' }) {
+  integrations ||= new Integrations(store, { origin });
   const sameOrigin = sameOriginAs(origin);
   const cookieName = secure ? '__Host-sss' : 'sss';
   const cookie = value =>
@@ -103,6 +101,12 @@ export function createHandler({ auth, store, secure = true, origin = 'https://lo
     try {
       const url = new URL(req.url, origin);
       const change = req.method === 'POST';
+      const inbound = url.pathname.match(/^\/api\/integrations\/inbound\/([A-Za-z0-9._-]{1,64})$/);
+      if (req.method === 'POST' && inbound) {
+        if (req.headers['content-type'] !== 'application/json') return json(res, 415, { error: 'request refused' });
+        const raw = await bytes(req, 16 * 1024);
+        return json(res, 201, integrations.receive(inbound[1], req.headers['x-sss-timestamp'], req.headers['x-sss-signature'], raw, req.headers));
+      }
       if (req.method === 'GET' && url.pathname === '/assets/app.js')
         return staticFile(res, 'app.js', 'application/javascript; charset=utf-8');
       if (req.method === 'GET' && url.pathname === '/assets/app.css')

@@ -87,6 +87,33 @@ const checked = input => {
   if (!looked.length) throw new Error('check required');
   return { problem: input.problem, looked, found: [], verdict: input.verdict };
 };
+const hex = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+const text = (value, limit) => typeof value === 'string' && value.length > 0 && value.length <= limit;
+const stringList = (value, limit = 100) => Array.isArray(value) && value.length <= limit && value.every(line => text(line, 2000));
+const exactKeys = (value, keys) => Object.keys(value).every(key => keys.includes(key));
+const validEvent = input => {
+  if (!input || typeof input !== 'object') return false;
+  switch (input.type) {
+    case 'checked': return exactKeys(input, ['type', 'problem', 'looked', 'found', 'verdict', 'evidence'])
+      && text(input.problem, 2000) && stringList(input.looked) && input.looked.length > 0
+      && stringList(input.found) && ['already_have', 'setting', 'free', 'pay', 'build_needed'].includes(input.verdict)
+      && (input.evidence === undefined || Array.isArray(input.evidence));
+    case 'specced': return exactKeys(input, ['type', 'must', 'how_we_know', 'out_of_scope'])
+      && stringList(input.must) && stringList(input.how_we_know) && input.how_we_know.length > 0 && stringList(input.out_of_scope);
+    case 'approved': return (exactKeys(input, ['type', 'cap_usd', 'quorum'])
+        || (exactKeys(input, ['type', 'spec_hash', 'expected_seq', 'cap_usd', 'quorum'])
+          && hex(input.spec_hash) && Number.isSafeInteger(input.expected_seq) && input.expected_seq >= 0))
+      && typeof input.cap_usd === 'number' && Number.isInteger(input.quorum) && input.quorum >= 1;
+    case 'returned': case 'shelved': case 'checked_in':
+      return exactKeys(input, ['type', input.type === 'shelved' ? 'reason' : 'note']) && text(input[input.type === 'shelved' ? 'reason' : 'note'], 2000);
+    case 'helped': return exactKeys(input, ['type', 'artifact_hash']) && hex(input.artifact_hash);
+    case 'steward_changed': return exactKeys(input, ['type', 'steward']) && text(input.steward, 64);
+    case 'commented': return exactKeys(input, ['type', 'comment', 'anchor_kind', 'anchor_hash'])
+      && text(input.comment, 4000) && ((input.anchor_kind === undefined && input.anchor_hash === undefined)
+        || (['spec', 'artifact'].includes(input.anchor_kind) && hex(input.anchor_hash)));
+    default: return false;
+  }
+};
 
 export function createHandler({ auth, store, integrations, secure = true, origin = 'https://localhost' }) {
   integrations ||= new Integrations(store, { origin });
@@ -129,7 +156,7 @@ export function createHandler({ auth, store, integrations, secure = true, origin
           req.headers['x-csrf-token'] !== session?.csrf)
       )
         return json(res, 403, { error: 'request refused' });
-      const input = change ? await body(req) : {};
+      let input = change ? await body(req) : {};
       const ip = req.socket?.remoteAddress || 'local';
       if (req.method === 'GET' && url.pathname === '/api/oidc/start') {
         if (!auth.oidc) return json(res, 404, { error: 'not found' });
@@ -195,9 +222,12 @@ export function createHandler({ auth, store, integrations, secure = true, origin
       const view = url.pathname.match(/^\/items\/([^/]+)$/);
       if (req.method === 'GET' && view) {
         const state = store.read(view[1]);
+        const events = store.events(view[1]);
+        if (state.state === 'SPECCED' && leader && state.context.steward !== session.person)
+          auth.reviewApproval(sessionToken, view[1], state.context.specHash, events.length);
         return page(
           res,
-          itemPage({ id: view[1], ...state }, store.events(view[1]), session.person, leader),
+          itemPage({ id: view[1], ...state }, events, session.person, leader),
         );
       }
       if (req.method === 'GET' && url.pathname === '/api/items')
@@ -280,6 +310,17 @@ export function createHandler({ auth, store, integrations, secure = true, origin
       if (Object.hasOwn(input, 'questMemo')) return json(res, 409, { error: 'request refused' });
       if (Object.hasOwn(input, 'actor') || Object.hasOwn(input, 'role'))
         return json(res, 403, { error: 'request refused' });
+      if (input.type === 'approved' && !auth.hasStepup(sessionToken))
+        return json(res, 403, { error: 'request refused' });
+      if (!validEvent(input)) return json(res, 409, { error: 'request refused' });
+      if (input.type === 'approved' && input.spec_hash === undefined) {
+        // Older API clients did not carry the rendered binding. Bind them to the
+        // current record here; a browser that has seen Decide must echo its view.
+        if (auth.approvalReview(sessionToken, match[1]))
+          return json(res, 409, { error: 'request refused' });
+        const state = store.read(match[1]);
+        input = { ...input, spec_hash: state.context.specHash, expected_seq: store.eventRows(match[1]).length };
+      }
       if (input.type === 'commented') {
         const state = store.read(match[1]).context;
         if ((state.specHash || state.artifact) &&
@@ -290,7 +331,6 @@ export function createHandler({ auth, store, integrations, secure = true, origin
       }
       if (input.type === 'approved') {
         if (!auth.useStepup(sessionToken)) return json(res, 403, { error: 'request refused' });
-        input.spec_hash = store.read(match[1]).context.specHash;
       }
       return json(
         res,
@@ -298,7 +338,7 @@ export function createHandler({ auth, store, integrations, secure = true, origin
         store.append(
           match[1],
           { ...input, actor: session.person, at: new Date().toISOString() },
-          { idem: req.headers['idempotency-key'] || randomUUID() },
+          { expectedSeq: input.expected_seq, idem: req.headers['idempotency-key'] || randomUUID() },
         ),
       );
     } catch (error) {

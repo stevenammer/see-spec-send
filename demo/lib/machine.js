@@ -4,7 +4,7 @@ const verdicts = new Set(['already_have', 'setting', 'free', 'pay', 'build_neede
 const MICROS_PER_USD = 1_000_000;
 
 export const initial = () => ({
-  phase: 'SEEN', steward: null, approver: null, specHash: null,
+  phase: 'SEEN', steward: null, approver: null, specAuthor: null, specHash: null,
   capMicros: null, quorum: 2, spentMicros: 0, approval: 0, artifact: null, helpers: [],
   ineligibleHelpers: [],
 });
@@ -99,12 +99,13 @@ export function step(state, event, who) {
   if (event.type === 'specced'
       && ['CHECKED', 'SPECCED', 'SENDING', 'TRYING'].includes(context.phase)
       && steward(context, event, who) && validSpec(event)) {
-    return result({ ...context, phase: 'SPECCED', specHash: event.body_hash || event.spec_hash,
+    return result({ ...context, phase: 'SPECCED', specAuthor: event.actor, specHash: event.body_hash || event.spec_hash,
       artifact: null, helpers: [], ineligibleHelpers: addIneligible(context, event.actor) },
     stopsBuild(context, 'SPECCED', event.type));
   }
   if (event.type === 'approved' && context.phase === 'SPECCED' && leader(who)
       && event.actor !== context.steward && nonempty(event.spec_hash)
+      && (context.specAuthor ? event.actor !== context.specAuthor : !context.ineligibleHelpers.includes(event.actor))
       && event.spec_hash === context.specHash && usdToMicros(event.cap_usd) !== null
       && Number.isInteger(event.quorum) && event.quorum >= 1) {
     const next = { ...context, phase: 'SENDING', approver: event.actor,

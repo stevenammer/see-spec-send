@@ -11,8 +11,8 @@ const now = () => Date.now();
 const minute = 60_000;
 const failureWindow = 15 * minute;
 const accountFailureCeiling = 30;
-const validAccountId = value => typeof value === 'string' && value.length > 0 && value.length <= 160
-  && !/[\u0000-\u001f\u007f]/.test(value);
+const validAccountId = value => typeof value === 'string' && /^[a-z][a-z0-9._-]{0,63}$/.test(value)
+  && !value.startsWith('source:') && !value.startsWith('oidc-') && !/^[a-f0-9]{64}$/.test(value);
 
 export class Auth {
   constructor(store, options = {}) {
@@ -39,12 +39,16 @@ export class Auth {
     CREATE TABLE IF NOT EXISTS sessions(
       digest TEXT PRIMARY KEY, person TEXT NOT NULL, csrf TEXT NOT NULL, created INTEGER NOT NULL,
       seen INTEGER NOT NULL, expires INTEGER NOT NULL, stepup INTEGER NOT NULL DEFAULT 0,
-      stepup_used INTEGER NOT NULL DEFAULT 0, auth_method TEXT NOT NULL DEFAULT 'password'
+      stepup_used INTEGER NOT NULL DEFAULT 0, auth_method TEXT NOT NULL DEFAULT 'password',
+      review_item TEXT, review_spec_hash TEXT, review_seq INTEGER
     );
     CREATE TABLE IF NOT EXISTS api_tokens(
       digest TEXT PRIMARY KEY, kind TEXT NOT NULL, item TEXT NOT NULL
     );`);
     try { this.db.exec("ALTER TABLE sessions ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'password'"); } catch {}
+    try { this.db.exec('ALTER TABLE sessions ADD COLUMN review_item TEXT'); } catch {}
+    try { this.db.exec('ALTER TABLE sessions ADD COLUMN review_spec_hash TEXT'); } catch {}
+    try { this.db.exec('ALTER TABLE sessions ADD COLUMN review_seq INTEGER'); } catch {}
   }
 
   async passwordRecord(password) {
@@ -76,6 +80,7 @@ export class Auth {
 
   async createUser(id, password, leader = false) {
     if (!validAccountId(id)) throw new Error('invalid account id');
+    if (this.db.prepare('SELECT 1 FROM users WHERE lower(id)=lower(?)').get(id)) throw new Error('account id exists');
     const record = await this.passwordRecord(password);
     this.db.prepare('INSERT INTO users(id,password,leader) VALUES(?,?,?)')
       .run(id, record, leader ? 1 : 0);
@@ -131,6 +136,10 @@ export class Auth {
 
   async redeem(value, id, password, ip = 'local') {
     if (!validAccountId(id)) throw new Error('invalid account id');
+    const existing = this.db.prepare('SELECT id FROM users WHERE lower(id)=lower(?)').get(id);
+    // Leave an exact duplicate to the INSERT below. That preserves the no-transaction-during-
+    // password-work guarantee while still refusing case-variant identities before redemption.
+    if (existing && existing.id !== id) throw new Error('account id exists');
     if (!this.allowed(ip, hash(value), 'invite')) throw new Error('try again later');
     const digest = hash(value);
     // Password work must finish before the transaction so other requests stay isolated.
@@ -233,6 +242,24 @@ export class Auth {
     if (!row || row.stepup + 5 * minute < this.clock()) return false;
     const update = this.db.prepare('UPDATE sessions SET stepup_used=1 WHERE digest=? AND stepup_used=0');
     return update.run(hash(value)).changes === 1;
+  }
+
+  hasStepup(value) {
+    const row = this.session(value);
+    return Boolean(row && row.stepup + 5 * minute >= this.clock() && row.stepup_used === 0);
+  }
+
+  reviewApproval(value, item, specHash, seq) {
+    const row = this.session(value);
+    if (!row) return false;
+    return this.db.prepare('UPDATE sessions SET review_item=?,review_spec_hash=?,review_seq=? WHERE digest=?')
+      .run(item, specHash, seq, hash(value)).changes === 1;
+  }
+
+  approvalReview(value, item) {
+    const row = this.session(value);
+    if (!row || row.review_item !== item) return null;
+    return { specHash: row.review_spec_hash, seq: row.review_seq };
   }
 
   createToken(kind, item) {

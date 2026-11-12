@@ -76,7 +76,7 @@ function eventWords(event) {
   };
   // A try is written by a per-item token, so name the person who delivered it instead.
   if (event.type === 'seen') return `${escape(event.source_label)} reported this as ${escape(event.honesty_label)} evidence`;
-  return `${escape(event.delivered_by || event.actor)} ${words[event.type] || 'updated this item'}${event.type === 'tried' && event.model_output ? ' (model output)' : ''}`;
+  return `${escape(event.type === 'tried' && event.delivered_by ? event.delivered_by : event.actor)} ${words[event.type] || 'updated this item'}${event.type === 'tried' && event.model_output ? ' (model output)' : ''}`;
 }
 
 export function itemPage(item, events, person, leader) {
@@ -101,6 +101,9 @@ export function itemPage(item, events, person, leader) {
     }
   }
   const spec = events.filter(event => event.type === 'specced').at(-1);
+  const specSummary = spec && ['SPECCED', 'SENDING', 'TRYING'].includes(item.state)
+    ? `<section class="spec"><h2>Current spec</h2><h3>Must do</h3><ul>${spec.must.map(line => `<li>${escape(line)}</li>`).join('')}</ul><h3>How we'll know</h3><ul>${spec.how_we_know.map(line => `<li>${escape(line)}</li>`).join('')}</ul><h3>Out of scope</h3><ul>${spec.out_of_scope.map(line => `<li>${escape(line)}</li>`).join('')}</ul></section>`
+    : '';
   const anchoredComments = events.filter(event => event.type === 'commented').map(event => {
     const currentHash = event.anchor_kind === 'spec' ? context.specHash : context.artifact;
     const stale = event.anchor_hash && event.anchor_hash !== currentHash;
@@ -117,7 +120,7 @@ export function itemPage(item, events, person, leader) {
     '<button>Save the spec</button></form>';
   if (item.state === 'CHECKED' && context.steward === person) action = specForm;
   if (item.state === 'SPECCED' && leader && context.steward !== person)
-    action = `<form data-approve="true"><h2>Decide</h2><p>Approval freezes the cap. The configured provider and its worst-case micro-dollar estimate are shown by the gateway administrator before this screen is used.</p><label>Cap in dollars<input name="cap_usd" type="number" min="0" step="0.01" required></label><label>How many people need to say it helps?<input name="quorum" type="number" min="1" required></label><label>Re-enter your password<input name="password" type="password" required></label><button>Approve the try</button></form><form data-event="returned"><label>What needs to change?<input name="note" required></label><button>Return the spec</button></form>`;
+    action = `<form data-approve="true"><h2>Decide</h2><p>Approval freezes the cap. The configured provider and its worst-case micro-dollar estimate are shown by the gateway administrator before this screen is used.</p><input type="hidden" name="spec_hash" value="${escape(context.specHash)}"><input type="hidden" name="expected_seq" value="${events.length}"><label>Cap in dollars<input name="cap_usd" type="number" min="0" step="0.01" required></label><label>How many people need to say it helps?<input name="quorum" type="number" min="1" required></label><label>Re-enter your password<input name="password" type="password" required></label><button>Approve the try</button></form><form data-event="returned"><label>What needs to change?<input name="note" required></label><button>Return the spec</button></form>`;
   if (item.state === 'SENDING' && (leader || context.steward === person))
     action = `<form data-artifact="true"><h2>Deliver the try</h2><label>One HTML document<textarea name="html" required></textarea></label><button>Deliver the try</button></form>`;
   if (item.state === 'TRYING') {
@@ -143,7 +146,7 @@ export function itemPage(item, events, person, leader) {
     problem,
     '<p><a href="/">Back to the work</a></p>' +
       `<p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1>` +
-      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${questMemo}${action}${shelve}${checkin}${comment}` +
+      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${questMemo}${specSummary}${action}${shelve}${checkin}${comment}` +
       `<h2>Comments</h2><ol>${anchoredComments || '<li>No comments yet.</li>'}</ol><h2>What happened</h2><ol>${events.filter(event => event.type !== 'commented').map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
   );
 }

@@ -41,6 +41,8 @@ document.addEventListener('submit', async event => {
       await post('/api/stepup', { password: input.password });
       await post(`/api/items/${id}/events`, {
         type: 'approved',
+        spec_hash: input.spec_hash,
+        expected_seq: Number(input.expected_seq),
         cap_usd: Number(input.cap_usd),
         quorum: Number(input.quorum),
       });

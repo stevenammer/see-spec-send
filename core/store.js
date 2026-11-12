@@ -159,8 +159,10 @@ export class Store {
 
   registerPerson(id, { leader = false } = {}) {
     if (!id) throw new Error('person id required');
+    const existing = this.db.prepare('SELECT kind FROM actors WHERE id=?').get(id);
+    if (existing && existing.kind !== 'person') throw new Error('actor kind cannot change');
     this.db.prepare(`INSERT INTO actors(id,kind,leader,item) VALUES(?,?,?,NULL)
-      ON CONFLICT(id) DO UPDATE SET kind='person', leader=excluded.leader, item=NULL`)
+      ON CONFLICT(id) DO UPDATE SET leader=excluded.leader, item=NULL`)
       .run(id, 'person', leader ? 1 : 0);
   }
 
@@ -168,15 +170,19 @@ export class Store {
     if (!id || !['gateway', 'run'].includes(kind) || !item) {
       throw new Error('token id, kind, and item required');
     }
+    const existing = this.db.prepare('SELECT kind FROM actors WHERE id=?').get(id);
+    if (existing && existing.kind !== kind) throw new Error('actor kind cannot change');
     this.db.prepare(`INSERT INTO actors(id,kind,leader,item) VALUES(?,?,0,?)
-      ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, leader=0, item=excluded.item`)
+      ON CONFLICT(id) DO UPDATE SET leader=0, item=excluded.item`)
       .run(id, kind, item);
   }
 
   registerSource(id) {
     if (!id) throw new Error('source id required');
+    const existing = this.db.prepare('SELECT kind FROM actors WHERE id=?').get(id);
+    if (existing && existing.kind !== 'source') throw new Error('actor kind cannot change');
     this.db.prepare(`INSERT INTO actors(id,kind,leader,item) VALUES(?, 'source', 0, NULL)
-      ON CONFLICT(id) DO UPDATE SET kind='source', leader=0, item=NULL`).run(id);
+      ON CONFLICT(id) DO UPDATE SET leader=0, item=NULL`).run(id);
   }
 
   actor(id, item) {

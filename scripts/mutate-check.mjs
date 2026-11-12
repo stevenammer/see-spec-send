@@ -10,7 +10,8 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/quest-storage-faults.test.mjs', 'test/quest-attack.test.mjs', 'test/quest-spec.test.mjs',
   'test/quest-review-regressions.test.mjs', 'test/worker.test.mjs',
   'test/worker-path.test.mjs', 'test/gateway.test.mjs', 'test/slice9.test.mjs', 'test/slice7.test.mjs', 'test/slice8.test.mjs',
-  'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs'];
+  'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
+  'test/mutation-security.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs'] : fullSuite;
@@ -131,6 +132,15 @@ const mutants = [
   ['oidc nonce check', 'claims.nonce !== nonce', 'false'],
   ['oidc token expiry', 'claims.exp <= now', 'false'],
   ['draft explicit approval', "if (approved !== true) throw Error('explicit approval required');", ''],
+  ['approval leader gate', "if (event.type === 'approved' && context.phase === 'SPECCED' && leader(who)",
+    "if (event.type === 'approved' && context.phase === 'SPECCED' && true"],
+  ['approval separation gate', '&& event.actor !== context.steward && nonempty(event.spec_hash)',
+    '&& true && nonempty(event.spec_hash)'],
+  ['builder egress enforcement', "if (!denied) return { allowed: true };", "if (true) return { allowed: true };"],
+  ['comment artifact anchor binding', "if (event.anchor_kind === 'artifact') return event.anchor_hash === state.artifact;",
+    "if (event.anchor_kind === 'artifact') return true;"],
+  ['OIDC redirect URI validation', "this.redirectUri = validUrl(config.redirectUri, 'redirect URI');",
+    'this.redirectUri = config.redirectUri;'],
 ];
 
 function run(cwd, args) {

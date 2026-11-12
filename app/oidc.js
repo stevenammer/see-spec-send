@@ -5,6 +5,7 @@ const random = () => randomBytes(32).toString('base64url');
 const sha256 = value => createHash('sha256').update(value).digest('base64url');
 const subjectId = (issuer, subject) => `oidc-${createHash('sha256')
   .update(`${issuer}\0${subject}`).digest('hex').slice(0, 32)}`;
+const maxPending = 1024;
 const validUrl = (value, name) => {
   let url;
   try { url = new URL(value); } catch { throw new Error(`OIDC ${name} must be a URL`); }
@@ -33,6 +34,9 @@ export class OidcLogin {
   begin(binder) {
     if (typeof binder !== 'string' || !binder) throw new Error('OIDC browser binding required');
     this.prune();
+    // This endpoint is unauthenticated. Bound ten-minute handshakes so a caller
+    // cannot retain arbitrary process memory merely by starting logins.
+    if (this.pending.size >= maxPending) throw new Error('too many pending OIDC handshakes');
     const state = random();
     const nonce = random();
     const verifier = random();

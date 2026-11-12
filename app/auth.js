@@ -11,6 +11,8 @@ const now = () => Date.now();
 const minute = 60_000;
 const failureWindow = 15 * minute;
 const accountFailureCeiling = 30;
+const validAccountId = value => typeof value === 'string' && value.length > 0 && value.length <= 160
+  && !/[\u0000-\u001f\u007f]/.test(value);
 
 export class Auth {
   constructor(store, options = {}) {
@@ -73,6 +75,7 @@ export class Auth {
   }
 
   async createUser(id, password, leader = false) {
+    if (!validAccountId(id)) throw new Error('invalid account id');
     const record = await this.passwordRecord(password);
     this.db.prepare('INSERT INTO users(id,password,leader) VALUES(?,?,?)')
       .run(id, record, leader ? 1 : 0);
@@ -127,6 +130,7 @@ export class Auth {
   }
 
   async redeem(value, id, password, ip = 'local') {
+    if (!validAccountId(id)) throw new Error('invalid account id');
     if (!this.allowed(ip, hash(value), 'invite')) throw new Error('try again later');
     const digest = hash(value);
     // Password work must finish before the transaction so other requests stay isolated.

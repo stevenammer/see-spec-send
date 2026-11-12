@@ -52,6 +52,16 @@ test('password policy, invites, and no plaintext storage', async () => {
   assert.equal(bytes.includes(invite), false);
 });
 
+test('account identifiers are bounded before they reach sessions or the event registry', async () => {
+  const store = new Store();
+  const auth = new Auth(store);
+  await assert.rejects(auth.createUser('a'.repeat(161), password), /invalid account id/);
+  const invite = auth.createInvite('member');
+  await assert.rejects(auth.redeem(invite, `member\nname`, password), /invalid account id/);
+  assert.equal(store.db.prepare('SELECT count(*) AS n FROM users').get().n, 0);
+  assert.equal(store.db.prepare('SELECT used FROM invites').get().used, 0);
+});
+
 test('parallel invite redemption has exactly one winner, expiry and reuse fail', async () => {
   const { auth } = setup();
   const invite = auth.createInvite('leader');
@@ -246,4 +256,11 @@ test('OIDC refuses wrong audience, wrong nonce, and a replayed state even with a
   s = await start();
   await oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce }), binder: s.binder });
   await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce }), binder: s.binder }), /refused/);
+});
+
+test('OIDC refuses new handshakes when its short-lived pending-state store is full', () => {
+  const provider = new FakeOidcProvider();
+  const oidc = new OidcLogin(provider.configuration('https://localhost/api/oidc/callback'));
+  for (let index = 0; index < 1024; index += 1) oidc.begin(`binder-${index}`);
+  assert.throws(() => oidc.begin('one-too-many'), /too many pending/);
 });

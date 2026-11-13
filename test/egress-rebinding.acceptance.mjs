@@ -28,7 +28,7 @@ test('without allowPrivate, a loopback answer is refused before any connection',
   const server = createServer((req, res) => { served += 1; res.end(completion); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => server.close());
-  const url = `http://rebind.test:${server.address().port}/v1/chat`;
+  const url = `https://rebind.test:${server.address().port}/v1/chat`;
   await assert.rejects(() => jsonRequest(url, { hosts: ['rebind.test'], body: {}, resolver: async () => [{ address: '127.0.0.1' }] }), /private provider address refused/);
   assert.equal(served, 0);
 });

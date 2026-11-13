@@ -20,12 +20,100 @@ import { Integrations, recoverStaleSending } from './app/integrations.js';
 import { questModelService } from './provider/quest-service.js';
 import { validateCompletion } from './provider/index.js';
 import { migrationStatus, SCHEMA_VERSION, userVersion } from './core/migrations.js';
+import { appendAudit, verifyAudit } from './core/audit.js';
+import { kindOf } from './core/errors.js';
 
 const fail = message => {
   throw new Error(message);
 };
 
+const SECRET_REFUSAL = 'refused: a secret on the command line would show in the process list and shell history. '
+  + 'Pass it with --secret-stdin, --secret-env NAME, or --secret-file PATH.';
+
+// The secret comes from stdin, a named environment variable, or a file. Exactly one source is required.
+function secretFrom(args, env) {
+  const sources = ['--secret-stdin', '--secret-env', '--secret-file'].filter(flag => args.includes(flag));
+  if (sources.length !== 1) fail('give exactly one of --secret-stdin, --secret-env NAME, or --secret-file PATH');
+  const flag = sources[0];
+  const operand = args[args.indexOf(flag) + 1];
+  let secret;
+  if (flag === '--secret-stdin') secret = readFileSync(0, 'utf8');
+  else if (flag === '--secret-env') {
+    if (!/^[A-Z_][A-Z0-9_]*$/.test(operand || '')) fail('--secret-env needs an environment variable name');
+    secret = env[operand];
+  } else {
+    if (!operand) fail('--secret-file needs a path');
+    secret = readFileSync(operand, 'utf8');
+  }
+  secret = String(secret ?? '').replace(/\r?\n$/, '');
+  if (!secret) fail('the secret is empty');
+  return secret;
+}
+
+// Every command that changes state leaves one row in admin_audit. Reads, verify, export and serve do not.
+const ADMIN = {
+  init: () => 'init',
+  restore: () => 'restore',
+  backup: () => 'backup',
+  migrate: args => (args.includes('--check') ? null : 'migrate'),
+  invite: args => (['create', 'revoke'].includes(args[0]) ? `invite ${args[0]}` : null),
+  person: args => (['disable', 'enable', 'promote', 'demote', 'reset'].includes(args[0]) ? `person ${args[0]}` : null),
+  session: args => (args[0] === 'revoke' ? 'session revoke' : null),
+  token: args => (args[0] === 'create' ? 'token create' : null),
+  kill: args => (['set', 'clear'].includes(args[0]) ? `kill ${args[0]}` : null),
+  provider: args => (['add', 'default', 'remove', 'disable'].includes(args[0]) ? `provider ${args[0]}` : null),
+  integration: args => {
+    if (['source', 'destination'].includes(args[0]) && args[1] === 'add') return `integration ${args[0]} add`;
+    return args[0] === 'outbox' && ['retry', 'drop', 'deliver'].includes(args[1]) ? `outbox ${args[1]}` : null;
+  },
+  gateway: args => {
+    if (args[0] === 'fixture-enable') return 'gateway fixture-enable';
+    if (args[0] === 'policy' && args[1] === 'set') return 'gateway policy set';
+    if (['mint', 'revoke'].includes(args[0])) return `gateway ${args[0]}`;
+    return args[0] === 'holds' && args[1] === 'release' ? 'gateway holds release' : null;
+  },
+};
+// Operator-chosen names and IDs only. A secret is never one of these flags, so it can never be recorded.
+const AUDITED_FLAGS = ['--id', '--name', '--person', '--item', '--org', '--role', '--digest', '--from', '--to'];
+const auditDetail = args => JSON.stringify(Object.fromEntries(AUDITED_FLAGS.filter(flag => args.includes(flag))
+  .map(flag => [flag, args[args.indexOf(flag) + 1]])));
+
+function recordAdmin(file, command, outcome, detail) {
+  const store = new Store(file);
+  try {
+    appendAudit(store.db, { at: new Date().toISOString(), command, outcome, detail });
+  } finally {
+    store.close();
+  }
+}
+
 export async function main(argv = process.argv.slice(2), env = process.env, write = console.log) {
+  const [command, ...args] = argv;
+  const label = ADMIN[command] ? ADMIN[command](args) : null;
+  if (!label) return run(argv, env, write);
+  const file = env.SSS_DB || 'sss.db';
+  let outcome = 'ok';
+  try {
+    const code = await run(argv, env, write);
+    if (code) outcome = 'refused';
+    return code;
+  } catch (error) {
+    outcome = kindOf(error) === 'bug' ? 'failed' : kindOf(error);
+    throw error;
+  } finally {
+    // A missing database changed nothing, so there is nothing to record it in.
+    if (existsSync(file)) {
+      try {
+        recordAdmin(file, label, outcome, auditDetail(args));
+      } catch (auditError) {
+        // A failed command keeps its own error. A successful one must not finish without its audit row.
+        if (outcome === 'ok') throw auditError;
+      }
+    }
+  }
+}
+
+async function run(argv, env, write) {
   const [command, ...args] = argv;
   const value = flag => {
     const index = args.indexOf(flag);
@@ -59,12 +147,14 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
   if (command === 'integration') {
     const kind = args[0]; const action = args[1];
     if (kind === 'source' && action === 'add') {
-      integrations.addSource(value('--name') || fail('missing --name'), value('--secret') || fail('missing --secret'), Number(value('--rate-limit') || '30'));
+      if (args.includes('--secret')) { store.close(); write(SECRET_REFUSAL); return 2; }
+      integrations.addSource(value('--name') || fail('missing --name'), secretFrom(args, env), Number(value('--rate-limit') || '30'));
       write(`integration source ${value('--name')} added`);
     } else if (kind === 'source' && action === 'list') {
       for (const row of integrations.list('source')) write(JSON.stringify(row));
     } else if (kind === 'destination' && action === 'add') {
-      integrations.addDestination(value('--name') || fail('missing --name'), value('--url') || fail('missing --url'), value('--secret') || fail('missing --secret'), { includeText: args.includes('--include-text'), allowLoopback: args.includes('--allow-loopback') });
+      if (args.includes('--secret')) { store.close(); write(SECRET_REFUSAL); return 2; }
+      integrations.addDestination(value('--name') || fail('missing --name'), value('--url') || fail('missing --url'), secretFrom(args, env), { includeText: args.includes('--include-text'), allowLoopback: args.includes('--allow-loopback') });
       write(`integration destination ${value('--name')} added`);
     } else if (kind === 'destination' && action === 'list') {
       for (const row of integrations.list('destination')) write(JSON.stringify(row));
@@ -229,6 +319,9 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
       write(`${answer.item}: ${answer.ok ? 'ok' : answer.reason}`);
       bad ||= !answer.ok;
     }
+    const audit = verifyAudit(store.db);
+    write(audit.ok ? 'audit: ok' : `audit: ${audit.reason}`);
+    bad ||= !audit.ok;
     if (bad) process.exitCode = 1;
   } else if (command === 'export') {
     write(store.exportJsonl());
@@ -267,7 +360,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
 }
 
 if (import.meta.url === new URL(`file://${process.argv[1]}`).href) {
-  main().catch(error => {
+  main().then(code => { if (code) process.exitCode = code; }).catch(error => {
     console.error(error.message);
     process.exitCode = 1;
   });

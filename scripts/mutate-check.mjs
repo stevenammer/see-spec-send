@@ -20,7 +20,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/slice22.test.mjs',
   'test/slice20.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
-  'test/mutation-security.test.mjs'];
+  'test/mutation-security.test.mjs', 'test/slice23.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
@@ -57,7 +57,7 @@ const mutants = [
   ['watchdog unrecoverable outbox', "state = 'dead' AND", "state = 'delivered' AND"],
   ['watchdog emergency stop', 'setKill(store, true, { docker });', 'setKill(store, false, { docker });'],
   ['portable Quest schema binding', 'JSON.stringify(value.memo) !== JSON.stringify(expected)', 'false'],
-  ['portable Quest explicit approval', "if (approved !== true) throw Error('explicit approval required');", 'if (false)'],
+  ['portable Quest explicit approval', "if (approved !== true) throw refused('explicit approval required');", 'if (false)'],
   ['fake idempotent start', 'INSERT OR IGNORE INTO fake_jobs VALUES(?,?,?,?)', 'INSERT INTO fake_jobs VALUES(?,?,?,?)'],
   ['fake identity binding', 'if (prior && prior.input !== input)', 'if (false)'],
   ['fake stop observed', "DO UPDATE SET status='stopped'", "DO UPDATE SET status='ready'"],
@@ -92,7 +92,7 @@ const mutants = [
   ['verify idempotency key', 'digest(stable({ idem, event }))', 'digest(stable({ event }))'],
   ['verify orphaned events', "...this.db.prepare('SELECT DISTINCT item FROM events').all().map(row => row.item),", ''],
   ['verify cache drift', "return same ? { item, ok: true } : { item, ok: false, reason: 'cache' };", 'return { item, ok: true };'],
-  ['user enumeration', "throw new Error('login unavailable');", "throw new Error('unknown user');"],
+  ['user enumeration', "throw invalid('login unavailable');", "throw invalid('unknown user');"],
   ['step-up freshness', 'row.stepup + 5 * minute < this.clock()', 'false'],
   ['step-up single use', 'AND stepup_used=0', 'AND 1=1'],
   ['invite single use', "UPDATE invites SET used=1 WHERE digest=? AND used=0", "UPDATE invites SET used=1 WHERE digest=?"],
@@ -111,7 +111,7 @@ const mutants = [
   ['helper count privacy', 'quorum: context.quorum, helpers: context.helpers.length };', 'quorum: context.quorum, helpers: context.helpers.length, helper_names: context.helpers };'],
   ['history shows token hash', "event.type === 'tried' && event.delivered_by ? event.delivered_by : event.actor", "event.delivered_by ? event.delivered_by : event.actor"],
   ['approver and steward can vote', 'const canVote = !context.ineligibleHelpers.includes(person);', 'const canVote = true;'],
-  ['artifact stored before stage check', "if (state.state !== 'SENDING') throw new Error('event not allowed');", ''],
+  ['artifact stored before stage check', "if (state.state !== 'SENDING') throw refused('event not allowed');", ''],
   ['checked problem requirement', '&& nonempty(event.problem) && event.problem.length <= 2000', ''],
   ['insider exclusion', '&& !context.ineligibleHelpers.includes(event.actor)', '&& true'],
   ['legacy authority captured once', 'AND (actor_kind IS NULL OR actor_leader IS NULL)', ''],
@@ -124,7 +124,7 @@ const mutants = [
   ['usdToMicros tolerance', 'if (Math.abs(scaled - micros) > tolerance) return null;', 'if (Math.abs(scaled - micros) > 0) return null;'],
   ['export actors registry', "const actors = this.db.prepare('SELECT id,kind,leader,item FROM actors ORDER BY id').all();", 'const actors = [];'],
   ['quest server rederivation',
-    'input.quest ? checkedFromQuest(input.quest, session.person) : checked(input);',
+    'input.quest ? fromQuest(input.quest, session.person) : checked(input);',
     'input.quest ? { ...checked(input), quest: input.quest } : checked(input);'],
   ['quest refused on the event route', "if (Object.hasOwn(input, 'quest')) return json(res, 409, { error: 'request refused' });", ''],
   ['quest names its signed-in person', 'doc.person !== person ||', 'false ||'],
@@ -156,12 +156,12 @@ const mutants = [
   ['oidc state expiry', 'pending.expires <= this.clock()', 'false'],
   ['oidc issuer check', 'claims.iss !== this.issuer', 'false'],
   ['oidc pending cap', "if (this.pending.size >= maxPending) throw new Error('too many pending OIDC handshakes');", ''],
-  ['account id bound on create', "async createUser(id, password, leader = false, { mustChange = false } = {}) {\n    if (!validAccountId(id)) throw new Error('invalid account id');", "async createUser(id, password, leader = false, { mustChange = false } = {}) {"],
-  ['account id bound on redeem', "async redeem(value, id, password, ip = 'local') {\n    if (!validAccountId(id)) throw new Error('invalid account id');", "async redeem(value, id, password, ip = 'local') {"],
+  ['account id bound on create', "async createUser(id, password, leader = false, { mustChange = false } = {}) {\n    if (!validAccountId(id)) throw invalid('invalid account id');", "async createUser(id, password, leader = false, { mustChange = false } = {}) {"],
+  ['account id bound on redeem', "async redeem(value, id, password, ip = 'local') {\n    if (!validAccountId(id)) throw invalid('invalid account id');", "async redeem(value, id, password, ip = 'local') {"],
   ['oidc audience check', '!audience.includes(this.clientId)', 'false'],
   ['oidc nonce check', 'claims.nonce !== nonce', 'false'],
   ['oidc token expiry', 'claims.exp <= now', 'false'],
-  ['draft explicit approval', "if (approved !== true) throw Error('explicit approval required');", ''],
+  ['draft explicit approval', "if (approved !== true) throw refused('explicit approval required');", ''],
   ['Quest model opt-in flag', "if (!questModel) return json(res, 404, { error: 'not found' });", "if (false) return json(res, 404, { error: 'not found' });"],
   ['Quest gateway kill latch', "demand(!killed(this.store), 'stopped run');", "demand(true, 'stopped run');"],
   ['Quest output ceiling', 'input.max_output_tokens <= QUEST_LIMITS.output_tokens', 'true'],
@@ -188,7 +188,7 @@ const mutants = [
     'this.redirectUri = config.redirectUri;'],
   ['integration signature', "!equal(signature(row.secret, timestamp, bytes), String(supplied || '').replace(/^sha256=/, ''))", 'false'],
   ['integration timestamp window', 'Math.abs(this.clock() - time) > WINDOW', 'false'],
-  ['integration replay protection', "if (accepted.changes !== 1) throw Error('inbound refused');", 'if (false) throw Error(\'inbound refused\');'],
+  ['integration replay protection', "if (accepted.changes !== 1) throw refused('inbound refused');", 'if (false) throw refused(\'inbound refused\');'],
   ['integration strict schema', "!Object.keys(value).every(key => ['problem', 'source_label', 'honesty_label'].includes(key))", 'false'],
   ['integration source authority', "event.type === 'seen' && context.phase === 'SEEN' && sourceActor(who)", "event.type === 'seen' && context.phase === 'SEEN' && person(who)"],
   ['integration outbox transaction', 'this.enqueueIntegrationOutbox(item, event, outcome.state, seq);', ''],
@@ -201,10 +201,10 @@ const mutants = [
   ['reset code marks itself used', "if (user.must_change === 1) this.db.prepare('UPDATE users SET temp_used=1 WHERE id=?').run(id);", 'undefined;'],
   ['temporary password restricts the session', "if (session.must_change === 1) return json(res, 403, { error: 'request refused' });", ''],
   ['init password is temporary', "await auth.createUser(value('--id') || 'leader', password, true, { mustChange: true });", "await auth.createUser(value('--id') || 'leader', password, true);"],
-  ['password change needs step-up', "if (!session || !this.useStepup(value)) throw new Error('step-up unavailable');", "if (!session) throw new Error('step-up unavailable');"],
+  ['password change needs step-up', "if (!session || !this.useStepup(value)) throw invalid('step-up unavailable');", "if (!session) throw invalid('step-up unavailable');"],
   ['password change ends old sessions', 'this.revokePerson(session.person);', 'undefined;'],
   ['last enabled leader guard', "if (others < 1) throw new Error('at least one enabled leader must remain');", "if (others < 0) throw new Error('at least one enabled leader must remain');"],
-  ['revoked invite refused', "|| invite.revoked === 1) throw new Error('invite unavailable');", ") throw new Error('invite unavailable');"],
+  ['revoked invite refused', "|| invite.revoked === 1) throw invalid('invite unavailable');", ") throw invalid('invite unavailable');"],
   ['invite id needs 12 hex characters', '/^[a-f0-9]{12,64}$/.test(id)', '/^[a-f0-9]{1,64}$/.test(id)'],
   ['unknown account failure recorded', '      this.recordFailure(id, ip);', '      if (user) this.recordFailure(id, ip);'],
   ['one KDF run for every account ID', "const record = user?.password || decoyRecord();", "const record = user?.password || await this.passwordRecord('not-a-real-password');"],
@@ -243,12 +243,22 @@ const mutants = [
   ['restore verifies the copy', "if (integrity !== 'ok' || rows.some(row => !row.ok)) throw", 'if (false) throw'],
   ['restore leaves kill set', 'setKill(store, true);', 'setKill(store, false);'],
   ['worker scans SENDING items only', "SELECT item FROM items WHERE state='SENDING'", 'SELECT item FROM items WHERE 1=1'],
-  ['lock contention answers 503 not refusal', 'if (busy(error)) {', 'if (false) {'],
+  ['lock contention answers 503 not refusal', "if (kind === 'busy') {", 'if (false) {'],
   ['member write budget 60 a minute', 'return window.count <= WRITES_PER_MINUTE;', 'return true;'],
   ['event size limit 16 KB', 'if (tooLarge(input)) return json(res, 413', 'if (false) return json(res, 413'],
   ['item event cap 200', '>= MAX_EVENTS_PER_ITEM', '>= Infinity'],
   ['feed and API page size fixed at 50', 'export const PAGE_SIZE = 50;', 'export const PAGE_SIZE = 1000000;'],
   ['gateway receipts verified once per request', 'gateway_budget: budgets.get(item.id)', 'gateway_budget: meteringSummary(store, item.id)'],
+  ['slice23 redaction Bearer', ".replace(CREDENTIAL, '$1 [redacted]');", ';'],
+  ['slice23 redaction JSON shape', "const KEYED = /([\"']?)\\b(", "const KEYED = /()\\b("],
+  ['slice23 argv secret refused', "if (args.includes('--secret')) { store.close(); write(SECRET_REFUSAL); return 2; }\n      integrations.addSource", 'integrations.addSource'],
+  ['slice23 request log line per request', "      emit({ event: 'request', rid: context.rid,", "      if (false) emit({ event: 'request', rid: context.rid,"],
+  ['slice23 unexpected error answers 500', "      return json(res, 500, { error: 'server error', request_id: context.rid });", "      return json(res, 400, { error: 'request refused' });"],
+  ['slice23 sign-in outcome logged', "      emit({ event, rid: context.rid, outcome: 'ok', person });", '      void 0;'],
+  ['slice23 typed error kind decides status', '  if (error instanceof AppError) return error.kind;', "  if (error instanceof AppError) return 'bug';"],
+  ['slice23 admin command writes audit row', '    appendAudit(store.db, { at: new Date().toISOString(), command, outcome, detail });', '    void [command, outcome, detail];'],
+  ['slice23 audit chain checked', 'if (row.prev !== previous || row.seal !== seal(previous, row)) {', 'if (false) {'],
+  ['slice23 verify reports the audit chain', '    bad ||= !audit.ok;', '    bad ||= false;'],
 ];
 
 function run(cwd, args) {
@@ -275,7 +285,7 @@ for (const [name, find, replace] of selected) {
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
   const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'cli.js',
     'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
-    'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js'];
+    'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {

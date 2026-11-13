@@ -1,5 +1,6 @@
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
+import { invalid } from '../core/errors.js';
 
 const scrypt = promisify(scryptCallback);
 // Entries of 12 or more characters matter: the policy's length floor is 12, so shorter entries never reach the check.
@@ -52,7 +53,7 @@ export class Auth {
   checkPassword(password) {
     if (typeof password !== 'string' || password.length < 12
       || common.has(password.toLowerCase())) {
-      throw new Error('password does not meet policy');
+      throw invalid('password does not meet policy');
     }
   }
 
@@ -66,8 +67,8 @@ export class Auth {
   }
 
   async createUser(id, password, leader = false, { mustChange = false } = {}) {
-    if (!validAccountId(id)) throw new Error('invalid account id');
-    if (this.db.prepare('SELECT 1 FROM users WHERE lower(id)=lower(?)').get(id)) throw new Error('account id exists');
+    if (!validAccountId(id)) throw invalid('invalid account id');
+    if (this.db.prepare('SELECT 1 FROM users WHERE lower(id)=lower(?)').get(id)) throw invalid('account id exists');
     const record = await this.passwordRecord(password);
     this.db.prepare('INSERT INTO users(id,password,leader,must_change) VALUES(?,?,?,?)')
       .run(id, record, leader ? 1 : 0, mustChange ? 1 : 0);
@@ -122,21 +123,21 @@ export class Auth {
   }
 
   async redeem(value, id, password, ip = 'local') {
-    if (!validAccountId(id)) throw new Error('invalid account id');
+    if (!validAccountId(id)) throw invalid('invalid account id');
     const existing = this.db.prepare('SELECT id FROM users WHERE lower(id)=lower(?)').get(id);
     // Leave an exact duplicate to the INSERT below. That preserves the no-transaction-during-
     // password-work guarantee while still refusing case-variant identities before redemption.
-    if (existing && existing.id !== id) throw new Error('account id exists');
-    if (!this.allowed(ip, hash(value), 'invite')) throw new Error('try again later');
+    if (existing && existing.id !== id) throw invalid('account id exists');
+    if (!this.allowed(ip, hash(value), 'invite')) throw invalid('try again later');
     const digest = hash(value);
     // Password work must finish before the transaction so other requests stay isolated.
     const record = await this.passwordRecord(password);
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const invite = this.db.prepare('SELECT * FROM invites WHERE digest=?').get(digest);
-      if (!invite || invite.expires <= this.clock() || invite.revoked === 1) throw new Error('invite unavailable');
+      if (!invite || invite.expires <= this.clock() || invite.revoked === 1) throw invalid('invite unavailable');
       const changed = this.db.prepare('UPDATE invites SET used=1 WHERE digest=? AND used=0').run(digest);
-      if (changed.changes !== 1) throw new Error('invite unavailable');
+      if (changed.changes !== 1) throw invalid('invite unavailable');
       this.db.prepare('INSERT INTO users(id,password,leader) VALUES(?,?,?)')
         .run(id, record, invite.role === 'leader' ? 1 : 0);
       this.store.registerPerson(id, { leader: invite.role === 'leader' });
@@ -182,7 +183,7 @@ export class Auth {
 
   async login(id, password, ip = 'local') {
     if (!this.take(`login:ip:${ip}`) || typeof id !== 'string' || this.loginBlocked(id, ip)) {
-      throw new Error('login unavailable');
+      throw invalid('login unavailable');
     }
     const user = this.db.prepare(`SELECT u.*, coalesce(p.disabled, 0) AS disabled
       FROM users u LEFT JOIN person_state p ON p.id=u.id WHERE u.id=?`).get(id);
@@ -193,7 +194,7 @@ export class Auth {
     if (!user || !valid || user.disabled === 1 || temporaryUsed) {
       // Known and unknown IDs get the same failure row, so lockout and pruning behave the same.
       this.recordFailure(id, ip);
-      throw new Error('login unavailable');
+      throw invalid('login unavailable');
     }
     if (!record.startsWith(`scrypt$${SCRYPT_N}$`)) await this.rehash(user, password);
     this.db.prepare('DELETE FROM login_failures WHERE account=? AND ip=?').run(id, ip);
@@ -245,13 +246,13 @@ export class Auth {
   async changePassword(value, password) {
     this.checkPassword(password);
     const session = this.session(value);
-    if (!session || !this.useStepup(value)) throw new Error('step-up unavailable');
+    if (!session || !this.useStepup(value)) throw invalid('step-up unavailable');
     const record = await this.record(password);
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const changed = this.db.prepare('UPDATE users SET password=?, must_change=0, temp_used=0 WHERE id=?')
         .run(record, session.person).changes;
-      if (changed !== 1) throw new Error('step-up unavailable');
+      if (changed !== 1) throw invalid('step-up unavailable');
       this.revokePerson(session.person);
       const next = this.newSession(session.person);
       this.db.exec('COMMIT');
@@ -365,11 +366,11 @@ export class Auth {
   async stepup(value, password, ip = 'local') {
     const session = this.session(value);
     if (!session || !this.allowed(ip, session.person, 'stepup')) {
-      throw new Error('step-up unavailable');
+      throw invalid('step-up unavailable');
     }
-    if (session.auth_method !== 'password') throw new Error('step-up unavailable');
+    if (session.auth_method !== 'password') throw invalid('step-up unavailable');
     const user = this.db.prepare('SELECT password FROM users WHERE id=?').get(session.person);
-    if (!user || !await this.matches(password, user.password)) throw new Error('step-up unavailable');
+    if (!user || !await this.matches(password, user.password)) throw invalid('step-up unavailable');
     this.db.prepare('UPDATE sessions SET stepup=?,stepup_used=0 WHERE digest=?')
       .run(this.clock(), hash(value));
   }

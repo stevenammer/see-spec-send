@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto';
 import { fold, initial, step } from './machine.js';
 import { attach, guard } from '../worker/control.js';
 import { migrate } from './migrations.js';
+import { invalid, refused } from './errors.js';
+import { appendAudit } from './audit.js';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 // Fixed page size for the feed and the item API. There is no setting for it.
@@ -154,8 +156,8 @@ export class Store {
 
   actor(id, item) {
     const row = this.db.prepare('SELECT id,kind,leader,item FROM actors WHERE id=?').get(id);
-    if (!row) throw new Error('unknown actor');
-    if (!['person', 'source'].includes(row.kind) && row.item !== item) throw new Error('token is scoped to another item');
+    if (!row) throw invalid('unknown actor');
+    if (!['person', 'source'].includes(row.kind) && row.item !== item) throw invalid('token is scoped to another item');
     return { kind: row.kind, leader: row.leader === 1 };
   }
 
@@ -189,7 +191,7 @@ export class Store {
 
   putArtifact(item, html) {
     if (typeof html !== 'string' || Buffer.byteLength(html, 'utf8') > 256 * 1024) {
-      throw new Error('artifact too large');
+      throw refused('artifact too large');
     }
     const hash = scopedBodyHash(item, html);
     this.db.prepare('INSERT OR IGNORE INTO bodies(hash,bytes) VALUES(?,?)').run(hash, html);
@@ -229,18 +231,18 @@ export class Store {
   }
 
   ensureEvent(item, event) {
-    if (!item || !event?.type || !event.actor) throw new Error('item, event, and actor required');
-    if (Object.hasOwn(event, 'role')) throw new Error('event role is forbidden');
-    if (typeof event.at !== 'string' || !event.at) throw new Error('event.at required');
+    if (!item || !event?.type || !event.actor) throw refused('item, event, and actor required');
+    if (Object.hasOwn(event, 'role')) throw refused('event role is forbidden');
+    if (typeof event.at !== 'string' || !event.at) throw refused('event.at required');
     this.actor(event.actor, item);
     if (event.type === 'steward_changed') {
       const next = this.db.prepare('SELECT kind FROM actors WHERE id=?').get(event.steward);
-      if (!next || next.kind !== 'person') throw new Error('steward must be a registered person');
+      if (!next || next.kind !== 'person') throw invalid('steward must be a registered person');
     }
   }
 
   append(item, event, options = {}) {
-    if (!options.idem) throw new Error('idem required');
+    if (!options.idem) throw invalid('idem required');
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const answer = this.appendInTransaction(item, event, options);
@@ -260,9 +262,9 @@ export class Store {
     if (existing) {
       const storedEvent = this.submittedEventFromRow(existing);
       const existingHash = existing.submitted_hash || (storedEvent && submittedEventHash(storedEvent, existing.idem));
-      if (!existingHash) throw new Error('idempotency record cannot be compared');
+      if (!existingHash) throw invalid('idempotency record cannot be compared');
       if (existingHash !== submittedHash) {
-        throw new Error('idempotency key reused with a different event');
+        throw refused('idempotency key reused with a different event');
       }
       if (!existing.submitted_hash) {
         this.db.prepare('UPDATE events SET submitted_hash=? WHERE item=? AND seq=?')
@@ -273,14 +275,14 @@ export class Store {
     guard(this, item, event);
     const cached = this.db.prepare('SELECT * FROM items WHERE item=?').get(item);
     const currentSeq = cached?.seq || 0;
-    if (expectedSeq !== undefined && expectedSeq !== currentSeq) throw new Error('stale expectedSeq');
+    if (expectedSeq !== undefined && expectedSeq !== currentSeq) throw refused('stale expectedSeq');
     const bytes = stable(bodyOf(event));
     const hashOfBody = bodyHash || scopedBodyHash(item, bytes);
     const prior = this.read(item);
-    if (prior.refusal) throw new Error(`cannot append: replay refused: ${prior.refusal}`);
+    if (prior.refusal) throw refused(`cannot append: replay refused: ${prior.refusal}`);
     const authority = authoritySnapshot || this.actor(event.actor, item);
     const outcome = step(prior.context, { ...event, body_hash: hashOfBody }, authority);
-    if (outcome.refusal) throw new Error(outcome.refusal);
+    if (outcome.refusal) throw refused(outcome.refusal);
     const seq = currentSeq + 1;
     const previous = cached?.head || '';
     const hash = eventHash(previous, seq, event.type, event.actor, hashOfBody, event.at,

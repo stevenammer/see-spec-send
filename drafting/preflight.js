@@ -1,13 +1,14 @@
 import { readProviders } from '../provider/config.js';
+import { invalid, refused } from '../core/errors.js';
 // Optional drafting is deliberately a small client of the existing gateway boundary.
 const rate = Object.freeze({ input_micros: 1, output_micros: 2, framing_tokens: 8 });
 export function preflightProviderDraft({ provider, item, spec_hash, prompt, max_output_tokens }) {
   if (!provider?.enabled || !provider.price || !item || !spec_hash || typeof prompt !== 'string' ||
-    !Number.isSafeInteger(max_output_tokens) || max_output_tokens < 1) throw Error('provider draft packet refused');
+    !Number.isSafeInteger(max_output_tokens) || max_output_tokens < 1) throw refused('provider draft packet refused');
   const input_tokens_bound = Buffer.byteLength(prompt);
   const numerator = input_tokens_bound * provider.price.inputMicrosPerMillion
     + max_output_tokens * provider.price.outputMicrosPerMillion;
-  if (!Number.isSafeInteger(numerator)) throw Error('provider draft estimate unsafe');
+  if (!Number.isSafeInteger(numerator)) throw invalid('provider draft estimate unsafe');
   return Object.freeze({ provider: provider.name, model: provider.model, input: prompt, max_output_tokens, item, spec_hash,
     input_tokens_bound, worst_case_micros: Math.ceil(numerator / 1_000_000),
     label: 'Model output, review required. It cannot approve or change state.' });
@@ -15,19 +16,19 @@ export function preflightProviderDraft({ provider, item, spec_hash, prompt, max_
 // Draft callers select a name, never a browser-supplied endpoint or model.
 export function preflightConfiguredDraft({ providerName, ...packet }, env = process.env) {
   const provider = readProviders(env).providers.find(entry => entry.name === providerName && entry.enabled);
-  if (!provider) throw Error('provider is not enabled');
+  if (!provider) throw invalid('provider is not enabled');
   return preflightProviderDraft({ ...packet, provider });
 }
 export function preflightDraft({ item, spec_hash, prompt, max_output_tokens }) {
   if (!item || !spec_hash || typeof prompt !== 'string' || !Number.isInteger(max_output_tokens) || max_output_tokens < 1)
-    throw Error('draft packet refused');
+    throw refused('draft packet refused');
   const inputTokens = Buffer.byteLength(prompt) + rate.framing_tokens;
   const worst_case_micros = inputTokens * rate.input_micros + max_output_tokens * rate.output_micros;
   return Object.freeze({ model: 'fixture:text-v1', input: prompt, max_output_tokens, item, spec_hash,
     input_tokens_bound: inputTokens, worst_case_micros, label: 'Model output, review required. It cannot approve or change state.' });
 }
 export async function sendDraft(gateway, capability, packet, approved) {
-  if (approved !== true) throw Error('explicit approval required');
+  if (approved !== true) throw refused('explicit approval required');
   const result = await gateway.call(capability, `draft:${packet.item}:${packet.spec_hash}`, {
     model: packet.model, input: packet.input, max_output_tokens: packet.max_output_tokens,
   });

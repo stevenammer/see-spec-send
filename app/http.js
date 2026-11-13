@@ -7,6 +7,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Integrations } from './integrations.js';
 import { feedPage, htmlHeaders, itemPage, newItemPage, questPage, redeemPage, signInPage } from './pages.js';
+import { invalid, kindOf, refused, tooLarge as tooLargeError } from '../core/errors.js';
+import { redact } from '../provider/safe-http.js';
 
 // Object key order does not change a retry identity. Array order is meaningful.
 const canonical = value => JSON.stringify(value, (_key, entry) =>
@@ -17,11 +19,22 @@ const canonical = value => JSON.stringify(value, (_key, entry) =>
 const WRITES_PER_MINUTE = 60;
 const EVENT_BYTES = 16 * 1024;
 const MAX_EVENTS_PER_ITEM = 200;
-const busy = error => error?.errcode === 5 || error?.errcode === 6 || /database (table )?is locked/.test(error?.message || '');
 const tooLarge = value => Buffer.byteLength(JSON.stringify(value)) > EVENT_BYTES;
 const pageAfter = url => {
   const after = url.searchParams.get('after');
   return typeof after === 'string' && after.length <= 128 ? after : '';
+};
+
+// The route pattern for a request, so the log never carries item IDs, artifact hashes or query strings.
+const routeOf = raw => {
+  let path;
+  try { path = new URL(raw, 'http://localhost').pathname; } catch { return '/'; }
+  return path
+    .replace(/^\/api\/items\/[^/]+\/artifact\/[a-f0-9]{64}$/, '/api/items/:id/artifact/:hash')
+    .replace(/^\/api\/items\/[^/]+/, '/api/items/:id')
+    .replace(/^\/items\/[^/]+$/, '/items/:id')
+    .replace(/^\/api\/integrations\/inbound\/[^/]+$/, '/api/integrations/inbound/:source')
+    .slice(0, 120);
 };
 
 const json = (res, status, value) => {
@@ -55,7 +68,7 @@ const bytes = (req, limit = 300 * 1024) =>
     let size = 0; const chunks = []; let refused = false;
     req.on('data', chunk => {
       size += chunk.length;
-      if (size > limit && !refused) { refused = true; reject(new Error('body too large')); }
+      if (size > limit && !refused) { refused = true; reject(tooLargeError('body too large')); }
       else if (!refused) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
     req.on('end', () => { if (!refused) resolve(Buffer.concat(chunks)); });
@@ -63,12 +76,12 @@ const bytes = (req, limit = 300 * 1024) =>
   });
 const body = async (req, limit) => {
   const raw = await bytes(req, limit).catch(error => {
-    if (error.message === 'body too large') throw error;
-    throw new Error('bad json');
+    if (kindOf(error) === 'too_large') throw error;
+    throw invalid('bad json');
   });
   try { const value = JSON.parse(raw.toString('utf8') || '{}');
-    if (!safeObject(value)) throw new Error('bad json'); return value;
-  } catch { throw new Error('bad json'); }
+    if (!safeObject(value)) throw invalid('bad json'); return value;
+  } catch { throw invalid('bad json'); }
 };
 const cookies = req =>
   Object.fromEntries(
@@ -99,7 +112,7 @@ const checked = input => {
   const looked = ['have', 'pay_for', 'free', 'setting']
     .filter(key => input[key])
     .map(key => `${key}:${String(input[`${key}_note`] || '').slice(0, 280)}`);
-  if (!looked.length) throw new Error('check required');
+  if (!looked.length) throw refused('check required');
   return { problem: input.problem, looked, found: [], verdict: input.verdict };
 };
 const hex = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
@@ -130,7 +143,7 @@ const validEvent = input => {
   }
 };
 
-export function createHandler({ auth, store, integrations, questModel = null, secure = true, origin = 'https://localhost', clock = Date.now }) {
+export function createHandler({ auth, store, integrations, questModel = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {} }) {
   integrations ||= new Integrations(store, { origin });
   // Fixed one-minute windows per signed-in member. Memory holds one entry per member.
   const writes = new Map();
@@ -141,13 +154,30 @@ export function createHandler({ auth, store, integrations, questModel = null, se
     return window.count <= WRITES_PER_MINUTE;
   };
   const sameOrigin = sameOriginAs(origin);
+  // Quest input that fails the shared validator is an invalid request, whatever the validator's wording.
+  const fromQuest = (quest, person) => {
+    try { return checkedFromQuest(quest, person); } catch (error) { throw invalid(error.message); }
+  };
   const cookieName = secure ? '__Host-sss' : 'sss';
   const cookie = value =>
     `${cookieName}=${value}; Path=/; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
   const oidcBinderName = secure ? '__Host-sss-oidc' : 'sss-oidc';
   const oidcBinderCookie = value =>
     `${oidcBinderName}=${value}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
-  return async (req, res) => {
+  // One line per sign-in or step-up outcome. Passwords, cookies and tokens never reach a log line.
+  const emit = entry => log(JSON.stringify(entry));
+  const outcome = async (context, event, attempt, { person = null, account = null } = {}) => {
+    try {
+      const result = await attempt();
+      emit({ event, rid: context.rid, outcome: 'ok', person });
+      return result;
+    } catch (error) {
+      emit({ event, rid: context.rid, outcome: 'refused', account });
+      throw error;
+    }
+  };
+  const accountOf = value => (typeof value === 'string' ? value.slice(0, 64) : null);
+  const serve = async (req, res, context) => {
     headers(res);
     try {
       const url = new URL(req.url, origin);
@@ -156,7 +186,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (req.method === 'POST' && inbound) {
         if (req.headers['content-type'] !== 'application/json') return json(res, 415, { error: 'request refused' });
         // Inbound intake keeps its own answer for an oversized body (400), so the generic 413 mapping does not reach it.
-        const raw = await bytes(req, 16 * 1024).catch(() => { throw new Error('inbound body over limit'); });
+        const raw = await bytes(req, 16 * 1024).catch(() => { throw invalid('inbound body over limit'); });
         return json(res, 201, integrations.receive(inbound[1], req.headers['x-sss-timestamp'], req.headers['x-sss-signature'], raw, req.headers));
       }
       if (req.method === 'GET' && url.pathname === '/assets/app.js')
@@ -171,6 +201,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       }
       const sessionToken = cookies(req)[cookieName];
       const session = sessionToken && auth.session(sessionToken);
+      if (session) context.person = session.person;
       if (change && req.headers['content-type'] !== 'application/json')
         return json(res, 415, { error: 'request refused' });
       if (
@@ -199,20 +230,24 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           login = await auth.completeOidc({ state: url.searchParams.get('state'),
             code: url.searchParams.get('code'), binder: cookies(req)[oidcBinderName] });
         } catch {
+          emit({ event: 'sign_in', rid: context.rid, method: 'oidc', outcome: 'refused' });
           res.setHeader('set-cookie', clearBinder);
           return json(res, 400, { error: 'request refused' });
         }
+        emit({ event: 'sign_in', rid: context.rid, method: 'oidc', outcome: 'ok', person: auth.session(login.value)?.person ?? null });
         res.setHeader('set-cookie', [cookie(login.value), clearBinder]);
         res.writeHead(302, { location: '/', 'cache-control': 'no-store' });
         return res.end();
       }
       if (req.method === 'POST' && url.pathname === '/api/login') {
-        const login = await auth.login(input.id, input.password, ip);
+        const login = await outcome(context, 'sign_in', () => auth.login(input.id, input.password, ip),
+          { person: accountOf(input.id), account: accountOf(input.id) });
         res.setHeader('set-cookie', cookie(login.value));
         return json(res, 200, { csrf: login.csrf });
       }
       if (req.method === 'POST' && url.pathname === '/api/invite/redeem') {
-        const login = await auth.redeem(input.invite, input.id, input.password, ip);
+        const login = await outcome(context, 'invite_redeem', () => auth.redeem(input.invite, input.id, input.password, ip),
+          { person: accountOf(input.id), account: accountOf(input.id) });
         res.setHeader('set-cookie', cookie(login.value));
         return json(res, 201, { csrf: login.csrf });
       }
@@ -234,7 +269,8 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (change && !spend(session.person, clock()))
         return json(res, 429, { error: 'slow down, try again in a minute' });
       if (req.method === 'POST' && url.pathname === '/api/stepup') {
-        await auth.stepup(sessionToken, input.password, ip);
+        await outcome(context, 'step_up', () => auth.stepup(sessionToken, input.password, ip),
+          { person: session.person, account: session.person });
         return json(res, 204, {});
       }
       if (req.method === 'POST' && url.pathname === '/api/password') {
@@ -275,7 +311,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (req.method === 'POST' && url.pathname === '/api/items') {
         if (!input.quest && tooLarge(input)) return json(res, 413, { error: 'request too large' });
         // Derive and validate before looking up a receipt, including the signed-in owner.
-        const eventBody = input.quest ? checkedFromQuest(input.quest, session.person) : checked(input);
+        const eventBody = input.quest ? fromQuest(input.quest, session.person) : checked(input);
         const id = input.quest ? createHash('sha256').update(canonical({
           person: session.person, quest: input.quest,
         })).digest('hex') : randomBytes(24).toString('base64url');
@@ -284,7 +320,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         const prior = input.quest ? store.events(id) : [];
         if (prior.length) {
           if (prior[0].type !== 'checked' || prior[0].actor !== session.person) {
-            throw Error('Quest receipt owner does not match.');
+            throw invalid('Quest receipt owner does not match.');
           }
           return json(res, 200, { id, state: store.read(id), idempotent: true });
         }
@@ -320,9 +356,9 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (req.method === 'POST' && deliver) {
         const state = store.read(deliver[1]);
         if (!(leader || state.context.steward === session.person))
-          throw new Error('event not allowed');
+          throw refused('event not allowed');
         // Check the stage before storing any bytes, so a refused delivery leaves nothing behind.
-        if (state.state !== 'SENDING') throw new Error('event not allowed');
+        if (state.state !== 'SENDING') throw refused('event not allowed');
         const hash = store.putArtifact(deliver[1], input.html);
         const run = auth.createToken('run', deliver[1]);
         const actor = createHash('sha256').update(run).digest('hex');
@@ -385,22 +421,35 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         ),
       );
     } catch (error) {
-      // Lock contention is a retryable server state, never a rule refusal.
-      if (busy(error)) {
+      // Each status comes from the error's kind, never from its message.
+      const kind = kindOf(error);
+      if (kind === 'busy') {
         res.setHeader('retry-after', '1');
         return json(res, 503, { error: 'busy, try again in a moment' });
       }
-      if (error.message === 'body too large') return json(res, 413, { error: 'request too large' });
-      return json(
-        res,
-        /refused|not allowed|stale|approval|event|artifact|check/.test(error.message) ? 409 : 400,
-        { error: 'request refused' },
-      );
+      if (kind === 'too_large') return json(res, 413, { error: 'request too large' });
+      if (kind === 'refused') return json(res, 409, { error: 'request refused' });
+      if (kind === 'invalid') return json(res, 400, { error: 'request refused' });
+      // A plain error is a defect. The client gets the request ID to quote; the stack goes to the log.
+      emit({ event: 'error', rid: context.rid, route: routeOf(req.url), status: 500, stack: redact(String(error?.stack || error)) });
+      return json(res, 500, { error: 'server error', request_id: context.rid });
+    }
+  };
+  return async (req, res) => {
+    const context = { rid: randomUUID(), person: null };
+    const started = performance.now();
+    res.setHeader('x-request-id', context.rid);
+    try {
+      await serve(req, res, context);
+    } finally {
+      emit({ event: 'request', rid: context.rid, route: routeOf(req.url), status: res.statusCode ?? res.status,
+        person: context.person, ms: Math.round(performance.now() - started) });
     }
   };
 }
 export function createServerFor(deps) {
-  const server = createServer(createHandler(deps));
+  // The product server writes its request and sign-in lines to stderr. Tests pass their own sink.
+  const server = createServer(createHandler({ log: line => process.stderr.write(`${line}\n`), ...deps }));
   server.headersTimeout = 10_000;
   server.requestTimeout = 15_000;
   return server;

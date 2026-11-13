@@ -1,5 +1,6 @@
 import { createHmac, createHash, timingSafeEqual, randomBytes } from 'node:crypto';
 import { checkedUrl, redact } from '../provider/safe-http.js';
+import { refused } from '../core/errors.js';
 
 const WINDOW = 5 * 60_000;
 // While a row is sending, next_at holds its lease expiry. A lapsed lease means the sender died.
@@ -65,17 +66,17 @@ export class Integrations {
   receive(source, timestamp, supplied, bytes, headers = {}) {
     const row = this.db.prepare('SELECT * FROM integration_sources WHERE name=? AND enabled=1').get(source);
     const time = Number(timestamp);
-    if (!row || !Number.isSafeInteger(time) || Math.abs(this.clock() - time) > WINDOW || !equal(signature(row.secret, timestamp, bytes), String(supplied || '').replace(/^sha256=/, '')) || !this.allowed(source)) throw Error('inbound refused');
-    let input; try { input = strictSeen(JSON.parse(bytes.toString('utf8'))); } catch { throw Error('inbound refused'); }
+    if (!row || !Number.isSafeInteger(time) || Math.abs(this.clock() - time) > WINDOW || !equal(signature(row.secret, timestamp, bytes), String(supplied || '').replace(/^sha256=/, '')) || !this.allowed(source)) throw refused('inbound refused');
+    let input; try { input = strictSeen(JSON.parse(bytes.toString('utf8'))); } catch { throw refused('inbound refused'); }
     const idem = headers['idempotency-key'];
-    if (!text(idem) || idem.length > 160) throw Error('inbound refused');
+    if (!text(idem) || idem.length > 160) throw refused('inbound refused');
     const replay = createHash('sha256').update(`${timestamp}\0${supplied}\0${idem}`).digest('hex');
     const item = randomBytes(24).toString('base64url');
     this.db.exec('BEGIN IMMEDIATE');
     try {
       this.db.prepare('DELETE FROM integration_replays WHERE expires<=?').run(this.clock());
       const accepted = this.db.prepare('INSERT OR IGNORE INTO integration_replays(source,digest,expires) VALUES(?,?,?)').run(source, replay, this.clock() + WINDOW);
-      if (accepted.changes !== 1) throw Error('inbound refused');
+      if (accepted.changes !== 1) throw refused('inbound refused');
       this.store.appendInTransaction(item, { type: 'seen', actor: `source:${source}`, at: new Date(this.clock()).toISOString(), ...input }, { idem: `inbound:${source}:${idem}` });
       this.db.exec('COMMIT'); return { id: item };
     } catch (error) { try { this.db.exec('ROLLBACK'); } catch {} throw error; }

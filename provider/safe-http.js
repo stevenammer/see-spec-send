@@ -1,8 +1,13 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 
-const SECRET = /(authorization|api[-_ ]?key|token|secret|password)\s*[:=]\s*[^\s,}]+/gi;
-export const redact = value => String(value).replace(SECRET, '$1=[redacted]');
+// Shapes that carry a credential: `key: value`, `key=value`, JSON `"key": "value"`, and bare
+// `Bearer x` or `Basic x`. The key or scheme stays so an operator can see what was hidden.
+const KEYED = /(["']?)\b(authorization|api[-_ ]?key|token|secret|password)\1(\s*[:=]\s*)(["']?)((?:(?:Bearer|Basic)\s+)?[^\s,"'}&]+)\4/gi;
+const CREDENTIAL = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
+export const redact = value => String(value)
+  .replace(KEYED, (_match, _quote, key) => `${key}=[redacted]`)
+  .replace(CREDENTIAL, '$1 [redacted]');
 const privateV4 = ip => /^(10\.|127\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip);
 const privateV6 = ip => ip === '::1' || /^f[cd]/i.test(ip) || /^fe[89ab]/i.test(ip) || ip === '::ffff:127.0.0.1';
 export const privateAddress = ip => privateV4(ip) || privateV6(ip);

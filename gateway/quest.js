@@ -1,11 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { killed, transaction } from '../worker/control.js';
 import { canonical } from './ledger.js';
+import { invalid } from '../core/errors.js';
 
 export const QUEST_LIMITS = Object.freeze({ calls_per_person_day: 3, output_tokens: 256, person_day_micros: 100_000 });
 const digest = value => createHash('sha256').update(value).digest('hex');
 const integer = value => Number.isSafeInteger(value) && value >= 0;
-const demand = (value, message) => { if (!value) throw Error(message); };
+// Input and state refusals are typed. A failed integrity check is a bug, so it is not typed.
+const demand = (value, message) => { if (!value) throw invalid(message); };
+const integrity = (value, message) => { if (!value) throw Error(message); };
 const seal = row => { const { seal: _seal, ...body } = row; return digest(canonical(body)); };
 
 // Quest is deliberately separate from a build run, but uses the same policy and
@@ -18,9 +21,9 @@ export class QuestGateway {
 
   receipts() {
     return this.db.prepare('SELECT * FROM gateway_quest_receipts ORDER BY id').all().map(row => {
-      demand(row.seal === seal(row), 'corrupt Quest receipt');
-      demand(['reserved', 'dispatched', 'settled'].includes(row.state), 'corrupt Quest receipt state');
-      demand(integer(row.charged_micros) && integer(row.worst_micros) && row.charged_micros <= row.worst_micros,
+      integrity(row.seal === seal(row), 'corrupt Quest receipt');
+      integrity(['reserved', 'dispatched', 'settled'].includes(row.state), 'corrupt Quest receipt state');
+      integrity(integer(row.charged_micros) && integer(row.worst_micros) && row.charged_micros <= row.worst_micros,
         'corrupt Quest accounting');
       return row;
     });

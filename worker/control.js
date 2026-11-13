@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { usdToMicros } from '../core/machine.js';
+import { invalid, refused } from '../core/errors.js';
 import { readFileSync, realpathSync, writeFileSync, unlinkSync } from 'node:fs';
 
 // Schema lives in core/schema.js and is created by the migration runner, not here.
@@ -84,7 +85,7 @@ function guardLedger(store, item, event) {
   if (!store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='gateway_receipts'").get()) return;
   const context = store.read(item).context;
   const micros = usdToMicros(event.usd);
-  if (micros === null) throw new Error('invalid usd');
+  if (micros === null) throw invalid('invalid usd');
   let held = 0n;
   const rows = store.db.prepare('SELECT * FROM gateway_receipts').all();
   const integrity = store.db.prepare('SELECT receipt_count FROM gateway_integrity WHERE id=1').get();
@@ -100,19 +101,19 @@ function guardLedger(store, item, event) {
     if (row.item === item && row.approval === context.approval) held += BigInt(row.charged_micros);
   }
   if (held + BigInt(context.spentMicros) + BigInt(micros) > BigInt(context.capMicros)) {
-    throw new Error('combined gateway and legacy cap exceeded');
+    throw refused('combined gateway and legacy cap exceeded');
   }
 }
 
 export function guard(store, item, event) {
   guardLedger(store, item, event);
-  if (['tried', 'charged'].includes(event.type) && killed(store)) throw new Error('emergency kill is set');
+  if (['tried', 'charged'].includes(event.type) && killed(store)) throw refused('emergency kill is set');
   const run = store.db.prepare('SELECT * FROM runs WHERE run_actor=? OR gateway_actor=?').get(event.actor, event.actor);
   if (!run) return;
   if (run.item !== item || event.approval !== run.approval || event.spec_hash !== run.spec_hash) {
-    throw new Error('run approval binding mismatch');
+    throw refused('run approval binding mismatch');
   }
   if (run.status === 'stopped' || (event.type !== 'failed' && run.status !== 'active')) {
-    throw new Error('run is stopped');
+    throw refused('run is stopped');
   }
 }

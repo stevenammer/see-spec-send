@@ -2,6 +2,7 @@ import { preflightConfiguredDraft } from '../drafting/preflight.js';
 import { providerFor } from './config.js';
 import { validateCompletion } from './index.js';
 import { validateQuest, portableQuestPrompt, importPortableMemo, QUEST_MODEL_LABEL } from '../public/vision-quest.js';
+import { refused } from '../core/errors.js';
 
 export { portableQuestPrompt, importPortableMemo, QUEST_MODEL_LABEL };
 
@@ -13,7 +14,7 @@ export function preflightQuestModel({ providerName, org = 'default', doc, maxOut
 }
 
 export async function draftQuestModel({ providerName, doc, approved = false, maxOutputTokens = 800 }, env = process.env) {
-  if (approved !== true) throw Error('explicit approval required');
+  if (approved !== true) throw refused('explicit approval required');
   const packet = preflightQuestModel({ providerName, doc, maxOutputTokens }, env);
   const result = validateCompletion(await providerFor(providerName, env).complete({
     system: 'Draft only. Never decide or claim verification. Return JSON only.',

@@ -15,7 +15,7 @@ import { readProviders, saveProviders, validateProvider, providerFor, meteredPro
 import { redact } from './provider/safe-http.js';
 import { SYSTEM_PROMPT } from './worker/builder/index.js';
 import { Auth } from './app/auth.js';
-import { createServerFor } from './app/http.js';
+import { createServerFor, isLoopback } from './app/http.js';
 import { Integrations, recoverStaleSending } from './app/integrations.js';
 import { questModelService } from './provider/quest-service.js';
 import { validateCompletion } from './provider/index.js';
@@ -114,12 +114,62 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
   }
 }
 
+// Every serve refusal happens here, before the database is opened or any socket exists.
+// Fixed rules, no config file: loopback needs nothing extra; any other bind needs direct TLS or one trusted proxy hop.
+export function serveSettings(args, env = {}) {
+  const value = flag => {
+    const index = args.indexOf(flag);
+    return index < 0 ? undefined : args[index + 1];
+  };
+  const port = Number(value('--port') || '8080');
+  const host = value('--host') || '127.0.0.1';
+  if (!/^[0-9a-fA-F:.]+$/.test(host)) fail('--host must be an IP address');
+  const tlsCert = value('--tls-cert');
+  const tlsKey = value('--tls-key');
+  if (Boolean(tlsCert) !== Boolean(tlsKey)) fail('refused: --tls-cert and --tls-key must be given together');
+  const trustedProxy = args.includes('--trusted-proxy');
+  const insecure = args.includes('--insecure-cookies');
+  const loopback = isLoopback(host);
+  const tls = Boolean(tlsCert);
+  if (!loopback && !tls && !trustedProxy) {
+    fail(`refused: ${host} is not loopback. Give --tls-cert and --tls-key, or --trusted-proxy behind a TLS front end on this host.`);
+  }
+  if (insecure && (!loopback || tls || trustedProxy)) {
+    fail('refused: --insecure-cookies is for plain HTTP on loopback only; it cannot be used with a non-loopback host, TLS, or a trusted proxy.');
+  }
+  const origin = value('--origin') || `${tls ? 'https' : 'http'}://127.0.0.1:${port}`;
+  return {
+    port, host, origin, secure: !insecure, trustedProxy,
+    tls: tls ? { cert: readFileSync(tlsCert), key: readFileSync(tlsKey) } : null,
+  };
+}
+
+// SIGTERM (and SIGINT) closes the listener first, so no request is mid-write when the database closes.
+// A second signal does nothing; the first one decides the exit code.
+export function stopOnSignal(server, store, { proc = process, exit = code => process.exit(code), write = message => console.error(message) } = {}) {
+  let stopping = false;
+  const stop = signal => {
+    if (stopping) return;
+    stopping = true;
+    server.closeIdleConnections?.();
+    server.close(error => {
+      if (error) write(`listener did not close cleanly: ${error.message}`);
+      try { store.close(); } catch (closeError) { write(`database did not close cleanly: ${closeError.message}`); }
+      exit(error ? 1 : 0);
+    });
+  };
+  proc.on('SIGTERM', stop);
+  proc.on('SIGINT', stop);
+  return stop;
+}
+
 async function run(argv, env, write) {
   const [command, ...args] = argv;
   const value = flag => {
     const index = args.indexOf(flag);
     return index < 0 ? undefined : args[index + 1];
   };
+  const served = command === 'serve' ? serveSettings(args, env) : null;
   const file = env.SSS_DB || 'sss.db';
   // Restore must run before opening SQLite. Opening a missing target would create it.
   if (command === 'restore') {
@@ -352,12 +402,7 @@ async function run(argv, env, write) {
     const manifest = writeBackup(store, target, { keyFile });
     write(JSON.stringify({ backup: target, events: manifest.events, items: manifest.items, sha256: manifest.sha256 }));
   } else if (command === 'serve') {
-    const port = Number(value('--port') || '8080');
-    const origin = value('--origin') || `http://127.0.0.1:${port}`;
-    const insecure = args.includes('--insecure-cookies');
-    // Loopback by default. A container needs --host 0.0.0.0 so its published port reaches the server.
-    const host = value('--host') || '127.0.0.1';
-    if (!/^[0-9a-fA-F:.]+$/.test(host)) fail('--host must be an IP address');
+    const { port, host, origin, secure, trustedProxy, tls } = served;
     let questModel = null;
     if (args.includes('--enable-quest-model')) {
       const name = value('--quest-provider') || readProviders(env).defaults.default || fail('missing --quest-provider or configured default');
@@ -371,10 +416,11 @@ async function run(argv, env, write) {
       });
       questModel = questModelService(gateway, name, env);
     }
-    const server = createServerFor({ store, auth, integrations, questModel, secure: !insecure, origin });
+    const server = createServerFor({ store, auth, integrations, questModel, secure, origin, trustedProxy, tls });
     await new Promise(resolve => server.listen(port, host, resolve));
-    write(`Serving ${origin}`);
-    if (insecure) write('WARNING: insecure cookies are enabled for local HTTP development only.');
+    stopOnSignal(server, store);
+    write(`Serving ${origin}${tls ? ' over direct HTTPS' : ''}${trustedProxy ? ' behind one trusted loopback proxy' : ''}`);
+    if (!secure) write('WARNING: insecure cookies are enabled for local HTTP development only.');
     return;
   } else fail('unknown command');
   store.close();

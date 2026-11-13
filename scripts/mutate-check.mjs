@@ -20,7 +20,8 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/slice22.test.mjs',
   'test/slice20.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
-  'test/mutation-security.test.mjs', 'test/slice23.test.mjs', 'test/slice24.test.mjs'];
+  'test/mutation-security.test.mjs', 'test/slice23.test.mjs', 'test/slice24.test.mjs',
+  'test/slice19.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
@@ -274,6 +275,25 @@ const mutants = [
   ['slice24 rotation keeps old secret', "this.pack(secret, old, this.clock() + hours * 3_600_000)", "this.pack(secret, null, 0)"],
   ['slice24 key file owner-only', "if (statSync(path).mode & 0o077) { chmodSync(path, 0o600); }", ""],
   ['slice24 sealed value authenticated', "decipher.setAuthTag(raw.subarray(12, 28));", "decipher.setAuthTag(Buffer.alloc(16));"],
+  ["slice19 non-loopback bind needs TLS or a trusted proxy", "  if (!loopback && !tls && !trustedProxy) {", "  if (false) {"],
+  ["slice19 insecure cookies refused beyond loopback", "  if (insecure && (!loopback || tls || trustedProxy)) {", "  if (false) {"],
+  ["slice19 TLS pair given together", "if (Boolean(tlsCert) !== Boolean(tlsKey)) fail(", "if (false) fail("],
+  ["slice19 trusted proxy must be requested", "const trustedProxy = args.includes('--trusted-proxy');", "const trustedProxy = true;"],
+  ["slice19 forwarded header only from a loopback peer", "if (!trustedProxy || !isLoopback(peer)) return peer;", "if (!trustedProxy) return peer;"],
+  ["slice19 rightmost forwarded hop only", "const rightmost = forwarded.split(',').at(-1).trim();", "const rightmost = forwarded.split(',')[0].trim();"],
+  ["slice19 forwarded address is used for lockout", "return isIP(rightmost) ? rightmost : peer;", "return peer;"],
+  ["slice19 HSTS only with secure cookies", "if (secure) res.setHeader('strict-transport-security'", "if (false) res.setHeader('strict-transport-security'"],
+  ["slice19 direct HTTPS listener built from the pair", "const server = tls ? createTlsServer({ cert: tls.cert, key: tls.key }, handler) : createServer(handler);", "const server = createServer(handler);"],
+  ["slice19 SIGTERM closes the database before the listener", "    server.closeIdleConnections?.();\n    server.close(error => {", "    store.close();\n    server.closeIdleConnections?.();\n    server.close(error => {"],
+  ["slice19 SIGTERM does not close the database", "      try { store.close(); } catch (closeError)", "      try { void 0; } catch (closeError)"],
+  ["slice19 second signal ignored", "    if (stopping) return;", "    if (false) return;"],
+  ["slice19 compose publishes only on loopback", "\"127.0.0.1:8443:8443\"", "\"8443:8443\""],
+  ["slice19 compose never serves insecure cookies", "\"--trusted-proxy\"]", "\"--trusted-proxy\", \"--insecure-cookies\"]"],
+  ["slice19 compose pins every image by digest", "image: node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a", "image: node:22-alpine"],
+  ["slice19 compose read-only root", "    read_only: true", "    read_only: false"],
+  ["slice19 TLS front end appends the client address", "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;", "proxy_set_header X-Forwarded-For $http_x_forwarded_for;"],
+  ["slice19 server unit trusts one proxy hop", " --origin ${SSS_ORIGIN} --trusted-proxy", " --origin ${SSS_ORIGIN}"],
+  ["slice19 server unit keeps NoNewPrivileges", "NoNewPrivileges=true", "NoNewPrivileges=false"],
 ];
 
 function run(cwd, args) {
@@ -298,7 +318,7 @@ let failed = false;
 for (const [name, find, replace] of selected) {
   const copy = mkdtempSync(join(tmpdir(), 'sss-mutant-'));
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
-  const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'cli.js',
+  const files = ['compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'cli.js',
     'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
     'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js'];
   let changed = false;

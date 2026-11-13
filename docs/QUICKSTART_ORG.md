@@ -11,14 +11,23 @@ node cli.js serve --port 8787 --origin http://127.0.0.1:8787 --insecure-cookies
 
 In other terminals, run `node cli.js worker` and `node cli.js watchdog`. The watchdog fails closed: a stale heartbeat, a run beyond its cap, or an old dead or sending outbox record sets the existing emergency stop and records `watchdog.stop`. Clear it only after investigating: `node cli.js kill clear`.
 
-`compose.yaml` starts those three processes with the `sss-data` persistent volume:
+## HTTPS on a network: the one documented path
+
+Compose is the supported way to serve this on a network. It publishes only on `127.0.0.1:8443`. A TLS front end (`deploy/tls-front.conf`, nginx) terminates HTTPS and shares the server's network namespace, so it reaches the server over loopback. The server runs with `--trusted-proxy`, which believes a forwarded address only from that loopback peer. Secure cookies and HSTS are on.
+
+You need: a certificate and key in `deploy/tls/` (`fullchain.pem`, `privkey.pem`, never committed), the public origin, and the nginx image pinned by digest. Compose refuses to start until `SSS_ORIGIN` and `SSS_TLS_IMAGE` are set.
 
 ```sh
+export SSS_ORIGIN=https://sss.example.org
+export SSS_TLS_IMAGE='nginxinc/nginx-unprivileged@sha256:<digest you resolved>'
+docker compose run --rm --user root --entrypoint chown server -R 1000:1000 /data   # first run only
 docker compose run --rm server node cli.js init --id leader   # prints the leader's initial password
 docker compose up
 ```
 
-Then open http://127.0.0.1:8787/signin. The compose file serves on all interfaces inside its container (`--host 0.0.0.0`) with insecure cookies, which is for trying it on your own machine. Put it behind HTTPS and drop `--insecure-cookies` before real use.
+Because the compose file publishes only on `127.0.0.1:8443`, something on the host must forward public HTTPS to it (a host reverse proxy, firewall rule, or tunnel). That edge is your setup, not part of this file.
+
+Running without Compose uses `docs/systemd/see-spec-send-server.service` and `see-spec-send-worker.service`. The server still needs a TLS front end on the same host. Direct HTTPS is `serve --tls-cert FILE --tls-key FILE` for a single host with no proxy. `serve` refuses any non-loopback bind without one of those, and refuses `--insecure-cookies` anywhere except loopback.
 
 The container builder is optional. It needs its pinned image, a Unix gateway socket, and the separate setup in [ADAPTER.md](ADAPTER.md). Don't turn it on just because Compose is running.
 

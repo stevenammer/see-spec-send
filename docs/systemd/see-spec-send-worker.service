@@ -1,0 +1,16 @@
+[Unit]
+Description=See Spec Send worker
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/see-spec-send
+Environment=SSS_DB=/var/lib/see-spec-send/sss.db
+ExecStart=/usr/bin/node /opt/see-spec-send/cli.js worker
+Restart=on-failure
+User=see-spec-send
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

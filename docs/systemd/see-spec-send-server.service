@@ -1,0 +1,19 @@
+# Host install without Compose. Put a TLS front end on this host in front of it (see docs/QUICKSTART_ORG.md).
+# /etc/see-spec-send/env holds SSS_ORIGIN=https://your.public.origin and nothing else secret.
+[Unit]
+Description=See Spec Send server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/see-spec-send
+Environment=SSS_DB=/var/lib/see-spec-send/sss.db
+EnvironmentFile=/etc/see-spec-send/env
+ExecStart=/usr/bin/node /opt/see-spec-send/cli.js serve --port 8787 --host 127.0.0.1 --origin ${SSS_ORIGIN} --trusted-proxy
+Restart=on-failure
+User=see-spec-send
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

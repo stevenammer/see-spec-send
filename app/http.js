@@ -2,6 +2,8 @@ import { meteringSummary, meteringSummaries } from '../gateway/ledger.js';
 import { checkedFromQuest } from '../public/vision-quest.js';
 import { preflightQuestModel, draftQuestModel } from '../provider/vision-quest.js';
 import { createServer } from 'node:http';
+import { createServer as createTlsServer } from 'node:https';
+import { isIP } from 'node:net';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -41,7 +43,22 @@ const json = (res, status, value) => {
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
   res.end(JSON.stringify(value));
 };
-const headers = res => {
+// The address that counts for lockout and limits. A forwarded header is believed only when the socket peer is
+// loopback (the one proxy hop on this host), and only its rightmost entry, which the proxy appended itself.
+const LOOPBACK = /^(127\.\d{1,3}\.\d{1,3}\.\d{1,3}|::1|::ffff:127\.\d{1,3}\.\d{1,3}\.\d{1,3})$/;
+export const isLoopback = address => typeof address === 'string' && LOOPBACK.test(address);
+export function clientAddress(req, trustedProxy = false) {
+  const peer = req.socket?.remoteAddress || 'local';
+  if (!trustedProxy || !isLoopback(peer)) return peer;
+  const forwarded = req.headers?.['x-forwarded-for'];
+  if (typeof forwarded !== 'string') return peer;
+  const rightmost = forwarded.split(',').at(-1).trim();
+  return isIP(rightmost) ? rightmost : peer;
+}
+
+const headers = (res, secure = false) => {
+  // Browsers only honor HSTS over HTTPS, so it goes out exactly when the cookies are Secure.
+  if (secure) res.setHeader('strict-transport-security', 'max-age=31536000');
   res.setHeader('content-security-policy', "default-src 'none'; frame-ancestors 'none'");
   res.setHeader('x-content-type-options', 'nosniff');
   res.setHeader('referrer-policy', 'no-referrer');
@@ -143,7 +160,7 @@ const validEvent = input => {
   }
 };
 
-export function createHandler({ auth, store, integrations, questModel = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {} }) {
+export function createHandler({ auth, store, integrations, questModel = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, trustedProxy = false }) {
   integrations ||= new Integrations(store, { origin });
   // Fixed one-minute windows per signed-in member. Memory holds one entry per member.
   const writes = new Map();
@@ -178,7 +195,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
   };
   const accountOf = value => (typeof value === 'string' ? value.slice(0, 64) : null);
   const serve = async (req, res, context) => {
-    headers(res);
+    headers(res, secure);
     try {
       const url = new URL(req.url, origin);
       const change = req.method === 'POST';
@@ -212,7 +229,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       )
         return json(res, 403, { error: 'request refused' });
       let input = change ? await body(req) : {};
-      const ip = req.socket?.remoteAddress || 'local';
+      const ip = clientAddress(req, trustedProxy);
       if (req.method === 'GET' && url.pathname === '/api/oidc/start') {
         if (!auth.oidc) return json(res, 404, { error: 'not found' });
         const binder = randomBytes(32).toString('base64url');
@@ -447,9 +464,11 @@ export function createHandler({ auth, store, integrations, questModel = null, se
     }
   };
 }
-export function createServerFor(deps) {
+export function createServerFor({ tls = null, ...deps }) {
   // The product server writes its request and sign-in lines to stderr. Tests pass their own sink.
-  const server = createServer(createHandler({ log: line => process.stderr.write(`${line}\n`), ...deps }));
+  const handler = createHandler({ log: line => process.stderr.write(`${line}\n`), ...deps });
+  // Direct HTTPS uses the certificate pair from serveSettings. Without it the listener is plain HTTP.
+  const server = tls ? createTlsServer({ cert: tls.cert, key: tls.key }, handler) : createServer(handler);
   server.headersTimeout = 10_000;
   server.requestTimeout = 15_000;
   return server;

@@ -30,8 +30,10 @@ Import trusts the actor registry inside the JSONL before replaying events. Impor
 administrator action. Run it only on an export you made yourself.
 
 `node cli.js serve --port 8080 --origin http://127.0.0.1:8080 --insecure-cookies` starts the web server.
-Secure cookies are the default. `--insecure-cookies` is only for local HTTP development, and the
-command prints a warning when it is used. For HTTPS, omit it and give the public HTTPS origin.
+Secure cookies are the default. `--insecure-cookies` is only for local HTTP development on loopback, and the
+command prints a warning when it is used. For HTTPS, omit it and give the public HTTPS origin. A non-loopback
+`--host` needs `--tls-cert` and `--tls-key` (direct HTTPS) or `--trusted-proxy` (one loopback TLS front end).
+`serve` refuses to start otherwise. SIGTERM closes the listener and then the database.
 
 Old-format authority is captured once from the registry during migration. Its original
 hashes are preserved, so those historical roles cannot be independently authenticated

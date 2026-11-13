@@ -35,9 +35,10 @@ Identity-provider sign-in is not shipped. An in-process fake and an injected
 signature/JWKS-verifier seam exist, but there is no built-in verifier, CLI wiring,
 or real provider run. The Postgres fake proves only a Store API contract;
 See / Spec / Send is SQLite only and has no PostgreSQL driver or deployment path.
-Also not built: a trusted-proxy mode (behind a reverse proxy, per-IP limits see the proxy's
-address, so run it directly or add that mode first), and cutting off an oversized request
-body mid-stream (it is refused, but the connection is not dropped early).
+Trusted proxy: `serve --trusted-proxy` believes the rightmost `X-Forwarded-For` entry only when the socket
+peer is loopback. Any other peer's forwarded header is ignored. A process on the same host can still spoof it,
+so the host itself is trusted. Not built: cutting off an oversized request body mid-stream (it is refused,
+but the connection is not dropped early).
 
 ## Known gaps
 
@@ -48,7 +49,7 @@ body mid-stream (it is refused, but the connection is not dropped early).
 - **B5:** Quest model drafting bypasses the gateway, ledger, budgets, kill latch, and serve-time opt-in.
 - **B6:** Gateway policy is fixture-only and unreleased timeout holds can permanently exhaust concurrency.
 - **B7:** The model builder cannot be started through the product; its socket and listener paths do not form a usable deployment.
-- **B8:** There is no safe HTTPS or trusted-proxy deployment path, and proxying breaks per-client login limits.
+- **B8:** Addressed in slice 19 (direct HTTPS, one loopback trusted proxy, HSTS with secure cookies, Compose behind a TLS front end). Root proof with real listeners and Docker is still owed.
 - **B9:** There is no account disable, password reset/change, role lifecycle, or invite revocation workflow.
 - **B10:** Known and unknown logins have unequal KDF work and unequal failure bookkeeping.
 - **B11:** Password hashing cost is below the planned target and the common-password list is ineffective.

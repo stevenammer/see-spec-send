@@ -9,6 +9,8 @@ import { ContainerAdapter, DockerCli } from './worker/container.js';
 import { Ledger, fixturePolicy } from './gateway/ledger.js';
 import { Gateway, createGatewayServer, providerGateway } from './gateway/http.js';
 import { QuestGateway } from './gateway/quest.js';
+import { EffortGateway } from './gateway/effort.js';
+import { EffortWorker } from './app/effort.js';
 import { fixtureProvider } from './gateway/fixture.js';
 import { readFileSync, mkdirSync, statSync, unlinkSync, chmodSync } from 'node:fs';
 import { dirname, join, resolve as resolvePath } from 'node:path';
@@ -449,9 +451,28 @@ async function run(argv, env, write) {
       });
       questModel = questModelService(gateway, name, env);
     }
+    let effortTimer = null;
+    if (args.includes('--enable-effort')) {
+      let gateway;
+      if (args.includes('--fixture')) {
+        const ledger = new Ledger(store); gateway = new EffortGateway(ledger, fixtureProvider);
+        write('Effort fixture enabled. No real provider is configured.');
+      } else {
+        const name = value('--effort-provider') || readProviders(env).defaults.default || fail('missing --effort-provider or configured default');
+        const selected = meteredProviderFor(name, env); const ledger = new Ledger(store, { rate: selected.rate });
+        gateway = new EffortGateway(ledger, async input => {
+          const result = validateCompletion(await selected.provider.complete({ system: 'Reply as Effort. Never decide or create events.', messages: [{ role: 'user', content: input.input }], maxOutputTokens: input.max_output_tokens, model: input.model, signal: AbortSignal.timeout(ledger.policy().timeout_ms) }));
+          return { output: result.text, usage: { input_tokens: result.usage.inputTokens, output_tokens: result.usage.outputTokens } };
+        });
+        write(`Effort enabled. provider=${name}; model=${selected.rate.model}`);
+      }
+      const effort = new EffortWorker(store, gateway);
+      effort.tick(); effortTimer = setInterval(() => { effort.tick(); }, 1000);
+    }
     const server = createServerFor({ store, auth, integrations, questModel, secure, origin, trustedProxy, tls });
     await new Promise(resolve => server.listen(port, host, resolve));
     stopOnSignal(server, store);
+    if (effortTimer) { process.once('SIGTERM', () => clearInterval(effortTimer)); process.once('SIGINT', () => clearInterval(effortTimer)); }
     write(`Serving ${origin}${tls ? ' over direct HTTPS' : ''}${trustedProxy ? ' behind one trusted loopback proxy' : ''}`);
     if (!secure) write('WARNING: insecure cookies are enabled for local HTTP development only.');
     return;

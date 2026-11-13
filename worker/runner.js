@@ -23,14 +23,14 @@ export class Worker {
         if (killed(this.store)) continue;
         const context = this.store.read(item).context;
         if (context.phase !== 'SENDING') continue;
-        const id = digest(JSON.stringify([item, context.approval]));
+        const id = digest(JSON.stringify([item, context.approval, context.iteration || 0]));
         if (this.db.prepare('SELECT 1 FROM runs WHERE id=?').get(id)) continue;
         const runToken = credential();
         const gatewayToken = credential();
         this.store.registerToken(digest(runToken), { kind: 'run', item });
         this.store.registerToken(digest(gatewayToken), { kind: 'gateway', item });
-        this.db.prepare('INSERT INTO runs(id,item,approval,spec_hash,run_actor,gateway_actor,status,delivered,started_at) VALUES(?,?,?,?,?,?,?,?,?)')
-          .run(id, item, context.approval, context.specHash, digest(runToken), digest(gatewayToken), 'active', 0, Date.now());
+        this.db.prepare('INSERT INTO runs(id,item,approval,iteration,spec_hash,run_actor,gateway_actor,status,delivered,started_at) VALUES(?,?,?,?,?,?,?,?,?,?)')
+          .run(id, item, context.approval, context.iteration || 0, context.specHash, digest(runToken), digest(gatewayToken), 'active', 0, Date.now());
       }
     });
     for (const run of this.db.prepare("SELECT * FROM runs WHERE status!='stopped'").all()) {
@@ -51,7 +51,10 @@ export class Worker {
       }
       const spec = this.store.events(run.item).find(event => event.type === 'specced' && event.body_hash === run.spec_hash);
       if (!spec) throw new Error('approved spec missing');
-      const request = { id, item: run.item, approval: run.approval, spec_hash: run.spec_hash,
+      const instructions = this.store.events(run.item).filter(event => event.type === 'steered'
+        && event.approval === run.approval && event.spec_hash === run.spec_hash)
+        .map(event => ({ instruction: event.instruction, actor: event.actor, source: event.source || null, mode: event.mode || null }));
+      const request = { id, item: run.item, approval: run.approval, iteration: run.iteration, spec_hash: run.spec_hash, instructions,
         cap_micros: context.capMicros, spec: {
           must: spec.must, how_we_know: spec.how_we_know, out_of_scope: spec.out_of_scope,
         } };
@@ -80,6 +83,7 @@ export class Worker {
       const artifact_hash = this.store.putArtifact(run.item, html);
       this.store.appendInTransaction(run.item, { type: 'tried', actor: run.run_actor,
         approval: run.approval, spec_hash: run.spec_hash, artifact_hash, at: new Date().toISOString(),
+        iteration: run.iteration,
         model_output: this.adapter.modelOutput === true,
       }, { idem: `run:${id}:tried` });
       this.db.prepare("UPDATE runs SET delivered=1,status='stop_requested' WHERE id=?").run(id);
@@ -100,6 +104,7 @@ export class Worker {
       if (!fresh.delivered && current(context, run)) {
         this.store.appendInTransaction(run.item, { type: 'failed', actor: run.run_actor,
           approval: run.approval, spec_hash: run.spec_hash, reason: 'worker stopped run',
+          iteration: run.iteration,
           at: new Date().toISOString(),
         }, { idem: `run:${run.id}:failed` });
       }

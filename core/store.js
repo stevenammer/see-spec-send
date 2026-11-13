@@ -393,6 +393,13 @@ export class Store {
       seq=excluded.seq,context=excluded.context`)
       .run(item, outcome.state, hash, seq, stable(outcome.context));
     this.enqueueIntegrationOutbox(item, event, outcome.state, seq);
+    if (event.type === 'posted' || event.type === 'forked' || (event.type === 'specced' && prior.context.specHash === null)) {
+      const kind = event.type === 'specced' ? 'spec_first' : 'see_first';
+      const now = new Date(event.at).getTime();
+      this.db.prepare(`INSERT OR IGNORE INTO effort_jobs(id,item,kind,trigger_seq,requester,state,attempts,next_at,last_error,created)
+        VALUES(?,?,?,?,?,'queued',0,?,NULL,?)`)
+        .run(digest(stable(['effort', item, kind, seq])), item, kind, seq, event.actor, now, now);
+    }
     if (outcome.effects.some(effect => effect.kind === 'build.stop')) {
       this.db.prepare("UPDATE runs SET status='stop_requested' WHERE item=? AND approval=? AND status='active'")
         .run(item, prior.context.approval);

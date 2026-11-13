@@ -6,7 +6,8 @@ export class FakeAdapter {
     const input = JSON.stringify(request);
     const prior = this.db.prepare('SELECT input FROM fake_jobs WHERE id=?').get(request.id);
     if (prior && prior.input !== input) throw new Error('run id reused with different input');
-    const html = `<!doctype html><title>Small try</title><h1>Small try</h1><p>Approved spec: ${request.spec_hash}</p>`;
+    const instructions = (request.instructions || []).map(row => String(row.instruction).replace(/[&<>"']/g, value => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[value])).join('<br>');
+    const html = `<!doctype html><title>Small try</title><h1>Small try</h1><p>Fixture builder. No model wrote this.</p><p>Approved spec: ${request.spec_hash}</p><p>${instructions}</p>`;
     this.db.prepare('INSERT OR IGNORE INTO fake_jobs VALUES(?,?,?,?)').run(request.id, input, html, 'ready');
   }
 

@@ -26,7 +26,7 @@ const failureRowCap = 100_000;
 // An unknown ID gets one scrypt run at the current cost, the same as a real account. It can never match.
 const decoyRecord = () => `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${randomBytes(16).toString('base64url')}$${randomBytes(64).toString('base64url')}`;
 const validAccountId = value => typeof value === 'string' && /^[a-z][a-z0-9._-]{0,63}$/.test(value)
-  && !value.startsWith('source:') && !value.startsWith('oidc-') && !/^[a-f0-9]{64}$/.test(value);
+  && value !== 'effort' && !value.startsWith('agent:') && !value.startsWith('source:') && !value.startsWith('oidc-') && !/^[a-f0-9]{64}$/.test(value);
 
 export class Auth {
   constructor(store, options = {}) {

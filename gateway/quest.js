@@ -52,9 +52,9 @@ export class QuestGateway {
       demand(integer(worst), 'unsafe accounting integer');
       const sum = rows => rows.reduce((total, row) => total + row.charged_micros, 0);
       demand(sum(mine) + worst <= QUEST_LIMITS.person_day_micros, 'person daily budget exceeded');
-      const normal = this.ledger.receipts();
-      demand(sum(normal) + sum(all) + worst <= policy.global_micros, 'global cap exceeded');
-      demand(sum(normal.filter(row => row.day === day)) + sum(all.filter(row => row.day === day)) + worst <= policy.day_micros, 'day cap exceeded');
+      const combined = this.ledger.receipts().concat(all, this.ledger.effortReceipts());
+      demand(sum(combined) + worst <= policy.global_micros, 'global cap exceeded');
+      demand(sum(combined.filter(row => row.day === day)) + worst <= policy.day_micros, 'day cap exceeded');
       const row = { id: digest(canonical(['quest', person, idem])), person, idem, payload_hash: hash, policy: canonical(policy), day,
         input_bound: inputBound, output_bound: input.max_output_tokens, worst_micros: worst, charged_micros: worst,
         state: 'reserved', usage: null, outcome: null };

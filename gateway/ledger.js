@@ -223,6 +223,20 @@ export class Ledger {
     });
   }
 
+  effortReceipts() {
+    const table = this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gateway_effort_receipts'").get();
+    if (!table) return [];
+    return this.db.prepare('SELECT * FROM gateway_effort_receipts ORDER BY id').all().map(row => {
+      demand(row.seal === sealed(row), 'corrupt Effort receipt');
+      demand(['reserved', 'dispatched', 'settled'].includes(row.state), 'corrupt Effort receipt state');
+      demand(integer(row.charged_micros) && integer(row.worst_micros) && row.charged_micros <= row.worst_micros,
+        'corrupt Effort accounting');
+      return row;
+    });
+  }
+
+  allMeteredReceipts() { return this.receipts().concat(this.questReceipts(), this.effortReceipts()); }
+
   cost(row, usage) {
     demand(usage && canonical(Object.keys(usage).sort()) === canonical(['input_tokens', 'output_tokens']), 'invalid usage keys');
     demand(integer(usage.input_tokens, row.input_bound) && integer(usage.output_tokens, row.output_bound), 'invalid usage');
@@ -252,7 +266,7 @@ export class Ledger {
       const used = add(legacyMicros(this.store, run.item, run.approval),
         sum(rows.filter(row => row.run === run.id)));
       demand(add(used, worst) <= cap, 'run cap exceeded');
-      const combined = rows.concat(this.questReceipts());
+      const combined = this.allMeteredReceipts();
       demand(add(sum(combined), worst) <= policy.global_micros, 'global cap exceeded');
       demand(add(sum(combined.filter(row => row.day === day)), worst) <= policy.day_micros, 'day cap exceeded');
       demand(rows.filter(row => ['reserved', 'dispatched'].includes(row.state)).length < policy.concurrency,

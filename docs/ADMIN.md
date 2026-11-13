@@ -51,7 +51,24 @@ copies of the database.
 I run the fake builder in a separate terminal with `node cli.js worker` using the
 same `SSS_DB` as the server. It reconciles every 250 milliseconds. `node cli.js worker --once`
 runs one pass and exits. Another pass may be needed to observe the adapter's stop.
-The only adapter here is the fake. It makes a tiny static try without a model or a charge.
+By default the adapter is the fake. It makes a tiny static try without a model or a charge.
+
+### Model-built tries with the container builder
+
+Two long-running processes and one Docker image. All use the same `SSS_DB`.
+
+```
+node cli.js provider add --file provider.json        # your provider; the key stays in an env var or key file
+node cli.js gateway fixture-enable                   # sets the fixed default caps (see GATEWAY.md)
+node cli.js gateway serve --socket /srv/sss/run/gateway.sock --name yourprovider
+node cli.js worker --builder container --gateway-socket /srv/sss/run/gateway.sock
+```
+
+`gateway serve` keeps the provider key; the builder container never sees it. The socket's directory must be private to the service user (the command refuses a directory others can write). The container gets a one-run token that the gateway checks against the approved spec and the caps. The token reaches `docker run` through its environment, not its arguments, so it isn't in the host process list. It is still visible to anyone who can run `docker inspect`, which means anyone with Docker access.
+
+**The worker needs the Docker socket, and that is root on the host.** Run the worker as a dedicated user on a host that holds nothing else you care about, or accept that anyone who can make the worker misbehave can take the host. The container itself has no network, a read-only root, a non-root user, no capabilities, and limits on processes, CPU and memory. Every `docker` call the worker makes has a 20 second timeout. The build deadline (30 seconds) is also enforced inside the container, so a dead worker cannot leave a build running. `kill set` and the watchdog stop named builder containers.
+
+Pinned image: `worker/builder-image.digest`; its package list is `worker/builder-image.sbom.txt`. Pull it first: `docker pull $(cat worker/builder-image.digest)`.
 
 `node cli.js kill set` sets an independent `SSS_DB.kill` file before recording the
 stop in SQLite. It blocks new starts, charges, and try delivery. Existing runs get

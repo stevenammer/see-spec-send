@@ -21,7 +21,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/slice20.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs', 'test/slice23.test.mjs', 'test/slice24.test.mjs',
-  'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs'];
+  'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs', 'test/slice27.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
@@ -322,6 +322,13 @@ const mutants = [
   ['slice26 providers file checked on read', 'assertOwnerOnly(statSync(file));', 'void file;'],
   ['slice26 API key file checked', 'readKeyFile(provider.apiKeyFile)', "readFileSync(provider.apiKeyFile, 'utf8').trim()"],
   ['slice26 local command abort wired', "request.signal?.addEventListener('abort', abort, { once: true });", 'void abort;'],
+  ['slice27 token stays out of argv', "'--env', 'SSS_GATEWAY_TOKEN',", "'--env', `SSS_GATEWAY_TOKEN=${token}`,"],
+  ['slice27 deadline runs in the container', "'--init', this.image, 'timeout', '-s', 'KILL', String(seconds), ...args.slice(at + 1)", "'--init', this.image, ...args.slice(at + 1)"],
+  ['slice27 container uses an init process', "'--init', this.image, 'timeout'", "this.image, 'timeout'"],
+  ['slice27 docker calls time out', "timeout: this.timeoutMs, ", ""],
+  ['slice27 container builder needs the socket', "|| fail('--builder container needs --gateway-socket PATH')", "|| ''"],
+  ['slice27 builder kind is checked', "} else if (value('--builder')) fail('--builder must be container');", "}"],
+  ['slice27 gateway socket directory is private', "if (statSync(parent).mode & 0o022) fail(", "if (false) fail("],
 ];
 
 function run(cwd, args) {

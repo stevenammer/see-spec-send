@@ -148,3 +148,71 @@ test('wall clock and stop kill a real container, and the worker delivers a gatew
   await new Promise(resolve => setTimeout(resolve, 80)); assert.equal(hanging.status(request.id).state, 'stopped');
   assert.equal(hanging.stop(request.id).state, 'stopped');
 });
+
+// Slice 27: the documented CLI, end to end. Real processes: `gateway serve`, `worker --builder container`, a real
+// Docker container, and a mock upstream model. No external network.
+import { spawn, spawnSync } from 'node:child_process';
+const CLI = new URL('../cli.js', import.meta.url).pathname;
+
+test('the CLI takes an approved item to a model-built try with a real container and the provider key stays out', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'sss-cli-e2e-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // Earlier tests use the same item and approval, so they share a container name. Start clean.
+  try { const ids = sh(['ps', '-aq', '--filter', 'name=sss-builder']); if (ids) sh(['rm', '-f', ...ids.split('\n')]); } catch {}
+  const SECRET = 'cli-provider-credential-must-not-leak-77aa';
+  let calls = 0;
+  const upstream = createServer(async (req, res) => {
+    for await (const chunk of req); calls++;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ choices: [{ message: { content: '```html\n<!doctype html><title>CLI try</title><h1>CLI try</h1>\n```' } }], usage: { prompt_tokens: 30, completion_tokens: 12 } }));
+  });
+  await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve)); t.after(() => upstream.close());
+  const db = join(dir, 'sss.db'); const socket = join(dir, 'run', 'gateway.sock');
+  const env = { ...process.env, SSS_DB: db, SSS_PROVIDERS_FILE: join(dir, 'providers.json'), SSS_TEST_PROVIDER_KEY: SECRET };
+  saveProviders({ providers: [{ name: 'mock', kind: 'openai', model: 'mock-model', enabled: true, url: `http://127.0.0.1:${upstream.address().port}/v1/chat/completions`,
+    hosts: ['127.0.0.1'], allowPrivate: true, apiKeyEnv: 'SSS_TEST_PROVIDER_KEY', price: { inputMicrosPerMillion: 100_000, outputMicrosPerMillion: 200_000 } }], defaults: { default: 'mock' } }, env);
+  const cli = (...args) => spawnSync(process.execPath, [CLI, ...args], { env, encoding: 'utf8' });
+  assert.equal(cli('init').status, 0);
+  assert.equal(cli('gateway', 'fixture-enable').status, 0);
+  const seed = new Store(db); approved(seed); seed.close();
+  const children = []; let childLog = '';
+  const launch = (...args) => { const child = spawn(process.execPath, [CLI, ...args], { env, stdio: 'pipe' }); children.push(child); child.stderr.on('data', d => { childLog += d; }); child.stdout.on('data', d => { childLog += d; }); return child; };
+  t.after(() => { for (const child of children) child.kill('SIGKILL'); try { const ids = sh(['ps', '-aq', '--filter', 'name=sss-builder']); if (ids) sh(['rm', '-f', ...ids.split('\n')]); } catch {} });
+  launch('gateway', 'serve', '--socket', socket, '--name', 'mock');
+  for (let i = 0; i < 40 && !existsSync(socket); i++) await new Promise(resolve => setTimeout(resolve, 100));
+  assert.ok(existsSync(socket), 'the gateway socket never appeared');
+  launch('worker', '--builder', 'container', '--gateway-socket', socket, '--builder-root', join(dir, 'builds'));
+  const reader = new Store(db); t.after(() => reader.close());
+  let seen = '';
+  for (let i = 0; i < 120 && reader.read('item').state !== 'TRYING'; i++) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    try { for (const name of sh(['ps', '-a', '--filter', 'name=sss-builder', '--format', '{{.Names}}']).split('\n').filter(Boolean)) seen += sh(['inspect', name, '--format', '{{json .Config.Env}}{{json .Args}}']); } catch {}
+  }
+  assert.equal(reader.read('item').state, 'TRYING', `the CLI did not deliver a model-built try: ${childLog.slice(-800)}`);
+  assert.match(reader.artifact('item', reader.read('item').context.artifact), /CLI try/);
+  assert.ok(calls >= 1, 'the provider was never called');
+  assert.equal(seen.includes(SECRET), false, 'the provider key reached the container');
+  // The delivered try is marked as model output, so the app serves it with no script permission.
+  assert.equal(reader.events('item').some(event => event.type === 'tried' && event.model_output === true), true);
+});
+
+test('a container the worker no longer watches dies on its own at the deadline', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'sss-deadline-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const store = new Store(join(dir, 'db')); t.after(() => store.close()); const socket = join(dir, 'gateway.sock'); await listenSocket(t, socket);
+  const adapter = new ContainerAdapter(store, { root: dir, gatewaySocket: socket, wallMs: 3000 });
+  const spec = join(dir, 'spec.json'); const out = join(dir, 'out'); mkdir(out); chmodSync(out, 0o733); writeFileSync(spec, '{}');
+  const args = adapter.withDeadline(adapter.dockerArgs({ container_name: 'sss-accept-deadline' }, { spec, out, html: join(out, 'try.html') }, 'x'));
+  args.splice(args.indexOf('/builder/index.js') - 1, 2, 'sleep', '300');
+  assert.ok(args.join(' ').includes('timeout -s KILL 3'), 'the deadline wrapper is missing');
+  const cid = sh(args); t.after(() => { try { sh(['rm', '-f', cid]); } catch {} });
+  // Nothing here watches the container. Docker's own record must show it ended, killed by the in-container timeout.
+  const code = Number(sh(['wait', cid]));
+  assert.notEqual(code, 0); assert.equal(JSON.parse(sh(['inspect', cid]))[0].State.Running, false);
+});
+
+test('the gateway token is not in the host docker command line', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sss-argv-')); const store = new Store(join(dir, 'db'));
+  const adapter = new ContainerAdapter(store, { root: dir, gatewaySocket: join(dir, 's') });
+  const args = adapter.withDeadline(adapter.dockerArgs({ container_name: 'sss-x' }, { spec: 'a', out: 'b' }, 'SECRET-TOKEN-VALUE'));
+  assert.equal(args.join(' ').includes('SECRET-TOKEN-VALUE'), false); assert.ok(args.includes('SSS_GATEWAY_TOKEN'));
+  store.close(); rmSync(dir, { recursive: true, force: true });
+});

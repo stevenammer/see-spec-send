@@ -5,12 +5,13 @@ import { restoreBackup, writeBackup } from './core/backup.js';
 import { Worker } from './worker/runner.js';
 import { killed, setKill } from './worker/control.js';
 import { watchdog } from './worker/watchdog.js';
-import { DockerCli } from './worker/container.js';
+import { ContainerAdapter, DockerCli } from './worker/container.js';
 import { Ledger, fixturePolicy } from './gateway/ledger.js';
 import { Gateway, createGatewayServer, providerGateway } from './gateway/http.js';
 import { QuestGateway } from './gateway/quest.js';
 import { fixtureProvider } from './gateway/fixture.js';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, statSync, unlinkSync, chmodSync } from 'node:fs';
+import { dirname, join, resolve as resolvePath } from 'node:path';
 import { readProviders, saveProviders, validateProvider, providerFor, meteredProviderFor } from './provider/config.js';
 import { redact } from './provider/safe-http.js';
 import { SYSTEM_PROMPT } from './worker/builder/index.js';
@@ -321,7 +322,32 @@ async function run(argv, env, write) {
       const worst = Math.ceil((selected.rate.input_micros_per_million * 8192 + selected.rate.output_micros_per_million * providerLedger.policy().output_tokens) / 1_000_000);
       write(`Metered provider gateway http://127.0.0.1:${server.address().port}; provider=${name}; model=${selected.rate.model}; worst-case=${worst} micro-dollars before approval`);
       return;
-    } else fail('expected gateway fixture-enable, policy set, mint, revoke, status, verify, holds list, holds release, serve-fixture, or serve-provider');
+    } else if (args[0] === 'serve') {
+      // The builder container reaches the gateway only through this Unix socket. The directory is private to the
+      // service user; the socket itself is connectable so the container's unprivileged user can use it.
+      const socket = resolvePath(value('--socket') || fail('missing --socket PATH'));
+      let handler;
+      if (args.includes('--fixture')) handler = new Gateway(ledger, fixtureProvider);
+      else {
+        const name = value('--name') || readProviders(env).defaults[value('--org') || 'default'] || fail('missing --name or configured --org default');
+        const selected = meteredProviderFor(name, env);
+        const providerLedger = new Ledger(store, { rate: selected.rate });
+        if (!providerLedger.policy().enabled) fail('gateway is disabled');
+        handler = providerGateway(providerLedger, selected.provider, { system: SYSTEM_PROMPT });
+        write(`provider=${name}; model=${selected.rate.model}`);
+      }
+      const parent = dirname(socket);
+      if (!existsSync(parent)) mkdirSync(parent, { recursive: true, mode: 0o700 });
+      if (statSync(parent).mode & 0o022) fail(`${parent} is writable by others; use a private directory for the socket`);
+      if (existsSync(socket)) unlinkSync(socket);
+      const server = createGatewayServer(handler);
+      await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve); });
+      chmodSync(socket, 0o666);
+      write(`Gateway listening on ${socket}`);
+      const stop = () => { server.close(() => { try { unlinkSync(socket); } catch {} process.exit(0); }); };
+      process.once('SIGTERM', stop); process.once('SIGINT', stop);
+      return;
+    } else fail('expected gateway fixture-enable, policy set, mint, revoke, status, verify, holds list, holds release, serve, serve-fixture, or serve-provider');
   } else if (command === 'kill') {
     if (!['set', 'clear', 'status'].includes(args[0])) fail('expected kill set, clear, or status');
     if (args[0] === 'set') {
@@ -339,7 +365,14 @@ async function run(argv, env, write) {
       write(killed(store) ? 'stopped' : 'clear');
     }
   } else if (command === 'worker') {
-    const worker = new Worker(store);
+    let adapter;
+    if (value('--builder') === 'container') {
+      // The worker starts containers through the Docker socket, which is root on this host. See docs/ADMIN.md.
+      const socket = value('--gateway-socket') || fail('--builder container needs --gateway-socket PATH');
+      if (!existsSync(socket)) fail(`gateway socket missing: ${socket}`);
+      adapter = new ContainerAdapter(store, { gatewaySocket: resolvePath(socket), root: value('--builder-root') || join(dirname(resolvePath(file)), 'builds'), providerEnv: env });
+    } else if (value('--builder')) fail('--builder must be container');
+    const worker = new Worker(store, adapter);
     do {
       worker.reconcile();
       if (!args.includes('--once')) await new Promise(resolve => setTimeout(resolve, 250));

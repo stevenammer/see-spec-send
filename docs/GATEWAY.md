@@ -3,7 +3,7 @@
 This slice provides a real `node:http` endpoint backed by SQLite and an injected
 mock provider. It ships one deterministic local fixture. It makes no external
 network request, uses no provider account or secret, and adds no runtime package.
-It doesn't yet connect the fake worker to a model or run an external builder.
+`gateway serve --socket PATH` exposes it to the container builder over a Unix socket (see ADMIN.md). The fixture is the default; a configured provider is used with `--name`.
 
 The gateway starts disabled. The CLI is its only administration surface:
 

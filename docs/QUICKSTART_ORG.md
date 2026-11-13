@@ -29,7 +29,7 @@ Because the compose file publishes only on `127.0.0.1:8443`, something on the ho
 
 Running without Compose uses `docs/systemd/see-spec-send-server.service` and `see-spec-send-worker.service`. The server still needs a TLS front end on the same host. Direct HTTPS is `serve --tls-cert FILE --tls-key FILE` for a single host with no proxy. `serve` refuses any non-loopback bind without one of those, and refuses `--insecure-cookies` anywhere except loopback.
 
-The container builder is optional. It needs its pinned image, a Unix gateway socket, and the separate setup in [ADAPTER.md](ADAPTER.md). Don't turn it on just because Compose is running.
+The container builder is optional. It needs its pinned image, a Unix gateway socket (`gateway serve --socket`), and the Docker socket for the worker, which is root on the host. Setup is in [ADMIN.md](ADMIN.md) under "Model-built tries". Don't turn it on just because Compose is running.
 
 ## Backup and restore drill
 

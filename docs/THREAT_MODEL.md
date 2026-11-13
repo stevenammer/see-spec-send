@@ -24,7 +24,7 @@
 | Builder escape or egress request | Default policy has no egress and fake sandbox kills on synthetic escape | `fake sandbox refuses escape and egress attempts and fires the emergency kill` |
 | Builder reaches the internet or a host service | Docker `--network none`; only a mounted Unix socket reaches the local gateway | `test/container.acceptance.mjs` inspected container and egress probe |
 | Builder changes the host or other runs | Read-only root and mounts, non-root UID, one writable `/out` mount | `test/container.acceptance.mjs` host-read and write probes |
-| Builder consumes host resources forever | Dropped capabilities, no-new-privileges, PID, CPU, and memory limits; wall-clock enforcement depends on a live worker | `test/container.acceptance.mjs` PID, memory and deadline probes |
+| Builder consumes host resources forever | Dropped capabilities, no-new-privileges, PID, CPU, and memory limits; the deadline is also enforced inside the container | `test/container.acceptance.mjs` PID, memory and deadline probes |
 | Draft silently spends or approves | Exact fixture preflight, explicit consent gate, and no machine command | `draft preflight is exact, fixture-only, labeled, and never sends without explicit approval` |
 | Identity-provider login attacks | Not shipped: an injected test seam exists, but no verifier or provider configuration ships | No real identity-provider proof |
 
@@ -48,7 +48,7 @@ but the connection is not dropped early).
 - **B4:** A spec author or former steward can hand off stewardship and then approve the item.
 - **B5:** Quest model drafting bypasses the gateway, ledger, budgets, kill latch, and serve-time opt-in.
 - **B6:** Gateway policy is fixture-only and unreleased timeout holds can permanently exhaust concurrency.
-- **B7:** The model builder cannot be started through the product; its socket and listener paths do not form a usable deployment.
+- **B7 (addressed, vendor run owed):** `worker --builder container` and `gateway serve --socket` start a model builder from the CLI. Verified with real Docker and a local mock model, not a hosted vendor.
 - **B8:** Addressed in slice 19 (direct HTTPS, one loopback trusted proxy, HSTS with secure cookies, Compose behind a TLS front end). Root proof with real listeners and Docker is still owed.
 - **B9:** There is no account disable, password reset/change, role lifecycle, or invite revocation workflow.
 - **B10:** Known and unknown logins have unequal KDF work and unequal failure bookkeeping.
@@ -65,7 +65,7 @@ but the connection is not dropped early).
 - **B21:** Erasure exists only as a store method, not as an operator command or route.
 - **B22:** Artifacts still share the app origin, so a hand-delivered try opened as a top-level page can still navigate. Model-built tries now get an allowlist parse and no script permission; the `Sec-Fetch-Dest` gate and `--artifact-origin` are not built yet.
 - **B23:** Builder output may follow symlinks or be read without a size cap, and the output directory lacks a sticky bit.
-- **B24:** Builder tokens leak through Docker arguments and inspection; Docker calls and wall-clock enforcement lack independent timeouts.
+- **B24 (mostly addressed):** The token is passed in docker's environment, not its arguments; it is still visible to `docker inspect`, which needs Docker access. Docker calls time out at 20 seconds and the deadline runs inside the container. The worker still needs the Docker socket (host root), and that is documented.
 - **B25:** Provider and webhook egress can be DNS-rebound, the private-range check is incomplete, and provider files are not permission-checked.
 - **B26:** The identity-provider seam is not shipped: no verifier, product wiring, real-provider proof, or usable SSO approval path exists.
 - **B27:** Postgres is not built: the seam uses SQLite-style behavior and there is no real driver, SQL path, or server proof.
@@ -177,9 +177,10 @@ VISION_QUEST.md.
 | Latch read fails | Fail closed except a missing file | `independent latch alone and unreadable latch` |
 | Stopped adapter restarts | Stable ID, stop tombstone, no restart after clear | `fake adapter conformance`, `kill blocks starts and all delivery` |
 
-I've tested a local fake, not a sandboxed external builder. There's no process kill
-watchdog, provider egress control, or bound on how quickly a broken
-adapter stops. Worker polling asks for stop; the delivery and charge gates don't wait
+The fake builder is tested in process. The container builder is tested with real Docker
+(`npm run test:container`): escape probes, resource limits, a deadline that kills a build with
+no worker watching, and the whole path through the command line against a local mock model.
+No hosted model vendor has been called. A broken adapter is bounded by the in-container deadline. Worker polling asks for stop; the delivery and charge gates don't wait
 for that response. Accepted historical tries stay visible after kill.
 
 The kill file blocks even if the database update fails. The CLI still needs a readable

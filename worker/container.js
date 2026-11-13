@@ -33,8 +33,14 @@ export function readApprovedOutput(path, cap = HTML_CAP) {
   }
 }
 
+// Every docker call has a timeout, so a hung daemon cannot hang the worker. A secret goes in `env`,
+// never in `args`, so it does not show in the host process list.
+export const DOCKER_TIMEOUT_MS = 20_000;
 export class DockerCli {
-  run(args) { return execFileSync('docker', args, { encoding: 'utf8' }).trim(); }
+  constructor({ timeoutMs = DOCKER_TIMEOUT_MS } = {}) { this.timeoutMs = timeoutMs; }
+  run(args, { env = {} } = {}) {
+    return execFileSync('docker', args, { encoding: 'utf8', timeout: this.timeoutMs, env: { ...process.env, ...env } }).trim();
+  }
   inspect(name) { try { return JSON.parse(this.run(['inspect', name]))[0] || null; } catch { return null; } }
   kill(name) { try { this.run(['kill', name]); } catch {} }
   remove(name) { try { this.run(['rm', '-f', name]); } catch {} }
@@ -101,9 +107,16 @@ export class ContainerAdapter {
       '--mount', `type=bind,src=${paths.out},dst=/out`,
       '--mount', `type=bind,src=${builder},dst=/builder,readonly`,
       '--mount', `type=bind,src=${this.gatewaySocket},dst=/gateway/gateway.sock,readonly`,
-      '--env', 'SSS_GATEWAY_SOCKET=/gateway/gateway.sock', '--env', `SSS_GATEWAY_TOKEN=${token}`,
+      '--env', 'SSS_GATEWAY_SOCKET=/gateway/gateway.sock', '--env', 'SSS_GATEWAY_TOKEN', // value comes from docker's own environment
       '--env', `SSS_GATEWAY_MODEL=${this.gatewayModel}`,
       this.image, ...this.command];
+  }
+  // The deadline also runs inside the container: if the worker dies, the build is killed there on its own.
+  withDeadline(args) {
+    const seconds = Math.max(1, Math.ceil(this.wallMs / 1000));
+    // --init matters: busybox timeout does not enforce its limit when it is the container's first process.
+    const at = args.indexOf(this.image);
+    return [...args.slice(0, at), '--init', this.image, 'timeout', '-s', 'KILL', String(seconds), ...args.slice(at + 1)];
   }
   start(request) {
     let row = this.persist(request); // This SQLite write happens before filesystem, mint, or Docker effects.
@@ -130,7 +143,7 @@ export class ContainerAdapter {
     });
     const tokenDigest = capabilityDigest(token);
     try {
-      const id = this.docker.run(this.dockerArgs(row, paths, token));
+      const id = this.docker.run(this.withDeadline(this.dockerArgs(row, paths, token)), { env: { SSS_GATEWAY_TOKEN: token } });
       if (!id) throw Error('docker did not return a container id');
       this.update(request.id, 'running'); this.arm(this.row(request.id));
     } catch (error) {

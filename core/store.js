@@ -12,8 +12,14 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 export const PAGE_SIZE = 50;
 const stable = value => {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
-  return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stable(value[key])}`).join(',')}}`;
+  // Match JSON's treatment of absent values. Direct callers can build an event
+  // object with an optional field set to `undefined`; persisting that literal
+  // would make the derived context unreadable on its next replay.
+  if (Array.isArray(value)) return `[${value.map(entry => stable(entry) ?? 'null').join(',')}]`;
+  return `{${Object.keys(value).sort().flatMap(key => {
+    const entry = stable(value[key]);
+    return entry === undefined ? [] : [`${JSON.stringify(key)}:${entry}`];
+  }).join(',')}}`;
 };
 const eventHash = (prev, seq, type, actor, bodyHash, at, authority) => {
   const event = { prev, seq, type, actor, bodyHash, at };
@@ -42,9 +48,11 @@ function erasedText(value) {
 function redactBody(type, body) {
   const tombstone = {};
   const structural = ['verdict', 'quorum', 'cap_usd', 'approval', 'spec_hash',
-    'artifact_hash', 'usd', 'steward', 'body_hash', 'redacted_hash', 'delivered_by'];
+    'artifact_hash', 'usd', 'steward', 'body_hash', 'redacted_hash', 'delivered_by',
+    'anchor_kind', 'anchor_hash', 'parent', 'kind', 'base_hash', 'rules', 'source_label', 'honesty_label',
+    'see_hash', 'spec_hash', 'packet_hash', 'approval', 'iteration', 'job', 'receipt', 'model', 'mode'];
   const textFields = ['problem', 'looked', 'found', 'must', 'how_we_know', 'out_of_scope',
-    'note', 'reason', 'comment'];
+    'note', 'reason', 'comment', 'original', 'text', 'assumptions', 'open_questions', 'instruction'];
   // Preserve only known machine fields; unknown metadata may contain personal writing.
   for (const field of structural) {
     if (Object.hasOwn(body, field)) tombstone[field] = body[field];
@@ -90,6 +98,45 @@ export class Store {
         leader INTEGER DEFAULT 0, item TEXT NULL);
       INSERT INTO actors(id,kind,leader,item) SELECT id,kind,leader,item FROM actors_legacy_kind;
       DROP TABLE actors_legacy_kind;`);
+  }
+
+  migrateF1() {
+    const effort = this.db.prepare("SELECT kind FROM actors WHERE id='effort'").get();
+    if (effort?.kind === 'person') throw new Error('cannot migrate: person account effort is reserved for Effort (AI)');
+    const actorsSql = this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='actors'").get()?.sql || '';
+    if (!actorsSql.includes("'agent'")) {
+      this.db.exec(`ALTER TABLE actors RENAME TO actors_before_f1;
+        CREATE TABLE actors(id TEXT PRIMARY KEY, kind TEXT CHECK(kind IN ('person','gateway','run','source','agent')),
+          leader INTEGER DEFAULT 0, item TEXT NULL);
+        INSERT INTO actors(id,kind,leader,item) SELECT id,kind,leader,item FROM actors_before_f1;
+        DROP TABLE actors_before_f1;`);
+    }
+    this.db.prepare("INSERT OR IGNORE INTO actors(id,kind,leader,item) VALUES('effort','agent',0,NULL)").run();
+    const runColumns = this.db.prepare('PRAGMA table_info(runs)').all().map(row => row.name);
+    if (!runColumns.includes('iteration')) {
+      this.db.exec(`ALTER TABLE runs RENAME TO runs_before_f1;
+        CREATE TABLE runs(
+          id TEXT PRIMARY KEY, item TEXT NOT NULL, approval INTEGER NOT NULL, iteration INTEGER NOT NULL DEFAULT 0,
+          spec_hash TEXT NOT NULL, run_actor TEXT UNIQUE NOT NULL, gateway_actor TEXT UNIQUE NOT NULL,
+          status TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0, started_at INTEGER,
+          UNIQUE(item,approval,iteration)
+        );
+        INSERT INTO runs(id,item,approval,iteration,spec_hash,run_actor,gateway_actor,status,delivered,started_at)
+          SELECT id,item,approval,0,spec_hash,run_actor,gateway_actor,status,delivered,started_at FROM runs_before_f1;
+        DROP TABLE runs_before_f1;`);
+    }
+    this.db.exec(`CREATE TABLE IF NOT EXISTS effort_jobs(
+      id TEXT PRIMARY KEY, item TEXT NOT NULL, kind TEXT NOT NULL, trigger_seq INTEGER NOT NULL,
+      requester TEXT NOT NULL, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+      next_at INTEGER, last_error TEXT, created INTEGER NOT NULL, UNIQUE(item,kind,trigger_seq)
+    );
+    CREATE TABLE IF NOT EXISTS gateway_effort_receipts(
+      id TEXT PRIMARY KEY, person TEXT NOT NULL, idem TEXT NOT NULL, payload_hash TEXT NOT NULL,
+      policy TEXT NOT NULL, day TEXT NOT NULL, input_bound INTEGER NOT NULL, output_bound INTEGER NOT NULL,
+      worst_micros INTEGER NOT NULL, charged_micros INTEGER NOT NULL, state TEXT NOT NULL,
+      usage TEXT, outcome TEXT, seal TEXT NOT NULL, item TEXT NOT NULL, job TEXT NOT NULL,
+      UNIQUE(person,idem)
+    );`);
   }
 
   // Runs as the authority migration step on every upgrade. The runner holds the transaction,
@@ -157,7 +204,7 @@ export class Store {
   actor(id, item) {
     const row = this.db.prepare('SELECT id,kind,leader,item FROM actors WHERE id=?').get(id);
     if (!row) throw invalid('unknown actor');
-    if (!['person', 'source'].includes(row.kind) && row.item !== item) throw invalid('token is scoped to another item');
+    if (!['person', 'source', 'agent'].includes(row.kind) && row.item !== item) throw invalid('token is scoped to another item');
     return { kind: row.kind, leader: row.leader === 1 };
   }
 
@@ -210,8 +257,8 @@ export class Store {
       .all(String(after), PAGE_SIZE + 1);
     const items = rows.slice(0, PAGE_SIZE).map(row => {
       const context = JSON.parse(row.context);
-      const first = this.events(row.item).find(event => event.type === 'checked' || event.type === 'seen');
-      return { id: row.item, state: row.state, problem: first?.problem || '', steward: context.steward,
+      const first = this.eventFromRow(this.eventRows(row.item)[0]);
+      return { id: row.item, state: row.state, problem: first?.original || first?.problem || '', steward: context.steward,
         spent: context.spentMicros / 1_000_000, quorum: context.quorum, helpers: context.helpers.length };
     });
     return { items, next: rows.length > PAGE_SIZE ? items.at(-1).id : null };
@@ -221,6 +268,18 @@ export class Store {
 
   eventCount(item) {
     return Number(this.db.prepare('SELECT count(*) AS n FROM events WHERE item=?').get(item).n);
+  }
+
+  commentCount(item) {
+    return Number(this.db.prepare("SELECT count(*) AS n FROM events WHERE item=? AND type='commented'").get(item).n);
+  }
+
+  stateEventCount(item) {
+    return Number(this.db.prepare("SELECT count(*) AS n FROM events WHERE item=? AND type<>'commented'").get(item).n);
+  }
+
+  eventCapReached(item, type) {
+    return type === 'commented' ? this.commentCount(item) >= 1000 : this.stateEventCount(item) >= 200;
   }
 
   read(item) { return this.replay(item); }
@@ -239,6 +298,42 @@ export class Store {
       const next = this.db.prepare('SELECT kind FROM actors WHERE id=?').get(event.steward);
       if (!next || next.kind !== 'person') throw invalid('steward must be a registered person');
     }
+    if (event.type === 'posted' && this.eventRows(item).length !== 0) throw refused('posted event requires a fresh item');
+    if (event.type === 'forked') {
+      if (this.eventRows(item).length !== 0) throw refused('forked event requires a fresh item');
+      const parent = event.parent;
+      const row = parent && typeof parent.item === 'string' && Number.isInteger(parent.seq)
+        ? this.db.prepare('SELECT hash FROM events WHERE item=? AND seq=?').get(parent.item, parent.seq)
+        : null;
+      if (!row || row.hash !== parent.hash) throw refused('fork parent does not match');
+    }
+    if (event.type === 'commented' && event.parent !== undefined) {
+      const parent = this.db.prepare(`SELECT b.bytes FROM events e JOIN bodies b ON b.hash=e.body_hash
+        WHERE e.item=? AND e.body_hash=? AND e.type='commented'`).get(item, event.parent);
+      if (!parent) throw refused('parent must be a comment in this item');
+      let body;
+      try { body = JSON.parse(parent.bytes); } catch { throw refused('parent is invalid'); }
+      if (body.anchor_kind !== event.anchor_kind) throw refused('parent anchor does not match');
+    }
+    const comment = hash => this.db.prepare(`SELECT b.bytes,b.erased FROM events e JOIN bodies b ON b.hash=e.body_hash
+      WHERE e.item=? AND e.body_hash=? AND e.type='commented'`).get(item, hash);
+    if (event.type === 'revised' && Array.isArray(event.credits)) for (const credit of event.credits) {
+      const row = comment(credit?.comment);
+      if (!row || row.erased) throw refused('credit must reference an unerased comment in this item');
+      const body = JSON.parse(row.bytes);
+      if (credit.mode === 'quoted' && (!event.text.includes(body.comment) || !body.comment.includes(credit.quote || body.comment)))
+        throw refused('quoted credit must be verbatim in the comment and revision');
+    }
+    if (event.type === 'steered' && event.source) {
+      const row = comment(event.source);
+      if (!row || row.erased) throw refused('steer source must be an unerased comment in this item');
+      if (event.mode === 'quoted' && !event.instruction.includes(JSON.parse(row.bytes).comment)) throw refused('quoted steer must be verbatim');
+    }
+    if (event.type === 'sent') {
+      const packet = this.artifact(item, event.packet_hash);
+      let data; try { data = packet && JSON.parse(packet); } catch { data = null; }
+      if (!data || data.specHash !== event.spec_hash) throw refused('sent packet must exist and bind the spec hash');
+    }
   }
 
   append(item, event, options = {}) {
@@ -256,7 +351,6 @@ export class Store {
 
   appendInTransaction(item, event, options) {
     const { expectedSeq, idem, authoritySnapshot, authorityVersion = 1, bodyHash } = options;
-    this.ensureEvent(item, event);
     const submittedHash = submittedEventHash(event, idem);
     const existing = this.db.prepare('SELECT * FROM events WHERE item=? AND idem=?').get(item, idem);
     if (existing) {
@@ -272,6 +366,8 @@ export class Store {
       }
       return { idempotent: true, seq: existing.seq, ...this.read(item) };
     }
+    this.ensureEvent(item, event);
+    if (this.eventCapReached(item, event.type)) throw refused('item is full');
     guard(this, item, event);
     const cached = this.db.prepare('SELECT * FROM items WHERE item=?').get(item);
     const currentSeq = cached?.seq || 0;
@@ -451,10 +547,10 @@ export class Store {
   }
 
   importActor(actor) {
-    if (!actor.id || !['person', 'gateway', 'run', 'source'].includes(actor.kind)) {
+    if (!actor.id || !['person', 'gateway', 'run', 'source', 'agent'].includes(actor.kind)) {
       throw new Error('bad import actor');
     }
-    if (!['person', 'source'].includes(actor.kind) && !actor.item) throw new Error('bad import actor');
+    if (!['person', 'source', 'agent'].includes(actor.kind) && !actor.item) throw new Error('bad import actor');
     this.db.prepare(`INSERT INTO actors(id,kind,leader,item) VALUES(?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, leader=excluded.leader, item=excluded.item`)
       .run(actor.id, actor.kind, actor.leader ? 1 : 0, actor.item || null);

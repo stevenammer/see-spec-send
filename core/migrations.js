@@ -10,6 +10,7 @@ export const MIGRATIONS = Object.freeze([
   { name: 'submitted-event hashes', up: store => store.backfillSubmittedHashes() },
   { name: 'authority snapshots and derived item cache', up: store => store.backfillAuthoritySnapshots() },
   { name: 'legacy gateway policy copy', up: store => copyLegacyPolicy(store.db) },
+  { name: 'F1 rules 2 Effort actors, jobs, receipts, and run iterations', up: store => store.migrateF1() },
 ]);
 export const SCHEMA_VERSION = MIGRATIONS.length;
 

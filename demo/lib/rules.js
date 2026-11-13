@@ -3,7 +3,7 @@
 // It never decides anything. It only describes a decision the machine already made.
 import { nameOf } from './roster.js';
 
-const known = new Set(['checked', 'specced', 'approved', 'returned', 'charged', 'tried', 'failed',
+const known = new Set(['posted', 'revised', 'checked', 'specced', 'approved', 'returned', 'charged', 'tried', 'failed',
   'helped', 'shelved', 'commented', 'steward_changed', 'erased']);
 const shortText = value => String(value ?? '').slice(0, 40);
 
@@ -29,6 +29,7 @@ export const rules = {
   'stale-approval': 'That build event belongs to an older approval. A new approval starts a new build.',
   'wrong-actor': 'Only the build run and cost gateway can send that kind of event.',
   'not-allowed': "The machine doesn't allow that event right now.",
+  'only-op-revises': 'Only the person who posted this SEE can revise it.',
 };
 
 const result = (rule, extra = '') => ({ rule, words: `${rules[rule]}${extra ? ` ${extra}` : ''}` });
@@ -67,6 +68,7 @@ export function explain(context, event, authority, refusal = 'event not allowed'
   if (event.type === 'checked') {
     return context.phase === 'SEEN' ? result('bad-check') : result('already-posted');
   }
+  if (event.type === 'posted' || event.type === 'revised') return result('only-op-revises');
   if (event.type === 'shelved') return result('shelve-needs-leader-or-steward');
   if (['charged', 'tried', 'failed'].includes(event.type)) {
     if (!['run', 'gateway'].includes(authority?.kind)) return result('wrong-actor');

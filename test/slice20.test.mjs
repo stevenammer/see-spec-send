@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, unlinkSync,
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../core/store.js';
+import { SCHEMA_VERSION } from '../core/migrations.js';
 import { main as cli } from '../cli.js';
 import { watchdog } from '../worker/watchdog.js';
 import { killed, setKill } from '../worker/control.js';
@@ -279,7 +280,7 @@ test('backup manifest records the latch state at backup time', async () => {
   const manifest = JSON.parse(readFileSync(`${target}.manifest.json`, 'utf8'));
   assert.equal(manifest.latch.database, true);
   assert.equal(manifest.latch.file, true);
-  assert.equal(manifest.schema_version, 5);
+  assert.equal(manifest.schema_version, SCHEMA_VERSION);
   assert.equal(manifest.events, 0);
 });
 

@@ -41,6 +41,9 @@ const expected = {
   'spec-change-sending': { state: 'SPECCED', refused: [] },
   'stale-approval': { state: 'SENDING', refused: [6] },
   'stale-artifact': { state: 'TRYING', refused: [5] },
+  'rules-2-posted': { state: 'SEEN', refused: [] },
+  'rules-2-journey': { state: 'SPECCED', refused: [] },
+  'rules-2-refusals': { state: 'SPECCED', refused: [2, 4] },
 };
 
 const at = index => `2026-11-09T00:00:${String(index).padStart(2, '0')}.000Z`;
@@ -60,13 +63,15 @@ async function replayBoth(story) {
     const event = { ...source, at: at(index + 1) };
     if (source.role === 'steward') event.actor = store.read('i').context.steward ?? event.actor;
     delete event.role;
-    if (aliases.has(event.spec_hash)) event.spec_hash = aliases.get(event.spec_hash);
+    for (const key of ['see_hash', 'spec_hash', 'anchor_hash', 'base_hash']) {
+      if (aliases.has(event[key])) event[key] = aliases.get(event[key]);
+    }
     const idem = `k${index + 1}`;
     let storeOutcome;
     try { storeOutcome = { ok: true, ...store.append('i', event, { idem }) }; }
     catch (error) { storeOutcome = { ok: false, error: error.message }; }
     const demoOutcome = await log.append(event, { idem });
-    if (storeOutcome.ok && event.type === 'specced') aliases.set(source.body_hash, store.events('i').at(-1).body_hash);
+    if (storeOutcome.ok && source.body_hash) aliases.set(source.body_hash, store.events('i').at(-1).body_hash);
     steps.push({ index: index + 1, event, storeOutcome, demoOutcome });
   }
   return { store, log, steps };

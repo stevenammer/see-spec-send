@@ -105,8 +105,8 @@ test('a member gets 60 writes a minute and the 61st is refused with 429', async 
   store.close();
 });
 
-// B12: one event is capped at 16 KB (413), and one item at 200 events (429).
-test('an event over 16 KB is 413 and an item at 200 events is 429', async () => {
+// B12: one event is capped at 16 KB (413), and 200 state-changing events cap an item (429).
+test('an event over 16 KB is 413 and an item at 200 state-changing events is 429', async () => {
   const store = new Store(); const auth = new Auth(store); const handler = createHandler({ store, auth });
   const headers = await member(auth, handler, 'one'); store.registerPerson('author');
   const made = await call(handler, 'POST', '/api/items', problem, headers);
@@ -114,9 +114,9 @@ test('an event over 16 KB is 413 and an item at 200 events is 429', async () => 
   assert.equal((await call(handler, 'POST', '/api/items', { ...problem, padding: 'x'.repeat(17 * 1024) }, headers)).status, 413);
   assert.equal((await call(handler, 'POST', events, { type: 'commented', comment: 'ok', padding: 'x'.repeat(17 * 1024) }, headers)).status, 413);
   assert.equal((await call(handler, 'POST', events, { type: 'commented', comment: 'ok', padding: 'x'.repeat(301 * 1024) }, headers)).status, 413);
-  for (let n = 1; n < 200; n += 1) put(store, made.body.id, 'commented', 'author', { comment: `note ${n}` });
+  for (let n = 1; n < 200; n += 1) put(store, made.body.id, 'checked_in', 'author', { note: `note ${n}` });
   assert.equal(store.events(made.body.id).length, 200);
-  assert.equal((await call(handler, 'POST', events, { type: 'commented', comment: 'one more' }, headers)).status, 429);
+  assert.equal((await call(handler, 'POST', events, { type: 'checked_in', note: 'one more' }, headers)).status, 429);
   store.close();
 });
 

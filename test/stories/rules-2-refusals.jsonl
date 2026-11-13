@@ -1,0 +1,4 @@
+{"type":"posted","actor":"owner","role":"member","original":"A frontline SEE.","rules":2,"body_hash":"see-1"}
+{"type":"checked","actor":"member-1","role":"member","problem":"cannot take over","looked":["x"],"found":[],"verdict":"build_needed"}
+{"type":"specced","actor":"steward-1","role":"steward","see_hash":"see-1","must":["small"],"how_we_know":["people say helps"],"out_of_scope":[],"body_hash":"spec-1"}
+{"type":"specced","actor":"member-1","role":"member","see_hash":"see-1","must":["take over"],"how_we_know":["no"],"out_of_scope":[]}

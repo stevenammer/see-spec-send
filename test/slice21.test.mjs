@@ -12,7 +12,7 @@ import { Ledger } from '../gateway/ledger.js';
 import { main as cli } from '../cli.js';
 
 // Bump together with a new entry in core/migrations.js.
-const CURRENT = 5;
+const CURRENT = 6;
 const temp = () => join(mkdtempSync(join(tmpdir(), 'sss-slice21-')), 'db.sqlite');
 const fixtureSql = name => readFileSync(new URL(`./fixtures/golden/${name}.sql`, import.meta.url), 'utf8');
 

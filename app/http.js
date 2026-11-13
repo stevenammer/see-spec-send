@@ -11,6 +11,7 @@ import { Integrations } from './integrations.js';
 import { feedPage, htmlHeaders, itemPage, newItemPage, questPage, redeemPage, signInPage } from './pages.js';
 import { invalid, kindOf, refused, tooLarge as tooLargeError } from '../core/errors.js';
 import { redact } from '../provider/safe-http.js';
+import { CURRENT_RULES } from '../core/machine.js';
 
 // Object key order does not change a retry identity. Array order is meaningful.
 const canonical = value => JSON.stringify(value, (_key, entry) =>
@@ -20,7 +21,6 @@ const canonical = value => JSON.stringify(value, (_key, entry) =>
 // Fixed defaults. None of these is a setting; a stricter limit needs a code change and a test.
 const WRITES_PER_MINUTE = 60;
 const EVENT_BYTES = 16 * 1024;
-const MAX_EVENTS_PER_ITEM = 200;
 const tooLarge = value => Buffer.byteLength(JSON.stringify(value)) > EVENT_BYTES;
 const pageAfter = url => {
   const after = url.searchParams.get('after');
@@ -154,10 +154,14 @@ const validEvent = input => {
     case 'returned': case 'shelved': case 'checked_in':
       return exactKeys(input, ['type', input.type === 'shelved' ? 'reason' : 'note']) && text(input[input.type === 'shelved' ? 'reason' : 'note'], 2000);
     case 'helped': return exactKeys(input, ['type', 'artifact_hash']) && hex(input.artifact_hash);
-    case 'steward_changed': return exactKeys(input, ['type', 'steward']) && text(input.steward, 64);
-    case 'commented': return exactKeys(input, ['type', 'comment', 'anchor_kind', 'anchor_hash'])
+    case 'steward_changed': return exactKeys(input, ['type', 'steward', 'reason']) && text(input.steward, 64)
+      && (input.reason === undefined || text(input.reason, 2000));
+    case 'revised': return exactKeys(input, ['type', 'text', 'base_hash']) && text(input.text, 4000) && hex(input.base_hash);
+    case 'commented': return exactKeys(input, ['type', 'comment', 'anchor_kind', 'anchor_hash', 'parent', 'kind'])
       && text(input.comment, 4000) && ((input.anchor_kind === undefined && input.anchor_hash === undefined)
-        || (['spec', 'artifact'].includes(input.anchor_kind) && hex(input.anchor_hash)));
+        || (['see', 'spec', 'artifact'].includes(input.anchor_kind) && hex(input.anchor_hash)))
+      && (input.parent === undefined || hex(input.parent))
+      && (input.kind === undefined || ['comment', 'question', 'concern'].includes(input.kind));
     default: return false;
   }
 };
@@ -329,6 +333,20 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       }
       if (req.method === 'POST' && url.pathname === '/api/items') {
         if (!input.quest && tooLarge(input)) return json(res, 413, { error: 'request too large' });
+        if (Object.hasOwn(input, 'original')) {
+          if (!exactKeys(input, ['original']) || !text(input.original, 4000))
+            return json(res, 409, { error: 'request refused' });
+          const idem = req.headers['idempotency-key'] || randomUUID();
+          // A retry must point at the same fresh item, so idempotency can run before
+          // Store's fresh-item guard. Random IDs turn a double click into two SEEs.
+          const id = createHash('sha256').update(`posted\0${session.person}\0${idem}`).digest('base64url');
+          const prior = store.events(id).find(event => event.type === 'posted' && event.actor === session.person);
+          const retry = prior?.original === input.original && { type: prior.type, actor: prior.actor,
+            original: prior.original, rules: prior.rules, at: prior.at };
+          store.append(id, retry || { type: 'posted', actor: session.person, original: input.original,
+            rules: CURRENT_RULES, at: new Date().toISOString() }, { idem });
+          return json(res, 201, { id, state: store.read(id) });
+        }
         // Derive and validate before looking up a receipt, including the signed-in owner.
         const eventBody = input.quest ? fromQuest(input.quest, session.person) : checked(input);
         const id = input.quest ? createHash('sha256').update(canonical({
@@ -407,7 +425,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           spent_basis: 'state.context.spentMicros counts legacy charged events only',
           gateway_budget: meteringSummary(store, match[1]) });
       if (tooLarge(input)) return json(res, 413, { error: 'request too large' });
-      if (store.eventCount(match[1]) >= MAX_EVENTS_PER_ITEM) return json(res, 429, { error: 'item is full' });
+      if (store.eventCapReached(match[1], input.type)) return json(res, 429, { error: 'item is full' });
       if (Object.hasOwn(input, 'quest')) return json(res, 409, { error: 'request refused' });
       if (Object.hasOwn(input, 'questMemo')) return json(res, 409, { error: 'request refused' });
       if (Object.hasOwn(input, 'actor') || Object.hasOwn(input, 'role'))

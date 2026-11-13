@@ -1,4 +1,5 @@
 import { postedQuestMemo } from '../public/vision-quest.js';
+import { renderThread } from './pages-thread.js';
 const escape = value =>
   String(value ?? '').replace(
     /[&<>"']/g,
@@ -22,7 +23,7 @@ const stages = {
   SHELVED: 'Shelved',
 };
 const shell = (title, content) =>
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See it. Spec it. Send it.</a></header><main>${content}</main><script src="/assets/app.js" defer></script></body></html>`;
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See / Spec / Send</a></header><main>${content}</main><script src="/assets/app.js" defer></script></body></html>`;
 const progress = item => `${item.helpers} of ${item.quorum} people have said it helps`;
 
 export function signInPage({ oidc = false } = {}) {
@@ -57,13 +58,15 @@ export function feedPage(items, next = null) {
 
 export function newItemPage() {
   return shell(
-    'Post a problem',
-    `<h1>Post a problem</h1><p>Start with the thing people already know. Check first.</p><form data-api="/api/items" data-next-item="true"><label>What's the thing everyone already knows?<textarea name="problem" maxlength="2000" required></textarea></label><fieldset><legend>Check first</legend>${['have', 'pay_for', 'free', 'setting'].map(key => `<label><input type="checkbox" name="${key}">${key.replace('_', ' ')}<input name="${key}_note" maxlength="280" placeholder="Short note"></label>`).join('')}</fieldset><label>What did you find?<select name="verdict"><option value="build_needed">A small build may help</option><option value="already_have">We already have it</option><option value="setting">It's a setting</option><option value="free">A free option works</option><option value="pay">A paid option works</option></select></label><button>Post what you checked</button></form>`,
+    'Post a SEE',
+    `<h1>Post a SEE</h1><p>Share what you saw, in your own words.</p><form data-api="/api/items" data-next-item="true"><label>What happened?<textarea name="original" maxlength="4000" required></textarea></label><button>Post SEE</button></form><p><a href="/quest">Start a Vision Quest instead</a></p>`,
   );
 }
 
 function eventWords(event) {
   const words = {
+    posted: 'posted this SEE',
+    revised: 'revised the SEE',
     checked: 'checked what already exists',
     specced: 'wrote the spec',
     approved: 'approved a small try',
@@ -82,7 +85,9 @@ function eventWords(event) {
 
 export function itemPage(item, events, person, leader) {
   const context = item.context;
-  const problem = events.find(event => event.type === 'checked' || event.type === 'seen')?.problem || '';
+  const firstEvent = events[0];
+  const rules2 = context.rules >= 2;
+  const problem = firstEvent?.original || events.find(event => event.type === 'checked' || event.type === 'seen')?.problem || '';
   const current = events.at(-1);
   const questEvent = events.find(event => event.type === 'checked');
   let questMemo = '';
@@ -119,7 +124,7 @@ export function itemPage(item, events, person, leader) {
     `<label>How we'll know<textarea name="how_we_know" required>${fill('how_we_know')}</textarea></label>` +
     `<label>Out of scope<textarea name="out_of_scope">${fill('out_of_scope')}</textarea></label>` +
     '<button>Save the spec</button></form>';
-  if (item.state === 'CHECKED' && context.steward === person) action = specForm;
+  if ((item.state === 'CHECKED' || (rules2 && item.state === 'SEEN')) && context.steward === person) action = specForm;
   if (item.state === 'SPECCED' && leader && context.steward !== person)
     action = `<form data-approve="true"><h2>Decide</h2><p>Approval freezes the cap. The configured provider and its worst-case micro-dollar estimate are shown by the gateway administrator before this screen is used.</p><input type="hidden" name="spec_hash" value="${escape(context.specHash)}"><input type="hidden" name="expected_seq" value="${events.length}"><label>Cap in dollars<input name="cap_usd" type="number" min="0" step="0.01" required></label><label>How many people need to say it helps?<input name="quorum" type="number" min="1" required></label><label>Re-enter your password<input name="password" type="password" required></label><button>Approve the try</button></form><form data-event="returned"><label>What needs to change?<input name="note" required></label><button>Return the spec</button></form>`;
   if (item.state === 'SENDING' && (leader || context.steward === person))
@@ -142,16 +147,21 @@ export function itemPage(item, events, person, leader) {
     !['HELPS', 'SHELVED'].includes(item.state) && (leader || context.steward === person)
       ? `<form data-event="shelved"><label>Why shelve it?<input name="reason" required></label><button>Shelve with a reason</button></form>`
       : '';
-  const anchor = context.artifact ? { kind: 'artifact', hash: context.artifact } :
+  const anchor = rules2 ? { kind: 'see', hash: context.seeHash } : context.artifact ? { kind: 'artifact', hash: context.artifact } :
     context.specHash ? { kind: 'spec', hash: context.specHash } : null;
-  const comment = `<form data-event="commented"><h2>Comment</h2><label>Comment<textarea name="comment" required maxlength="4000"></textarea></label>${anchor ? `<input type="hidden" name="anchor_kind" value="${anchor.kind}"><input type="hidden" name="anchor_hash" value="${escape(anchor.hash)}"><p>Attached to the current ${anchor.kind} version.</p>` : '<p>There is no spec version yet.</p>'}<button>Post comment</button></form>`;
+  const comment = rules2
+    ? `<form data-event="commented"><h2>Join the thread</h2><label>Comment<textarea name="comment" required maxlength="4000"></textarea></label><label>Type<select name="kind"><option value="comment">Comment</option><option value="question">Question</option><option value="concern">Concern</option></select></label><input type="hidden" name="anchor_kind" value="see"><input type="hidden" name="anchor_hash" value="${escape(context.seeHash)}"><button>Post comment</button></form>`
+    : `<form data-event="commented"><h2>Comment</h2><label>Comment<textarea name="comment" required maxlength="4000"></textarea></label>${anchor ? `<input type="hidden" name="anchor_kind" value="${anchor.kind}"><input type="hidden" name="anchor_hash" value="${escape(anchor.hash)}"><p>Attached to the current ${anchor.kind} version.</p>` : '<p>There is no spec version yet.</p>'}<button>Post comment</button></form>`;
+  const revisions = rules2 ? events.filter(event => event.type === 'revised').map((event, index) => `<li>SEE v${index + 2}: ${escape(event.text)}</li>`).join('') : '';
+  const revise = rules2 && context.steward === person ? `<form data-event="revised"><h2>Revise SEE</h2><input type="hidden" name="base_hash" value="${escape(context.seeHash)}"><label>Current SEE<textarea name="text" required maxlength="4000">${escape(events.filter(event => event.type === 'revised').at(-1)?.text || firstEvent.original)}</textarea></label><button>Save revision</button></form>` : '';
+  const see = rules2 ? `<section><h2>Original</h2><p>${escape(firstEvent.original)}</p><p>Hash ${escape(firstEvent.body_hash)}, posted ${escape(firstEvent.at)}</p><h2>Current SEE v${escape(context.seeVersion)}</h2><p>${escape(events.filter(event => event.type === 'revised').at(-1)?.text || firstEvent.original)}</p><h2>Version history</h2><ol><li>SEE v1: ${escape(firstEvent.original)}</li>${revisions}</ol></section>` : '';
   const checkin = `<form data-event="checked_in"><h2>Check-in</h2><label>What changed?<input name="note" required maxlength="2000"></label><button>Post check-in</button></form>`;
   return shell(
     problem,
     '<p><a href="/">Back to the work</a></p>' +
       `<p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1>` +
-      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${questMemo}${specSummary}${action}${shelve}${checkin}${comment}` +
-      `<h2>Comments</h2><ol>${anchoredComments || '<li>No comments yet.</li>'}</ol><h2>What happened</h2><ol>${events.filter(event => event.type !== 'commented').map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
+      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${see}${questMemo}${specSummary}${revise}${action}${shelve}${checkin}${comment}` +
+      `<h2>${rules2 ? 'Thread' : 'Comments'}</h2>${rules2 ? (renderThread(events, context) || '<p>No comments yet.</p>') : `<ol>${anchoredComments || '<li>No comments yet.</li>'}</ol>`}<h2>What happened</h2><ol>${events.filter(event => event.type !== 'commented' && event.type !== 'revised').map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
   );
 }
 

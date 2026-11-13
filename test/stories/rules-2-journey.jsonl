@@ -1,0 +1,5 @@
+{"type":"posted","actor":"owner","role":"member","original":"The original SEE stays in the owner's words.","rules":2,"body_hash":"see-1"}
+{"type":"commented","actor":"member-1","role":"member","comment":"This is a concern worth keeping visible.","kind":"concern","anchor_kind":"see","anchor_hash":"see-1"}
+{"type":"specced","actor":"steward-1","role":"steward","see_hash":"see-1","must":["small"],"how_we_know":["people say helps"],"out_of_scope":[],"body_hash":"spec-1"}
+{"type":"commented","actor":"member-1","role":"member","comment":"Please cover the handoff edge case.","kind":"question","anchor_kind":"spec","anchor_hash":"spec-1"}
+{"type":"specced","actor":"steward-1","role":"steward","see_hash":"see-1","must":["small","handoff"],"how_we_know":["people say helps"],"out_of_scope":[],"body_hash":"spec-2"}

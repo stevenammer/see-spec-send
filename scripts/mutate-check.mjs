@@ -21,11 +21,36 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/slice20.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs', 'test/slice23.test.mjs', 'test/slice24.test.mjs',
-  'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs', 'test/slice27.test.mjs'];
+  'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs', 'test/slice27.test.mjs',
+  'test/vision-01.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
 const mutants = [
+  ['V1 only OP revises', 'context.rules >= 2 && steward(context, event, who)', 'context.rules >= 2 && person(who)'],
+  ['V1 revise base hash', 'event.base_hash === context.seeHash', 'true'],
+  ['V1 posted only fresh item', "if (event.type === 'posted' && this.eventRows(item).length !== 0)", "if (false)"],
+  ['V1 checked blocked on rules 2', "!(context.rules >= 2) && context.phase === 'SEEN'", "true && context.phase === 'SEEN'"],
+  ['V1 reply parent same item', "WHERE e.item=? AND e.body_hash=? AND e.type='commented'", "WHERE e.item=? OR e.body_hash=? AND e.type='commented'"],
+  ['V1 erase keeps anchors', "'anchor_kind', 'anchor_hash', 'parent'", "'parent'"],
+  ['V1 server stamps rules', 'rules: CURRENT_RULES', 'rules: 1'],
+  ['V1 comment cap', 'this.commentCount(item) >= 1000', 'this.commentCount(item) >= 1001'],
+  ['F1 comment anchor follows current spec', 'spec: state.specSeeHash === state.seeHash ? state.specHash : null,', 'spec: state.specHash,'],
+  ['F1 agent only comments', "who?.kind === 'agent' && event.actor === 'effort'", "who?.kind === 'agent'"],
+  ['F1 spec binds current SEE', 'event.see_hash === context.seeHash', 'true'],
+  ['F1 sent needs current spec', 'event.spec_hash === context.specHash', 'true'],
+  ['F1 approval needs submitted', "context.rules >= 2 && context.phase === 'SUBMITTED'", "context.rules >= 2 && context.phase === 'SPECCED'"],
+  ['F1 approval packet bound', 'event.packet_hash === context.sent?.packetHash', 'true'],
+  ['F1 approval reason required', 'nonempty(event.reason) && event.reason.length >= 12', 'true'],
+  ['F1 authors cannot approve', '!context.authors.includes(event.actor)', 'true'],
+  ['F1 revision withdraws send', "phase: context.phase === 'SUBMITTED' ? 'SPECCED' : context.phase", 'phase: context.phase'],
+  ['F1 fork parent hash', "if (!row || row.hash !== parent.hash) throw refused('fork parent does not match');", 'if (!row) throw refused(\'fork parent does not match\');'],
+  ['F1 credit comment stays in item', "WHERE e.item=? AND e.body_hash=? AND e.type='commented'", "WHERE e.body_hash=? AND e.type='commented'"],
+  ['F1 quote is verbatim', '!event.text.includes(body.comment)', 'false'],
+  ['F1 steer is OP only', 'steward(context, event, who) && event.approval === context.approval', 'person(who) && event.approval === context.approval'],
+  ['F1 steer approval bound', 'event.approval === context.approval && event.spec_hash === context.specHash', 'true'],
+  ['F1 iteration ceiling', 'context.iteration + 1 <= 5', 'context.iteration + 1 <= 6'],
+  ['F1 stale iteration refused', 'event.iteration !== context.iteration', 'false'],
   ['gateway disabled default', "demand(policy.enabled, 'gateway disabled');", ''],
   ['gateway run cap', "demand(add(used, worst) <= cap, 'run cap exceeded');", ''],
   ['gateway global cap', "demand(add(sum(combined), worst) <= policy.global_micros, 'global cap exceeded');", ''],
@@ -176,10 +201,10 @@ const mutants = [
   ['provider command env isolation', "env: { PATH: process.env.PATH || '/usr/bin:/bin' }", 'env: process.env'],
   ['provider priced required', "if (!provider.price || !integer(provider.price.inputMicrosPerMillion) || !integer(provider.price.outputMicrosPerMillion)) throw Error('priced provider required');", ''],
   ['provider host allowlist', "if (!Array.isArray(hosts) || !hosts.includes(url.hostname)) throw Error('provider host is not allowlisted');", ''],
-  ['provider redirect refusal', "method: 'POST', redirect: 'error', signal: abort", "method: 'POST', redirect: 'follow', signal: abort"],
+  ['provider redirect refusal', "redirect: 'error'", "redirect: 'follow'"],
   ['provider response cap', "if (bytes > responseBytes)", "if (false)"],
-  ['approval leader gate', "if (event.type === 'approved' && context.phase === 'SPECCED' && leader(who)",
-    "if (event.type === 'approved' && context.phase === 'SPECCED' && true"],
+  ['approval leader gate', "if (event.type === 'approved' && !(context.rules >= 2) && context.phase === 'SPECCED' && leader(who)",
+    "if (event.type === 'approved' && !(context.rules >= 2) && context.phase === 'SPECCED' && true"],
   ['approval separation gate', '&& event.actor !== context.steward && nonempty(event.spec_hash)',
     '&& true && nonempty(event.spec_hash)'],
   ['builder egress enforcement', "if (!denied) return { allowed: true };", "if (true) return { allowed: true };"],
@@ -193,7 +218,7 @@ const mutants = [
   ['integration strict schema', "!Object.keys(value).every(key => ['problem', 'source_label', 'honesty_label'].includes(key))", 'false'],
   ['integration source authority', "event.type === 'seen' && context.phase === 'SEEN' && sourceActor(who)", "event.type === 'seen' && context.phase === 'SEEN' && person(who)"],
   ['integration outbox transaction', 'this.enqueueIntegrationOutbox(item, event, outcome.state, seq);', ''],
-  ['integration outbound redirect refusal', "method: 'POST', redirect: 'error', headers:", "method: 'POST', redirect: 'follow', headers:"],
+  ['integration outbound redirect refusal', "method: 'POST', redirect: 'error', address:", "method: 'POST', redirect: 'follow', address:"],
   ['account disabled sign-in refused', 'user.disabled === 1 || temporaryUsed', 'false || temporaryUsed'],
   ['account disable ends sessions', 'this.guardLeader(id);\n        this.revokePerson(id);', 'this.guardLeader(id);'],
   ['account disabled session refused', 'row.disabled === 1 || row.expires', 'false || row.expires'],
@@ -247,7 +272,7 @@ const mutants = [
   ['lock contention answers 503 not refusal', "if (kind === 'busy') {", 'if (false) {'],
   ['member write budget 60 a minute', 'return window.count <= WRITES_PER_MINUTE;', 'return true;'],
   ['event size limit 16 KB', 'if (tooLarge(input)) return json(res, 413', 'if (false) return json(res, 413'],
-  ['item event cap 200', '>= MAX_EVENTS_PER_ITEM', '>= Infinity'],
+  ['item event cap 200', "store.eventCapReached(match[1], input.type)", 'false'],
   ['feed and API page size fixed at 50', 'export const PAGE_SIZE = 50;', 'export const PAGE_SIZE = 1000000;'],
   ['gateway receipts verified once per request', 'gateway_budget: budgets.get(item.id)', 'gateway_budget: meteringSummary(store, item.id)'],
   ['slice23 redaction Bearer', ".replace(CREDENTIAL, '$1 [redacted]');", ';'],
@@ -331,6 +356,10 @@ const mutants = [
   ['slice27 gateway socket directory is private', "if (statSync(parent).mode & 0o022) fail(", "if (false) fail("],
 ];
 
+const files = ['compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'cli.js',
+  'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
+  'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js'];
+
 function run(cwd, args) {
   return spawnSync(process.execPath, args, { cwd, stdio: 'pipe', encoding: 'utf8' });
 }
@@ -338,6 +367,12 @@ function run(cwd, args) {
 const onlyAt = process.argv.indexOf('--only');
 const only = onlyAt < 0 ? null : process.argv[onlyAt + 1];
 if (onlyAt >= 0 && !only) throw new Error('--only requires a mutant name');
+if (process.argv.includes('--check-sources')) {
+  const missing = mutants.filter(([, find]) => !files.some(file => readFileSync(join(root, file), 'utf8').includes(find))).map(([name]) => name);
+  if (missing.length) throw new Error(`mutant source missing: ${missing.join(', ')}`);
+  console.log(`OK ${mutants.length} mutant find strings found`);
+  process.exit(0);
+}
 const selected = mutants.filter(([name]) => (!only || name.includes(only)) &&
   (!workerOnly || name.startsWith('worker ') || name.startsWith('fake ') || name.startsWith('container ')));
 if (!selected.length) throw new Error('no mutant matches the requested name');
@@ -353,9 +388,6 @@ let failed = false;
 for (const [name, find, replace] of selected) {
   const copy = mkdtempSync(join(tmpdir(), 'sss-mutant-'));
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
-  const files = ['compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'cli.js',
-    'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
-    'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {

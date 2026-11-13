@@ -1,4 +1,4 @@
-import { meteringSummary } from '../gateway/ledger.js';
+import { meteringSummary, meteringSummaries } from '../gateway/ledger.js';
 import { checkedFromQuest } from '../public/vision-quest.js';
 import { preflightQuestModel, draftQuestModel } from '../provider/vision-quest.js';
 import { createServer } from 'node:http';
@@ -12,6 +12,17 @@ import { feedPage, htmlHeaders, itemPage, newItemPage, questPage, redeemPage, si
 const canonical = value => JSON.stringify(value, (_key, entry) =>
   entry && typeof entry === 'object' && !Array.isArray(entry)
     ? Object.fromEntries(Object.keys(entry).sort().map(key => [key, entry[key]])) : entry);
+
+// Fixed defaults. None of these is a setting; a stricter limit needs a code change and a test.
+const WRITES_PER_MINUTE = 60;
+const EVENT_BYTES = 16 * 1024;
+const MAX_EVENTS_PER_ITEM = 200;
+const busy = error => error?.errcode === 5 || error?.errcode === 6 || /database (table )?is locked/.test(error?.message || '');
+const tooLarge = value => Buffer.byteLength(JSON.stringify(value)) > EVENT_BYTES;
+const pageAfter = url => {
+  const after = url.searchParams.get('after');
+  return typeof after === 'string' && after.length <= 128 ? after : '';
+};
 
 const json = (res, status, value) => {
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
@@ -51,7 +62,11 @@ const bytes = (req, limit = 300 * 1024) =>
     req.on('error', reject);
   });
 const body = async (req, limit) => {
-  try { const value = JSON.parse((await bytes(req, limit)).toString('utf8') || '{}');
+  const raw = await bytes(req, limit).catch(error => {
+    if (error.message === 'body too large') throw error;
+    throw new Error('bad json');
+  });
+  try { const value = JSON.parse(raw.toString('utf8') || '{}');
     if (!safeObject(value)) throw new Error('bad json'); return value;
   } catch { throw new Error('bad json'); }
 };
@@ -115,8 +130,16 @@ const validEvent = input => {
   }
 };
 
-export function createHandler({ auth, store, integrations, questModel = null, secure = true, origin = 'https://localhost' }) {
+export function createHandler({ auth, store, integrations, questModel = null, secure = true, origin = 'https://localhost', clock = Date.now }) {
   integrations ||= new Integrations(store, { origin });
+  // Fixed one-minute windows per signed-in member. Memory holds one entry per member.
+  const writes = new Map();
+  const spend = (person, now) => {
+    const window = writes.get(person);
+    if (!window || now - window.start >= 60_000) { writes.set(person, { start: now, count: 1 }); return true; }
+    window.count += 1;
+    return window.count <= WRITES_PER_MINUTE;
+  };
   const sameOrigin = sameOriginAs(origin);
   const cookieName = secure ? '__Host-sss' : 'sss';
   const cookie = value =>
@@ -132,7 +155,8 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       const inbound = url.pathname.match(/^\/api\/integrations\/inbound\/([A-Za-z0-9._-]{1,64})$/);
       if (req.method === 'POST' && inbound) {
         if (req.headers['content-type'] !== 'application/json') return json(res, 415, { error: 'request refused' });
-        const raw = await bytes(req, 16 * 1024);
+        // Inbound intake keeps its own answer for an oversized body (400), so the generic 413 mapping does not reach it.
+        const raw = await bytes(req, 16 * 1024).catch(() => { throw new Error('inbound body over limit'); });
         return json(res, 201, integrations.receive(inbound[1], req.headers['x-sss-timestamp'], req.headers['x-sss-signature'], raw, req.headers));
       }
       if (req.method === 'GET' && url.pathname === '/assets/app.js')
@@ -207,6 +231,8 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         if (req.method === 'GET' && url.pathname === '/') return page(res, signInPage({ oidc: Boolean(auth.oidc) }));
         return json(res, 403, { error: 'request refused' });
       }
+      if (change && !spend(session.person, clock()))
+        return json(res, 429, { error: 'slow down, try again in a minute' });
       if (req.method === 'POST' && url.pathname === '/api/stepup') {
         await auth.stepup(sessionToken, input.password, ip);
         return json(res, 204, {});
@@ -220,8 +246,10 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (session.must_change === 1) return json(res, 403, { error: 'request refused' });
       let leader = false;
       try { leader = store.actor(session.person, '').leader === true; } catch { /* unregistered session holder is not a leader */ }
-      if (req.method === 'GET' && url.pathname === '/')
-        return page(res, feedPage(store.listItems()));
+      if (req.method === 'GET' && url.pathname === '/') {
+        const listing = store.listPage(pageAfter(url));
+        return page(res, feedPage(listing.items, listing.next));
+      }
       if (req.method === 'GET' && url.pathname === '/items/new') return page(res, newItemPage());
       if (req.method === 'GET' && url.pathname === '/quest') {
         return page(res, questPage(session.person));
@@ -237,10 +265,15 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           itemPage({ id: view[1], ...state }, events, session.person, leader),
         );
       }
-      if (req.method === 'GET' && url.pathname === '/api/items')
-        return json(res, 200, { items: store.listItems().map(item => ({ ...item,
-          spent_basis: 'legacy charged events only', gateway_budget: meteringSummary(store, item.id) })) });
+      if (req.method === 'GET' && url.pathname === '/api/items') {
+        const listing = store.listPage(pageAfter(url));
+        // One receipt verification pass covers the whole page.
+        const budgets = meteringSummaries(store, listing.items.map(item => item.id));
+        return json(res, 200, { items: listing.items.map(item => ({ ...item,
+          spent_basis: 'legacy charged events only', gateway_budget: budgets.get(item.id) })), next: listing.next });
+      }
       if (req.method === 'POST' && url.pathname === '/api/items') {
+        if (!input.quest && tooLarge(input)) return json(res, 413, { error: 'request too large' });
         // Derive and validate before looking up a receipt, including the signed-in owner.
         const eventBody = input.quest ? checkedFromQuest(input.quest, session.person) : checked(input);
         const id = input.quest ? createHash('sha256').update(canonical({
@@ -314,6 +347,8 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         return json(res, 200, { state: store.read(match[1]), events: store.events(match[1]),
           spent_basis: 'state.context.spentMicros counts legacy charged events only',
           gateway_budget: meteringSummary(store, match[1]) });
+      if (tooLarge(input)) return json(res, 413, { error: 'request too large' });
+      if (store.eventCount(match[1]) >= MAX_EVENTS_PER_ITEM) return json(res, 429, { error: 'item is full' });
       if (Object.hasOwn(input, 'quest')) return json(res, 409, { error: 'request refused' });
       if (Object.hasOwn(input, 'questMemo')) return json(res, 409, { error: 'request refused' });
       if (Object.hasOwn(input, 'actor') || Object.hasOwn(input, 'role'))
@@ -350,6 +385,12 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         ),
       );
     } catch (error) {
+      // Lock contention is a retryable server state, never a rule refusal.
+      if (busy(error)) {
+        res.setHeader('retry-after', '1');
+        return json(res, 503, { error: 'busy, try again in a moment' });
+      }
+      if (error.message === 'body too large') return json(res, 413, { error: 'request too large' });
       return json(
         res,
         /refused|not allowed|stale|approval|event|artifact|check/.test(error.message) ? 409 : 400,

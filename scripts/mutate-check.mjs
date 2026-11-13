@@ -17,6 +17,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/slice17.test.mjs',
   'test/slice18.test.mjs',
   'test/slice21.test.mjs',
+  'test/slice22.test.mjs',
   'test/slice20.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs'];
@@ -241,6 +242,13 @@ const mutants = [
   ['restore refuses a missing manifest', 'if (!existsSync(manifestPath(source)))', 'if (false)'],
   ['restore verifies the copy', "if (integrity !== 'ok' || rows.some(row => !row.ok)) throw", 'if (false) throw'],
   ['restore leaves kill set', 'setKill(store, true);', 'setKill(store, false);'],
+  ['worker scans SENDING items only', "SELECT item FROM items WHERE state='SENDING'", 'SELECT item FROM items WHERE 1=1'],
+  ['lock contention answers 503 not refusal', 'if (busy(error)) {', 'if (false) {'],
+  ['member write budget 60 a minute', 'return window.count <= WRITES_PER_MINUTE;', 'return true;'],
+  ['event size limit 16 KB', 'if (tooLarge(input)) return json(res, 413', 'if (false) return json(res, 413'],
+  ['item event cap 200', '>= MAX_EVENTS_PER_ITEM', '>= Infinity'],
+  ['feed and API page size fixed at 50', 'export const PAGE_SIZE = 50;', 'export const PAGE_SIZE = 1000000;'],
+  ['gateway receipts verified once per request', 'gateway_budget: budgets.get(item.id)', 'gateway_budget: meteringSummary(store, item.id)'],
 ];
 
 function run(cwd, args) {

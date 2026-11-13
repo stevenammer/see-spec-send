@@ -6,6 +6,8 @@ import { attach, guard } from '../worker/control.js';
 import { migrate } from './migrations.js';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
+// Fixed page size for the feed and the item API. There is no setting for it.
+export const PAGE_SIZE = 50;
 const stable = value => {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
@@ -56,7 +58,8 @@ export class Store {
   // (`exec`, `prepare`, and `close`).  It keeps the event-store contract
   // independent of SQLite without making an unreviewed network client the
   // default runtime.
-  constructor(file = ':memory:', { database, kind = 'sqlite' } = {}) {
+  constructor(file = ':memory:', { database, kind = 'sqlite', busyMs = 5000 } = {}) {
+    if (!Number.isSafeInteger(busyMs) || busyMs < 0 || busyMs > 60_000) throw new Error('busy timeout out of range');
     if (!database && file !== ':memory:' && file !== '') {
       // The database holds event bodies and token digests: owner-only from the first byte.
       closeSync(openSync(file, 'a', 0o600));
@@ -65,7 +68,7 @@ export class Store {
     this.kind = kind;
     this.db = database || new DatabaseSync(file);
     try {
-      this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;');
+      this.db.exec(`PRAGMA busy_timeout=${busyMs}; PRAGMA journal_mode=WAL;`);
       // Schema, backfills and the version check all live in core/migrations.js.
       migrate(this, database ? '' : file);
     } catch (error) {
@@ -199,13 +202,23 @@ export class Store {
     return row.bytes;
   }
 
-  listItems() {
-    return this.db.prepare('SELECT item,state,context FROM items ORDER BY item').all().map(row => {
+  // One fixed-size page, keyed by item ID. `next` is the cursor for the following page, or null.
+  listPage(after = '') {
+    const rows = this.db.prepare('SELECT item,state,context FROM items WHERE item > ? ORDER BY item LIMIT ?')
+      .all(String(after), PAGE_SIZE + 1);
+    const items = rows.slice(0, PAGE_SIZE).map(row => {
       const context = JSON.parse(row.context);
       const first = this.events(row.item).find(event => event.type === 'checked' || event.type === 'seen');
       return { id: row.item, state: row.state, problem: first?.problem || '', steward: context.steward,
         spent: context.spentMicros / 1_000_000, quorum: context.quorum, helpers: context.helpers.length };
     });
+    return { items, next: rows.length > PAGE_SIZE ? items.at(-1).id : null };
+  }
+
+  listItems() { return this.listPage().items; }
+
+  eventCount(item) {
+    return Number(this.db.prepare('SELECT count(*) AS n FROM events WHERE item=?').get(item).n);
   }
 
   read(item) { return this.replay(item); }

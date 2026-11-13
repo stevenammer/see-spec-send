@@ -39,7 +39,7 @@ export function redeemPage() {
   );
 }
 
-export function feedPage(items) {
+export function feedPage(items, next = null) {
   const cards =
     items
       .map(
@@ -50,7 +50,8 @@ export function feedPage(items) {
   return shell(
     'The work',
     '<div class="top"><h1>The work</h1><div><a class="button" href="/items/new">Post a problem</a> ' +
-      `<a href="/quest">Start a Vision Quest</a></div></div><ul class="feed">${cards}</ul>`,
+      `<a href="/quest">Start a Vision Quest</a></div></div><ul class="feed">${cards}</ul>` +
+      (next ? `<p><a href="/?after=${encodeURIComponent(next)}">Next page</a></p>` : ''),
   );
 }
 

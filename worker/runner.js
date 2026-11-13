@@ -18,9 +18,11 @@ export class Worker {
   reconcile() {
     this.db.prepare('INSERT INTO worker_heartbeat(id,at) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET at=excluded.at').run(Date.now());
     transaction(this.store, () => {
-      for (const { item } of this.db.prepare('SELECT DISTINCT item FROM events').all()) {
+      // The item cache names the items in SENDING. Only those are replayed, so an idle item costs nothing.
+      for (const { item } of this.db.prepare("SELECT item FROM items WHERE state='SENDING'").all()) {
+        if (killed(this.store)) continue;
         const context = this.store.read(item).context;
-        if (context.phase !== 'SENDING' || killed(this.store)) continue;
+        if (context.phase !== 'SENDING') continue;
         const id = digest(JSON.stringify([item, context.approval]));
         if (this.db.prepare('SELECT 1 FROM runs WHERE id=?').get(id)) continue;
         const runToken = credential();

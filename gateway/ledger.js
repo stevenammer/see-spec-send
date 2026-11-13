@@ -371,3 +371,12 @@ export function meteringSummary(store, item) {
   if (!exists) return { basis: 'legacy charged events only; gateway not configured', approvals: [] };
   return new Ledger(store).summary(item);
 }
+
+// One verification pass for a whole page of items. Each item gets the same annotation
+// meteringSummary would give it, without re-verifying every receipt once per item.
+export function meteringSummaries(store, ids) {
+  const exists = store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='gateway_receipts'").get();
+  if (!exists) return new Map(ids.map(id => [id, { basis: 'legacy charged events only; gateway not configured', approvals: [] }]));
+  const all = new Ledger(store).summary();
+  return new Map(ids.map(id => [id, { ...all, approvals: all.approvals.filter(group => group.item === id) }]));
+}

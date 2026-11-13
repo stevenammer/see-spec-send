@@ -39,6 +39,8 @@ const routeOf = raw => {
     .slice(0, 120);
 };
 
+// A try a model wrote runs no script at all. A hand-delivered try keeps its existing frame.
+const MODEL_TRY_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; script-src 'none'";
 const json = (res, status, value) => {
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
   res.end(JSON.stringify(value));
@@ -358,13 +360,17 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       }
       const artifact = url.pathname.match(/^\/api\/items\/([^/]+)\/artifact\/([a-f0-9]{64})$/);
       if (req.method === 'GET' && artifact) {
+        // A try is shown only inside the item page's sandboxed frame. Opened as a page, it would run on this hostname.
+        if (req.headers['sec-fetch-dest'] !== 'iframe') return json(res, 403, { error: 'request refused' });
         const html = store.artifact(artifact[1], artifact[2]);
         if (html === null) return json(res, 404, { error: 'not found' });
+        const modelOutput = store.events(artifact[1]).some(event =>
+          event.type === 'tried' && event.artifact_hash === artifact[2] && event.model_output === true);
         res.writeHead(200, {
           'content-type': 'text/html; charset=utf-8',
           'cache-control': 'no-store',
           'x-content-type-options': 'nosniff',
-          'content-security-policy':
+          'content-security-policy': modelOutput ? MODEL_TRY_CSP :
             "sandbox allow-scripts; default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
         });
         return res.end(html);

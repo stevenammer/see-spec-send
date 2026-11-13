@@ -1,14 +1,37 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { chmodSync, closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Ledger, digest as capabilityDigest } from '../gateway/ledger.js';
-import { validateHtml } from './builder/index.js';
+import { HTML_CAP, validateHtml } from './builder/index.js';
 import { readProviders } from '../provider/config.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const terminal = state => ['stopped', 'failed'].includes(state);
 const validId = value => /^[a-f0-9]{64}$/.test(value);
+
+// The builder's output is untrusted bytes written by a container. Open it without following links,
+// accept only a regular file, check its size before reading, and never read more than the cap.
+export function readApprovedOutput(path, cap = HTML_CAP) {
+  let fd;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch (error) {
+    if (error.code === 'ELOOP') throw Error('output could not be opened without following links');
+    throw error;
+  }
+  try {
+    const info = fstatSync(fd);
+    if (!info.isFile()) throw Error('output is not a regular file');
+    if (info.size > cap) throw Error('output exceeds the cap before reading');
+    const buffer = Buffer.alloc(cap + 1);
+    const read = readSync(fd, buffer, 0, cap + 1, 0);
+    if (read > cap) throw Error('output exceeds the cap while reading');
+    return buffer.subarray(0, read).toString('utf8');
+  } finally {
+    closeSync(fd);
+  }
+}
 
 export class DockerCli {
   run(args) { return execFileSync('docker', args, { encoding: 'utf8' }).trim(); }
@@ -96,7 +119,8 @@ export class ContainerAdapter {
     const paths = this.paths(request.id);
     // UID 65532 needs only this file and this directory. The output is write-only
     // to other host users, while the worker owns the containing job directory.
-    mkdirSync(paths.out, { recursive: true, mode: 0o733 }); chmodSync(paths.out, 0o733);
+    // The sticky bit keeps the builder from replacing or deleting files the worker placed here.
+    mkdirSync(paths.out, { recursive: true, mode: 0o1733 }); chmodSync(paths.out, 0o1733);
     if (!existsSync(paths.spec)) {
       writeFileSync(paths.spec, JSON.stringify(request.spec), { mode: 0o444, flag: 'wx' }); chmodSync(paths.spec, 0o444);
     }
@@ -115,13 +139,13 @@ export class ContainerAdapter {
   }
   status(id) {
     const row = this.row(id); if (!row) return { state: 'missing' };
-    if (row.state === 'ready') return { state: 'ready', html: validateHtml(readFileSync(row.output_path, 'utf8')) };
+    if (row.state === 'ready') return { state: 'ready', html: validateHtml(readApprovedOutput(row.output_path)) };
     if (terminal(row.state)) return { state: row.state };
     if (this.expired(row)) return this.stop(id);
     const info = this.docker.inspect(row.container_name);
     if (!info?.State?.Running) {
       if (info?.State?.ExitCode === 0 && existsSync(row.output_path)) {
-        try { const html = validateHtml(readFileSync(row.output_path, 'utf8')); this.disarm(id); this.revoke(row); this.update(id, 'ready'); return { state: 'ready', html }; }
+        try { const html = validateHtml(readApprovedOutput(row.output_path)); this.disarm(id); this.revoke(row); this.update(id, 'ready'); return { state: 'ready', html }; }
         catch { /* terminal failure below */ }
       }
       this.disarm(id); this.revoke(row); this.update(id, 'failed', 'container exited without a valid artifact'); return { state: 'failed' };

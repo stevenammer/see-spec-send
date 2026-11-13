@@ -126,7 +126,10 @@ export function itemPage(item, events, person, leader) {
     action = `<form data-artifact="true"><h2>Deliver the try</h2><label>One HTML document<textarea name="html" required></textarea></label><button>Deliver the try</button></form>`;
   if (item.state === 'TRYING') {
     const canVote = !context.ineligibleHelpers.includes(person);
-    action = `<iframe title="Playable try" sandbox="allow-scripts" src="/api/items/${encodeURIComponent(item.id)}/artifact/${encodeURIComponent(context.artifact)}"></iframe>${canVote ? `<form data-event="helped"><input type="hidden" name="artifact_hash" value="${escape(context.artifact)}"><button>It helps</button></form>` : '<p>You helped shape this one, so others say whether it helps.</p>'}`;
+    // A model-built try gets no script permission in its frame. A hand-delivered try keeps its frame.
+    const modelTry = events.some(event => event.type === 'tried' && event.artifact_hash === context.artifact && event.model_output === true);
+    const frameSandbox = modelTry ? 'sandbox=""' : 'sandbox="allow-scripts"';
+    action = `<iframe title="Playable try" ${frameSandbox} src="/api/items/${encodeURIComponent(item.id)}/artifact/${encodeURIComponent(context.artifact)}"></iframe>${canVote ? `<form data-event="helped"><input type="hidden" name="artifact_hash" value="${escape(context.artifact)}"><button>It helps</button></form>` : '<p>You helped shape this one, so others say whether it helps.</p>'}`;
   }
   if (item.state === 'HELPS')
     action = '<p class="helps">People who do this work said it helps.</p>';

@@ -63,7 +63,7 @@ but the connection is not dropped early).
 - **B19:** Integration secrets are plaintext in SQLite and command arguments, with no rotation, disable, or removal lifecycle.
 - **B20:** Changing an unsigned idempotency header bypasses inbound replay protection.
 - **B21:** Erasure exists only as a store method, not as an operator command or route.
-- **B22:** Artifacts share the app origin and the model-output HTML filter has known entity, backslash, and `srcdoc` bypasses.
+- **B22:** Artifacts still share the app origin, so a hand-delivered try opened as a top-level page can still navigate. Model-built tries now get an allowlist parse and no script permission; the `Sec-Fetch-Dest` gate and `--artifact-origin` are not built yet.
 - **B23:** Builder output may follow symlinks or be read without a size cap, and the output directory lacks a sticky bit.
 - **B24:** Builder tokens leak through Docker arguments and inspection; Docker calls and wall-clock enforcement lack independent timeouts.
 - **B25:** Provider and webhook egress can be DNS-rebound, the private-range check is incomplete, and provider files are not permission-checked.
@@ -216,3 +216,5 @@ limits, recovery behavior and remaining external-provider work.
 ## Artifact origin audit (real Chrome)
 
 `npm run test:artifact-origin` (set `PLAYWRIGHT_DIR`) delivers a hostile page through the real server and opens it in Chrome as a signed-in person. The page tries to read the parent DOM, the top DOM, the session cookie, local storage, the app API with credentials, a second origin by fetch and by image, top-level navigation, a popup, and a form post to the top page. All are blocked, the top page URL does not change, and a second local listener sees zero requests. Weakening the sandbox (adding `allow-same-origin`, dropping the CSP `sandbox`) makes the test fail on the parent-DOM read. The artifact is still served from the app origin, protected by the opaque sandbox origin rather than a separate host. A separate artifact host remains advisable before real deployment, and this test is not a substitute for one.
+
+- **B22 (partly closed):** Artifacts are served only to a sandboxed iframe (`Sec-Fetch-Dest: iframe`). The optional second-hostname mode (`--artifact-origin`) is not built: a second host can't carry the session cookie, so it needs a per-view capability token, which isn't designed yet. Browser proof (`test:artifact-origin` in real Chrome) is still owed.

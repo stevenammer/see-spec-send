@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto';
 
 const fail = message => { throw new Error(message); };
 const bytes = value => Buffer.byteLength(value, 'utf8');
-const cap = 64 * 1024;
+export const HTML_CAP = 64 * 1024;
+const cap = HTML_CAP;
 export const SYSTEM_PROMPT = 'Return one self-contained static HTML page. Use only the approved specification in the user message. Do not include scripts, external URLs, commentary, markdown, people, or comments.';
 
 export function validateHtml(html) {
@@ -13,7 +14,57 @@ export function validateHtml(html) {
   // The artifact viewer already has a restrictive CSP. Rejecting all script is simpler
   // and means a generated page cannot fetch after it has been delivered.
   if (/<script\b|\bon\w+\s*=|\b(?:https?:)?\/\//i.test(html)) fail('builder response is not a local static page');
+  if (!staticMarkupOnly(html)) fail('builder response is not a local static page');
   return html;
+}
+
+// Allowlist for model-built pages. The old regex above reads raw text, so an entity-encoded
+// value, a backslash, or an element it never named still got through. This parses each tag
+// and refuses anything outside the lists below. Text between tags is not markup, so it is not checked.
+const ALLOWED_TAGS = new Set(['html', 'head', 'meta', 'title', 'style', 'body', 'main', 'header', 'footer',
+  'section', 'article', 'div', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'dl', 'dt', 'dd',
+  'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'strong', 'em', 'b', 'i', 'small', 'br', 'hr', 'code',
+  'pre', 'blockquote', 'figure', 'figcaption']);
+const ALLOWED_ATTRIBUTES = new Set(['class', 'id', 'style', 'lang', 'charset', 'name', 'content', 'colspan', 'rowspan', 'scope']);
+const TAG = /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[^\s"'>\/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*)\s*\/?>/y;
+const ATTRIBUTE = /\s+([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+function staticMarkupOnly(html) {
+  if (/\\/.test(html)) return false;
+  for (let at = html.indexOf('<'); at >= 0; at = html.indexOf('<', at + 1)) {
+    const next = html[at + 1] || '';
+    if (next === '!') {
+      if (at === 0 && /^<!doctype html>/i.test(html)) continue;
+      return false;
+    }
+    if (next === '?' || (next === '/' && !/[a-zA-Z]/.test(html[at + 2] || ''))) return false;
+    if (!/[a-zA-Z\/]/.test(next)) continue;
+    TAG.lastIndex = at;
+    const match = TAG.exec(html);
+    if (!match) return false;
+    const [, closing, name, attributes] = match;
+    const tag = name.toLowerCase();
+    if (!ALLOWED_TAGS.has(tag)) return false;
+    if (closing && attributes.trim()) return false;
+    if (tag === 'style' && !closing) {
+      // Style text is raw: nothing inside it is a tag, but it must not load anything or escape the sandbox.
+      const start = match.index + match[0].length;
+      const end = html.toLowerCase().indexOf('</style', start);
+      if (end < 0 || /url\s*\(|@import|expression\s*\(/i.test(html.slice(start, end))) return false;
+      at = end - 1;
+      continue;
+    }
+    for (const attribute of attributes.matchAll(ATTRIBUTE)) {
+      const attributeName = attribute[1].toLowerCase();
+      if (!ALLOWED_ATTRIBUTES.has(attributeName)) return false;
+      const value = attribute[2] ?? attribute[3] ?? attribute[4] ?? '';
+      if (/[&\\]/.test(value)) return false;
+      if (attributeName === 'style') {
+        if (/url\s*\(|@import|expression\s*\(/i.test(value)) return false;
+      } else if (value.includes(':')) return false;
+    }
+    at = match.index + match[0].length - 1;
+  }
+  return true;
 }
 
 export function gateway(socket, token, input, key, model = 'fixture:text-v1') {

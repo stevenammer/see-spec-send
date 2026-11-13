@@ -21,7 +21,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/slice20.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs', 'test/slice23.test.mjs', 'test/slice24.test.mjs',
-  'test/slice19.test.mjs'];
+  'test/slice19.test.mjs', 'test/slice25.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
@@ -187,7 +187,7 @@ const mutants = [
     "if (event.anchor_kind === 'artifact') return true;"],
   ['OIDC redirect URI validation', "this.redirectUri = validUrl(config.redirectUri, 'redirect URI');",
     'this.redirectUri = config.redirectUri;'],
-  ['integration signature', "!equal(signature(row.secret, timestamp, bytes), String(supplied || '').replace(/^sha256=/, ''))", 'false'],
+  ['integration signature', "!this.secrets(row.secret).map(candidate => equal(signature(candidate, timestamp, bytes), String(supplied || '').replace(/^sha256=/, ''))).includes(true)", 'false'],
   ['integration timestamp window', 'Math.abs(this.clock() - time) > WINDOW', 'false'],
   ['integration replay protection', "if (accepted.changes !== 1) throw refused('inbound refused');", 'if (false) throw refused(\'inbound refused\');'],
   ['integration strict schema', "!Object.keys(value).every(key => ['problem', 'source_label', 'honesty_label'].includes(key))", 'false'],
@@ -269,6 +269,7 @@ const mutants = [
   ['slice24 erase requires an actor', "    const actor = value('--actor') || fail('missing --actor');", "    const actor = value('--actor') || 'cli';"],
   ['slice24 backup key is 32 bytes', "if (key.length !== 32) throw new Error('backup key file must hold exactly 32 bytes');", "if (false) throw new Error('backup key file must hold exactly 32 bytes');"],
   ['slice24 restore needs the key file',"if (manifest.encrypted && !keyFile) throw new Error('encrypted backup needs --key-file; refusing to restore');", "if (false) throw new Error('encrypted backup needs --key-file; refusing to restore');"],
+  ['slice25 artifact needs iframe fetch', "if (req.headers['sec-fetch-dest'] !== 'iframe') return json(res, 403, { error: 'request refused' });", ''],
   ['slice24 secrets sealed at rest', "this.pack(secret), rateLimit)", "secret, rateLimit)"],
   ['slice24 destination secret sealed', "parsed.toString(), this.pack(secret), includeText", "parsed.toString(), secret, includeText"],
   ['slice24 rotation overlap expires', "return previous && this.clock() < previousUntil ? [current, previous] : [current];", "return previous ? [current, previous] : [current];"],
@@ -294,6 +295,21 @@ const mutants = [
   ["slice19 TLS front end appends the client address", "proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;", "proxy_set_header X-Forwarded-For $http_x_forwarded_for;"],
   ["slice19 server unit trusts one proxy hop", " --origin ${SSS_ORIGIN} --trusted-proxy", " --origin ${SSS_ORIGIN}"],
   ["slice19 server unit keeps NoNewPrivileges", "NoNewPrivileges=true", "NoNewPrivileges=false"],
+  ['slice25 tokenizer element allowlist', "const ALLOWED_TAGS = new Set(['html',", "const ALLOWED_TAGS = new Set(['iframe', 'html',"],
+  ['slice25 tokenizer ampersand in attributes', String.raw`if (/[&\\]/.test(value)) return false;`, String.raw`if (/[\\]/.test(value)) return false;`],
+  ['slice25 tokenizer backslash anywhere', String.raw`if (/\\/.test(html)) return false;`, 'if (false) return false;'],
+  ['slice25 tokenizer colon in attributes', "} else if (value.includes(':')) return false;", '} else if (false) return false;'],
+  ['slice25 tokenizer style text', "if (tag === 'style' && !closing) {", "if (tag === 'style' && closing) {"],
+  ['slice25 container no-follow', 'constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK', 'constants.O_RDONLY | constants.O_NONBLOCK'],
+  ['slice25 container size before read', "if (info.size > cap) throw Error('output exceeds the cap before reading');", 'void cap;'],
+  ['slice25 container regular file only', "if (!info.isFile()) throw Error('output is not a regular file');", 'void info;'],
+  ['slice25 container sticky output directory', 'mode: 0o1733 }); chmodSync(paths.out, 0o1733);', 'mode: 0o733 }); chmodSync(paths.out, 0o733);'],
+  ['slice25 container output is model output', 'this.modelOutput = true;', 'this.modelOutput = false;'],
+  ['slice25 model try CSP keeps allow-scripts out', `"sandbox; default-src 'none'; style-src 'unsafe-inline'; script-src 'none'"`, `"sandbox allow-scripts; default-src 'none'; style-src 'unsafe-inline'; script-src 'none'"`],
+  ['slice25 model try CSP script source', "style-src 'unsafe-inline'; script-src 'none'\"", "style-src 'unsafe-inline'; script-src 'unsafe-inline'\""],
+  ['slice25 model try lookup', 'event.artifact_hash === artifact[2] && event.model_output === true);', 'event.artifact_hash === artifact[2] && false);'],
+  ['slice25 model try frame', `modelTry ? 'sandbox=""'`, `modelTry ? 'sandbox="allow-scripts"'`],
+  ['slice25 worker records model output', 'model_output: this.adapter.modelOutput === true,', 'model_output: false,'],
 ];
 
 function run(cwd, args) {

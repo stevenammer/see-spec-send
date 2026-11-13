@@ -69,9 +69,14 @@ directory as write-only for other host users so that the non-root builder can us
 its two mounts without gaining access to anything else.
 
 `worker/builder/index.js` reads exactly the approved three lists, sends them to
-the fixture gateway, and writes one `try.html`. Its current regex filter attempts
-to reject oversized HTML, external or protocol-relative URLs, event handlers, and
-script tags, but entity, backslash, and `srcdoc` bypasses exist. It doesn't receive
+the fixture gateway, and writes one `try.html`. Its filter first runs the old regex
+(oversized HTML, external or protocol-relative URLs, event handlers, script tags),
+then parses every tag against an element and attribute allowlist. It refuses
+backslashes anywhere, character references and colons in attribute values, and
+any `url(` or `@import` in style. Entity-encoded `srcdoc` and `href` values fail
+that allowlist. The container reads the output with no-follow, a regular-file
+check, and a size check before any read, from a sticky output directory. A
+model-built try is framed with no script permission. The builder doesn't receive
 comments, a person credential, an item session, or permission to write the item.
 The worker alone delivers the resulting bytes as `tried`.
 

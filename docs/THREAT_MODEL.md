@@ -9,6 +9,7 @@
 | Session theft | HttpOnly, Secure, Strict cookie and rotation | `cookie attributes and session rotation` |
 | Cross-site write | Origin or Referer and session CSRF nonce | `csrf cases` |
 | Privilege spoofing | Server assigns person, core resolves authority | `client cannot send role or actor` |
+| A browser forges a send, fork, steer, or Effort event | Dedicated server routes build those events from the signed-in person and current chain; generic events reject them | `F1 HTTP journey has server-built send, fork, and steer routes` |
 | Registry edits rewrite history | Accepted events hash their authority snapshot | `authority snapshots preserve history` |
 | Self-certification after a handoff | Past spec authors, stewards, and approvers cannot help | `spec authors and past stewards never become helpers` |
 | Redaction corrupts replay | Erasure stores a replayable tombstone and receipt | `redacted critical bodies replay` |

@@ -39,13 +39,23 @@ document.addEventListener('submit', async event => {
     const id = location.pathname.split('/').at(-1);
     if (form.dataset.approve) {
       await post('/api/stepup', { password: input.password });
-      await post(`/api/items/${id}/events`, {
-        type: 'approved',
-        spec_hash: input.spec_hash,
-        expected_seq: Number(input.expected_seq),
-        cap_usd: Number(input.cap_usd),
-        quorum: Number(input.quorum),
-      });
+      const approval = { type: 'approved', spec_hash: input.spec_hash,
+        cap_usd: Number(input.cap_usd), quorum: Number(input.quorum) };
+      if (input.packet_hash) Object.assign(approval, { packet_hash: input.packet_hash, reason: input.reason });
+      else approval.expected_seq = Number(input.expected_seq);
+      await post(`/api/items/${id}/events`, approval);
+    } else if (form.dataset.send) {
+      await post(`/api/items/${id}/send`, { spec_hash: input.spec_hash });
+    } else if (form.dataset.fork) {
+      const out = await post(`/api/items/${id}/fork`, { reason: input.reason });
+      location.href = `/items/${out.id}`;
+      return;
+    } else if (form.dataset.steer) {
+      await post(`/api/items/${id}/steer`, { instruction: input.instruction });
+    } else if (form.dataset.include) {
+      await post(`/api/items/${id}/events`, { type: 'revised', text: input.text,
+        base_hash: form.closest('main').querySelector('form[data-event="revised"] input[name="base_hash"]').value,
+        credits: [{ comment: input.comment, mode: 'paraphrased' }] });
     } else if (form.dataset.artifact) {
       await post(`/api/items/${id}/artifact`, { html: input.html });
     } else {

@@ -12,6 +12,8 @@ import { feedPage, htmlHeaders, itemPage, newItemPage, questPage, redeemPage, si
 import { invalid, kindOf, refused, tooLarge as tooLargeError } from '../core/errors.js';
 import { redact } from '../provider/safe-http.js';
 import { CURRENT_RULES } from '../core/machine.js';
+import { buildPacket } from '../core/packet.js';
+import { specPage } from './pages-spec.js';
 
 // Object key order does not change a retry identity. Array order is meaningful.
 const canonical = value => JSON.stringify(value, (_key, entry) =>
@@ -145,23 +147,32 @@ const validEvent = input => {
       && text(input.problem, 2000) && stringList(input.looked) && input.looked.length > 0
       && stringList(input.found) && ['already_have', 'setting', 'free', 'pay', 'build_needed'].includes(input.verdict)
       && (input.evidence === undefined || Array.isArray(input.evidence));
-    case 'specced': return exactKeys(input, ['type', 'must', 'how_we_know', 'out_of_scope'])
+    case 'specced': return (exactKeys(input, ['type', 'must', 'how_we_know', 'out_of_scope']) ||
+        (exactKeys(input, ['type', 'see_hash', 'must', 'how_we_know', 'out_of_scope', 'assumptions', 'open_questions'])
+          && hex(input.see_hash) && (input.assumptions === undefined || stringList(input.assumptions))
+          && (input.open_questions === undefined || stringList(input.open_questions))))
       && stringList(input.must) && stringList(input.how_we_know) && input.how_we_know.length > 0 && stringList(input.out_of_scope);
     case 'approved': return (exactKeys(input, ['type', 'cap_usd', 'quorum'])
         || (exactKeys(input, ['type', 'spec_hash', 'expected_seq', 'cap_usd', 'quorum'])
-          && hex(input.spec_hash) && Number.isSafeInteger(input.expected_seq) && input.expected_seq >= 0))
+          && hex(input.spec_hash) && Number.isSafeInteger(input.expected_seq) && input.expected_seq >= 0)
+        || (exactKeys(input, ['type', 'spec_hash', 'packet_hash', 'reason', 'cap_usd', 'quorum'])
+          && hex(input.spec_hash) && hex(input.packet_hash) && text(input.reason, 2000)))
       && typeof input.cap_usd === 'number' && Number.isInteger(input.quorum) && input.quorum >= 1;
     case 'returned': case 'shelved': case 'checked_in':
       return exactKeys(input, ['type', input.type === 'shelved' ? 'reason' : 'note']) && text(input[input.type === 'shelved' ? 'reason' : 'note'], 2000);
     case 'helped': return exactKeys(input, ['type', 'artifact_hash']) && hex(input.artifact_hash);
     case 'steward_changed': return exactKeys(input, ['type', 'steward', 'reason']) && text(input.steward, 64)
       && (input.reason === undefined || text(input.reason, 2000));
-    case 'revised': return exactKeys(input, ['type', 'text', 'base_hash']) && text(input.text, 4000) && hex(input.base_hash);
+    case 'revised': return (exactKeys(input, ['type', 'text', 'base_hash']) ||
+        (exactKeys(input, ['type', 'text', 'base_hash', 'credits']) && Array.isArray(input.credits)
+          && input.credits.every(credit => credit && hex(credit.comment) && ['quoted', 'paraphrased'].includes(credit.mode))))
+      && text(input.text, 4000) && hex(input.base_hash);
     case 'commented': return exactKeys(input, ['type', 'comment', 'anchor_kind', 'anchor_hash', 'parent', 'kind'])
       && text(input.comment, 4000) && ((input.anchor_kind === undefined && input.anchor_hash === undefined)
         || (['see', 'spec', 'artifact'].includes(input.anchor_kind) && hex(input.anchor_hash)))
       && (input.parent === undefined || hex(input.parent))
       && (input.kind === undefined || ['comment', 'question', 'concern'].includes(input.kind));
+    case 'sent': case 'forked': case 'steered': return false;
     default: return false;
   }
 };
@@ -313,6 +324,11 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (req.method === 'GET' && url.pathname === '/quest') {
         return page(res, questPage(session.person));
       }
+      const specView = url.pathname.match(/^\/items\/([^/]+)\/spec$/);
+      if (req.method === 'GET' && specView) {
+        const state = store.read(specView[1]);
+        return page(res, specPage({ id: specView[1], ...state }, store.events(specView[1]), session.person));
+      }
       const view = url.pathname.match(/^\/items\/([^/]+)$/);
       if (req.method === 'GET' && view) {
         const state = store.read(view[1]);
@@ -321,7 +337,8 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           auth.reviewApproval(sessionToken, view[1], state.context.specHash, events.length);
         return page(
           res,
-          itemPage({ id: view[1], ...state }, events, session.person, leader),
+          itemPage({ id: view[1], ...state, packet: state.context.sent && store.artifact(view[1], state.context.sent.packetHash),
+            effort: store.db.prepare('SELECT kind,state,last_error FROM effort_jobs WHERE item=? ORDER BY created').all(view[1]) }, events, session.person, leader),
         );
       }
       if (req.method === 'GET' && url.pathname === '/api/items') {
@@ -375,6 +392,43 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         if (!questModel) return json(res, 404, { error: 'not found' });
         if (typeof questModel.draft !== 'function') return json(res, 404, { error: 'not found' });
         return json(res, 200, await questModel.draft(session.person, input, req.headers['idempotency-key'] || randomUUID()));
+      }
+      const send = url.pathname.match(/^\/api\/items\/([^/]+)\/send$/);
+      if (req.method === 'POST' && send) {
+        if (!exactKeys(input, ['spec_hash']) || !hex(input.spec_hash)) return json(res, 409, { error: 'request refused' });
+        const events = store.events(send[1]); const first = events[0];
+        const spec = events.find(event => event.type === 'specced' && event.body_hash === input.spec_hash);
+        const see = events.filter(event => event.type === 'revised').at(-1)?.text || first?.original;
+        if (!first || !spec) throw refused('current spec required');
+        const packet = buildPacket({ original: first.original, see, spec: { ...spec, hash: input.spec_hash }, credits: [],
+          comments: events.filter(event => event.type === 'commented'), gatewayPolicy: {}, sandboxLimits: {} });
+        const packet_hash = store.putArtifact(send[1], JSON.stringify(packet));
+        const result = store.append(send[1], { type: 'sent', actor: session.person, spec_hash: input.spec_hash, packet_hash,
+          at: new Date().toISOString() }, { idem: req.headers['idempotency-key'] || randomUUID() });
+        return json(res, 201, { ...result, packet_hash });
+      }
+      const fork = url.pathname.match(/^\/api\/items\/([^/]+)\/fork$/);
+      if (req.method === 'POST' && fork) {
+        if (!exactKeys(input, ['reason']) || !text(input.reason, 2000)) return json(res, 409, { error: 'request refused' });
+        const events = store.events(fork[1]); const parent = store.eventRows(fork[1]).at(-1); const first = events[0];
+        const current = events.filter(event => event.type === 'revised').at(-1)?.text || first?.original;
+        if (!parent || !first) throw refused('parent required');
+        const id = randomUUID();
+        const result = store.append(id, { type: 'forked', actor: session.person, original: current, rules: CURRENT_RULES,
+          parent: { item: fork[1], seq: parent.seq, hash: parent.hash }, at: new Date().toISOString() },
+        { idem: req.headers['idempotency-key'] || `fork:${fork[1]}:${parent.hash}:${session.person}` });
+        return json(res, 201, { id, ...result });
+      }
+      const steer = url.pathname.match(/^\/api\/items\/([^/]+)\/steer$/);
+      if (req.method === 'POST' && steer) {
+        if (!exactKeys(input, ['instruction', 'source', 'mode']) || !text(input.instruction, 4000)
+          || (input.source !== undefined && !hex(input.source))
+          || (input.mode !== undefined && !['quoted', 'paraphrased'].includes(input.mode))) return json(res, 409, { error: 'request refused' });
+        const context = store.read(steer[1]).context;
+        const result = store.append(steer[1], { type: 'steered', actor: session.person, instruction: input.instruction,
+          ...(input.source ? { source: input.source, mode: input.mode || 'paraphrased' } : {}), approval: context.approval,
+          spec_hash: context.specHash, at: new Date().toISOString() }, { idem: req.headers['idempotency-key'] || randomUUID() });
+        return json(res, 201, result);
       }
       const artifact = url.pathname.match(/^\/api\/items\/([^/]+)\/artifact\/([a-f0-9]{64})$/);
       if (req.method === 'GET' && artifact) {
@@ -443,9 +497,9 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       }
       if (input.type === 'commented') {
         const state = store.read(match[1]).context;
-        if ((state.specHash || state.artifact) &&
-            !((input.anchor_kind === 'spec' && input.anchor_hash === state.specHash) ||
-              (input.anchor_kind === 'artifact' && input.anchor_hash === state.artifact))) {
+        const current = { see: state.seeHash,
+          spec: state.specSeeHash === state.seeHash ? state.specHash : null, artifact: state.artifact };
+        if (current[input.anchor_kind] !== input.anchor_hash) {
           return json(res, 409, { error: 'request refused' });
         }
       }

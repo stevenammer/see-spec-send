@@ -20,7 +20,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/slice22.test.mjs',
   'test/slice20.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
-  'test/mutation-security.test.mjs', 'test/slice23.test.mjs'];
+  'test/mutation-security.test.mjs', 'test/slice23.test.mjs', 'test/slice24.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
@@ -259,6 +259,21 @@ const mutants = [
   ['slice23 admin command writes audit row', '    appendAudit(store.db, { at: new Date().toISOString(), command, outcome, detail });', '    void [command, outcome, detail];'],
   ['slice23 audit chain checked', 'if (row.prev !== previous || row.seal !== seal(previous, row)) {', 'if (false) {'],
   ['slice23 verify reports the audit chain', '    bad ||= !audit.ok;', '    bad ||= false;'],
+  ['slice24 replay key ignores the idempotency key', "update(`${timestamp}|`).update(bytes)", "update(`${timestamp}|${idem}|`).update(bytes)"],
+  ['slice24 erase requires a reason', "    value('--reason') || fail('missing --reason');", "    value('--reason') || 'unrecorded';"],
+  ['slice24 erase audits the reason', "'--actor', '--reason', '--body-hash'];", "'--actor', '--body-hash'];"],
+  ['slice24 disabled source refused', 'FROM integration_sources WHERE name=? AND enabled=1', 'FROM integration_sources WHERE name=?'],
+  ['slice24 remove requires disable first', 'if (row.enabled !== 0) throw Error(', 'if (false) throw Error('],
+  ['slice24 encrypted backup is sealed', 'if (keyFile) writeFileSync(target, sealBackup(bytes, key));', 'if (keyFile) writeFileSync(target, bytes);'],
+  ['slice24 erase requires an actor', "    const actor = value('--actor') || fail('missing --actor');", "    const actor = value('--actor') || 'cli';"],
+  ['slice24 backup key is 32 bytes', "if (key.length !== 32) throw new Error('backup key file must hold exactly 32 bytes');", "if (false) throw new Error('backup key file must hold exactly 32 bytes');"],
+  ['slice24 restore needs the key file',"if (manifest.encrypted && !keyFile) throw new Error('encrypted backup needs --key-file; refusing to restore');", "if (false) throw new Error('encrypted backup needs --key-file; refusing to restore');"],
+  ['slice24 secrets sealed at rest', "this.pack(secret), rateLimit)", "secret, rateLimit)"],
+  ['slice24 destination secret sealed', "parsed.toString(), this.pack(secret), includeText", "parsed.toString(), secret, includeText"],
+  ['slice24 rotation overlap expires', "return previous && this.clock() < previousUntil ? [current, previous] : [current];", "return previous ? [current, previous] : [current];"],
+  ['slice24 rotation keeps old secret', "this.pack(secret, old, this.clock() + hours * 3_600_000)", "this.pack(secret, null, 0)"],
+  ['slice24 key file owner-only', "if (statSync(path).mode & 0o077) { chmodSync(path, 0o600); }", ""],
+  ['slice24 sealed value authenticated', "decipher.setAuthTag(raw.subarray(12, 28));", "decipher.setAuthTag(Buffer.alloc(16));"],
 ];
 
 function run(cwd, args) {
@@ -285,7 +300,7 @@ for (const [name, find, replace] of selected) {
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
   const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'cli.js',
     'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
-    'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js'];
+    'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {

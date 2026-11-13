@@ -62,8 +62,9 @@ const ADMIN = {
   token: args => (args[0] === 'create' ? 'token create' : null),
   kill: args => (['set', 'clear'].includes(args[0]) ? `kill ${args[0]}` : null),
   provider: args => (['add', 'default', 'remove', 'disable'].includes(args[0]) ? `provider ${args[0]}` : null),
+  erase: () => 'erase',
   integration: args => {
-    if (['source', 'destination'].includes(args[0]) && args[1] === 'add') return `integration ${args[0]} add`;
+    if (['source', 'destination'].includes(args[0]) && ['add', 'disable', 'remove'].includes(args[1])) return `integration ${args[0]} ${args[1]}`;
     return args[0] === 'outbox' && ['retry', 'drop', 'deliver'].includes(args[1]) ? `outbox ${args[1]}` : null;
   },
   gateway: args => {
@@ -74,7 +75,7 @@ const ADMIN = {
   },
 };
 // Operator-chosen names and IDs only. A secret is never one of these flags, so it can never be recorded.
-const AUDITED_FLAGS = ['--id', '--name', '--person', '--item', '--org', '--role', '--digest', '--from', '--to'];
+const AUDITED_FLAGS = ['--id', '--name', '--person', '--item', '--org', '--role', '--digest', '--from', '--to', '--actor', '--reason', '--body-hash'];
 const auditDetail = args => JSON.stringify(Object.fromEntries(AUDITED_FLAGS.filter(flag => args.includes(flag))
   .map(flag => [flag, args[args.indexOf(flag) + 1]])));
 
@@ -123,7 +124,7 @@ async function run(argv, env, write) {
   // Restore must run before opening SQLite. Opening a missing target would create it.
   if (command === 'restore') {
     const source = value('--from') || fail('missing --from');
-    const manifest = restoreBackup(source, file);
+    const manifest = restoreBackup(source, file, { keyFile: value('--key-file') || null });
     write(`restored and verified: ${manifest.events} events; the restored copy starts stopped (kill set)`);
     return;
   }
@@ -169,7 +170,25 @@ async function run(argv, env, write) {
       if (!Number.isSafeInteger(id)) fail('--id must be a whole number');
       if (action === 'retry') integrations.retry(id); else integrations.drop(id);
       write(`outbox row ${id} ${action === 'retry' ? 'set to pending' : 'dropped'}`);
+    } else if (['source', 'destination'].includes(kind) && action === 'rotate') {
+      if (args.includes('--secret')) { store.close(); write(SECRET_REFUSAL); return 2; }
+      const name = value('--name') || fail('missing --name');
+      integrations.rotate(kind, name, secretFrom(args, env), Number(value('--overlap-hours') || '24'));
+      write(`integration ${kind} ${name} rotated; the old secret also works for ${value('--overlap-hours') || '24'} hours`);
+    } else if (['source', 'destination'].includes(kind) && ['disable', 'remove'].includes(action)) {
+      const name = value('--name') || fail('missing --name');
+      if (action === 'disable') integrations.setEnabled(kind, name, false); else integrations.remove(kind, name);
+      write(`integration ${kind} ${name} ${action === 'disable' ? 'disabled' : 'removed'}`);
     } else fail('expected integration source, destination, or outbox command');
+  } else if (command === 'erase') {
+    // Removes the body text from the live database. Backups and earlier copies are not changed.
+    // The actor must be a registered leader or steward of the item. The reason is written to the admin audit.
+    const item = value('--item') || fail('missing --item');
+    const bodyHash = value('--body-hash') || fail('missing --body-hash');
+    const actor = value('--actor') || fail('missing --actor');
+    value('--reason') || fail('missing --reason');
+    store.erase(item, bodyHash, actor, new Date().toISOString());
+    write(`erased body ${bodyHash} in item ${item}`);
   } else if (command === 'provider') {
     const subcommand = args[0];
     if (subcommand === 'list') {
@@ -328,7 +347,9 @@ async function run(argv, env, write) {
   } else if (command === 'backup') {
     const target = value('--to') || fail('missing --to');
     if (existsSync(target)) fail('backup target exists');
-    const manifest = writeBackup(store, target);
+    // --encrypt-to names the key file. The key is never written into the backup.
+    const keyFile = args.includes('--encrypt-to') ? (value('--encrypt-to') || fail('--encrypt-to needs a key file path')) : null;
+    const manifest = writeBackup(store, target, { keyFile });
     write(JSON.stringify({ backup: target, events: manifest.events, items: manifest.items, sha256: manifest.sha256 }));
   } else if (command === 'serve') {
     const port = Number(value('--port') || '8080');

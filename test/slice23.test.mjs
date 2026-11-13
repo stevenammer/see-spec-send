@@ -183,7 +183,9 @@ test('integration secrets are never accepted as a literal on the command line', 
   assert.deepEqual(reading.list('source').map(row => row.name), ['fromenv']);
   assert.deepEqual(reading.list('destination').map(row => row.name), ['fromfile']);
   const raw = new DatabaseSync(file, { readOnly: true }).prepare('SELECT secret FROM integration_destinations').get().secret;
-  assert.equal(raw, `${SECRET}-file`);
+  // Slice 24: stored sealed, never as plaintext. The value is recoverable only with the key file.
+  assert.equal(raw.includes(SECRET), false);
+  assert.equal(reading.unpack(raw).current, `${SECRET}-file`);
   stored.close();
 
   const piped = spawnSync(process.execPath, [new URL('../cli.js', import.meta.url).pathname, 'integration', 'source', 'add', '--name', 'stdinsrc', '--secret-stdin'],

@@ -2,7 +2,14 @@ import { createHmac, createHash, timingSafeEqual, randomBytes } from 'node:crypt
 import { checkedUrl, redact } from '../provider/safe-http.js';
 
 const WINDOW = 5 * 60_000;
+// While a row is sending, next_at holds its lease expiry. A lapsed lease means the sender died.
+const LEASE = 2 * 60_000;
 const text = value => typeof value === 'string' && value.length > 0;
+
+// Returns rows whose sender died mid-send back to pending. Called on each watchdog tick.
+export function recoverStaleSending(store, now) {
+  return store.db.prepare("UPDATE integration_outbox SET state='pending' WHERE state='sending' AND next_at<?").run(now).changes;
+}
 const signature = (secret, timestamp, bytes) => createHmac('sha256', secret).update(`${timestamp}.`).update(bytes).digest('hex');
 const equal = (left, right) => {
   const a = Buffer.from(left || ''); const b = Buffer.from(right || '');
@@ -78,7 +85,7 @@ export class Integrations {
     const row = this.db.prepare(`SELECT o.*,d.url,d.secret,d.allow_loopback FROM integration_outbox o JOIN integration_destinations d ON d.name=o.destination
       WHERE o.state='pending' AND o.next_at<=? AND d.enabled=1 ORDER BY o.id LIMIT 1`).get(this.clock());
     if (!row) return false;
-    const claim = this.db.prepare("UPDATE integration_outbox SET state='sending' WHERE id=? AND state='pending'").run(row.id);
+    const claim = this.db.prepare("UPDATE integration_outbox SET state='sending',next_at=? WHERE id=? AND state='pending'").run(this.clock() + LEASE, row.id);
     if (claim.changes !== 1) return false;
     const bytes = Buffer.from(row.payload); const timestamp = String(this.clock());
     try {
@@ -92,6 +99,21 @@ export class Integrations {
         .run(state, attempts, this.clock() + Math.min(60 * 60_000, 1000 * 2 ** attempts), safeError(error), row.id);
     }
     return true;
+  }
+
+  // Operator actions on one outbox row. Each one leaves a worker_history line.
+  audit(action) { this.db.prepare('INSERT INTO worker_history(action,at) VALUES(?,?)').run(action, new Date(this.clock()).toISOString()); }
+
+  retry(id) {
+    const changed = this.db.prepare("UPDATE integration_outbox SET state='pending',attempts=0,next_at=?,last_error=NULL WHERE id=? AND state='dead'").run(this.clock(), id).changes;
+    if (changed !== 1) throw Error('no dead outbox row with that id');
+    this.audit(`outbox.retry:${id}`);
+  }
+
+  drop(id) {
+    const changed = this.db.prepare("UPDATE integration_outbox SET state='dropped' WHERE id=? AND state IN ('dead','pending')").run(id).changes;
+    if (changed !== 1) throw Error('no dead or pending outbox row with that id');
+    this.audit(`outbox.drop:${id}`);
   }
 
   outbox() { return this.db.prepare('SELECT id,destination,item,seq,event_type,stage,state,attempts,next_at,created,delivered,last_error FROM integration_outbox ORDER BY id').all(); }

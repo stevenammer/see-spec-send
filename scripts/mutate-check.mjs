@@ -13,9 +13,11 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/provider.test.mjs', 'test/builder.test.mjs',
   'test/slice13.test.mjs',
   'test/slice14.test.mjs',
+  'test/slice16.test.mjs',
   'test/slice17.test.mjs',
   'test/slice18.test.mjs',
   'test/slice21.test.mjs',
+  'test/slice20.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
@@ -51,8 +53,8 @@ const mutants = [
   ['worker stopped token', "run.status === 'stopped' || (event.type !== 'failed' && run.status !== 'active')", 'false'],
   ['worker store kill gate', "if (['tried', 'charged'].includes(event.type) && killed(store))", 'if (false)'],
   ['watchdog stale heartbeat', 'now - heartbeat.at > heartbeatMs', 'false'],
-  ['watchdog unrecoverable outbox', "state IN ('dead','sending')", "state IN ('delivered')"],
-  ['watchdog emergency stop', 'setKill(store, true);', 'setKill(store, false);'],
+  ['watchdog unrecoverable outbox', "state = 'dead' AND", "state = 'delivered' AND"],
+  ['watchdog emergency stop', 'setKill(store, true, { docker });', 'setKill(store, false, { docker });'],
   ['portable Quest schema binding', 'JSON.stringify(value.memo) !== JSON.stringify(expected)', 'false'],
   ['portable Quest explicit approval', "if (approved !== true) throw Error('explicit approval required');", 'if (false)'],
   ['fake idempotent start', 'INSERT OR IGNORE INTO fake_jobs VALUES(?,?,?,?)', 'INSERT INTO fake_jobs VALUES(?,?,?,?)'],
@@ -219,6 +221,26 @@ const mutants = [
   ["migrate check changes the database", "if (command === 'migrate' && args.includes('--check')) {", "if (false) {"],
   ["legacy column errors are swallowed", "if (!present) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);", "if (!present) { try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`); } catch {} }"],
   ["migration trusts the unlocked version read", "const current = userVersion(db); // in-lock-recheck", "const current = version; // in-lock-recheck"],
+  ['guard refuses a missing database', "if (command !== 'init' && !addsSourceToNewDatabase && !existsSync(file)) fail(", "if (false) fail("],
+  ['kill set file failure stops the database latch', '} catch (error) { report.file = { ok: false, error: reason(error) }; }', '} catch (error) { throw error; }'],
+  ['kill set says stopped only when both latches are set', "fail('not stopped: fix", "write('not stopped: fix"],
+  ['watchdog alerts a dead row once', '.filter(id => !known.has(`watchdog.alert:outbox:${id}`));', '.filter(() => true);'],
+  ['dead outbox row never stops the install', "  for (const id of found.staleRuns) keys.push(`run:${id}`);\n", "  for (const id of found.staleRuns) keys.push(`run:${id}`);\n  for (const id of found.unrecoverableOutbox) keys.push(`outbox:${id}`);\n"],
+  ['watchdog remembers the rows it saw', '.filter(key => !seen.has(key));', '.filter(() => true);'],
+  ['watchdog stops named builders', 'if (docker) report.builders = stopBuilders(store, docker);', 'if (docker) report.builders = [];'],
+  ['builder survivor is reported', 'ok = !docker.inspect(row.container_name)?.State?.Running;', 'ok = true;'],
+  ['stale sending returns to pending', "WHERE state='sending' AND next_at<?", "WHERE state='sending' AND 0 AND next_at<?"],
+  ['outbox claim takes a lease', 'this.clock() + LEASE, row.id', 'this.clock() - LEASE, row.id'],
+  ['outbox retry is audited', 'this.audit(`outbox.retry:${id}`);', 'void id;'],
+  ['outbox drop is audited', 'this.audit(`outbox.drop:${id}`);', 'void id;'],
+  ['backup drops events', "store.db.prepare('VACUUM INTO ?').run(target);", "store.db.prepare('VACUUM INTO ?').run(target); { const lossy = new Store(target); lossy.db.exec('DELETE FROM events WHERE seq=(SELECT max(seq) FROM events)'); lossy.close(); }"],
+  ['backup verifies the copy', "if (integrity !== 'ok' || bad.length) {", 'if (false) {'],
+  ['backup manifest hash', 'sha256: sha(bytes),', "sha256: '',"],
+  ['restore refuses stray wal and shm', 'if (existsSync(`${file}${stray}`))', 'if (false)'],
+  ['restore refuses a manifest mismatch', 'manifest.sha256 !== sha(bytes)', 'false'],
+  ['restore refuses a missing manifest', 'if (!existsSync(manifestPath(source)))', 'if (false)'],
+  ['restore verifies the copy', "if (integrity !== 'ok' || rows.some(row => !row.ok)) throw", 'if (false) throw'],
+  ['restore leaves kill set', 'setKill(store, true);', 'setKill(store, false);'],
 ];
 
 function run(cwd, args) {
@@ -245,7 +267,7 @@ for (const [name, find, replace] of selected) {
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
   const files = ['app/auth.js', 'app/http.js', 'app/pages.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'cli.js',
     'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
-    'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js'];
+    'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/http.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js'];
   let changed = false;
   let changedFile = '';
   for (const file of files) {

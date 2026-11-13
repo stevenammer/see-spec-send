@@ -1,9 +1,11 @@
-import { chmodSync, constants, copyFileSync, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { Store } from './core/store.js';
+import { restoreBackup, writeBackup } from './core/backup.js';
 import { Worker } from './worker/runner.js';
 import { killed, setKill } from './worker/control.js';
 import { watchdog } from './worker/watchdog.js';
+import { DockerCli } from './worker/container.js';
 import { Ledger, fixturePolicy } from './gateway/ledger.js';
 import { Gateway, createGatewayServer, providerGateway } from './gateway/http.js';
 import { QuestGateway } from './gateway/quest.js';
@@ -14,7 +16,7 @@ import { redact } from './provider/safe-http.js';
 import { SYSTEM_PROMPT } from './worker/builder/index.js';
 import { Auth } from './app/auth.js';
 import { createServerFor } from './app/http.js';
-import { Integrations } from './app/integrations.js';
+import { Integrations, recoverStaleSending } from './app/integrations.js';
 import { questModelService } from './provider/quest-service.js';
 import { validateCompletion } from './provider/index.js';
 import { migrationStatus, SCHEMA_VERSION, userVersion } from './core/migrations.js';
@@ -33,11 +35,8 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
   // Restore must run before opening SQLite. Opening a missing target would create it.
   if (command === 'restore') {
     const source = value('--from') || fail('missing --from');
-    if (!existsSync(source)) fail('backup missing');
-    if (existsSync(file)) fail('restore target already exists');
-    copyFileSync(source, file, constants.COPYFILE_EXCL);
-    chmodSync(file, 0o600);
-    write('restored');
+    const manifest = restoreBackup(source, file);
+    write(`restored and verified: ${manifest.events} events; the restored copy starts stopped (kill set)`);
     return;
   }
   // Reporting never opens the store for writing. --check reads the file and nothing else.
@@ -45,6 +44,11 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
     write(JSON.stringify(migrationStatus(file)));
     return;
   }
+  // Opening a missing file would create an empty database with no stop latch and report success.
+  // Known exception, owner decision pending: `integration source add` still creates the file because
+  // test/slice13.test.mjs ("integration CLI never prints secrets") depends on that behavior.
+  const addsSourceToNewDatabase = command === 'integration' && args[0] === 'source' && args[1] === 'add';
+  if (command !== 'init' && !addsSourceToNewDatabase && !existsSync(file)) fail(`database missing at ${file}; nothing was created`);
   const store = new Store(file);
   if (command === 'migrate') {
     write(JSON.stringify({ current: userVersion(store.db), target: SCHEMA_VERSION }));
@@ -67,8 +71,14 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
     } else if (kind === 'outbox' && action === 'list') {
       for (const row of integrations.outbox()) write(JSON.stringify(row));
     } else if (kind === 'outbox' && action === 'deliver') {
+      recoverStaleSending(store, Date.now());
       let delivered = 0; while (await integrations.deliverOnce()) delivered += 1;
       write(`outbox attempts: ${delivered}`);
+    } else if (kind === 'outbox' && (action === 'retry' || action === 'drop')) {
+      const id = Number(value('--id') || fail('missing --id'));
+      if (!Number.isSafeInteger(id)) fail('--id must be a whole number');
+      if (action === 'retry') integrations.retry(id); else integrations.drop(id);
+      write(`outbox row ${id} ${action === 'retry' ? 'set to pending' : 'dropped'}`);
     } else fail('expected integration source, destination, or outbox command');
   } else if (command === 'provider') {
     const subcommand = args[0];
@@ -155,8 +165,20 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
     } else fail('expected gateway fixture-enable, policy set, mint, revoke, status, verify, holds list, holds release, serve-fixture, or serve-provider');
   } else if (command === 'kill') {
     if (!['set', 'clear', 'status'].includes(args[0])) fail('expected kill set, clear, or status');
-    if (args[0] !== 'status') setKill(store, args[0] === 'set');
-    write(killed(store) ? 'stopped' : 'clear');
+    if (args[0] === 'set') {
+      // Both latches are attempted and each is reported. "stopped" is printed only when all of them are set.
+      const report = setKill(store, true, { docker: new DockerCli() });
+      write(`file latch: ${report.file.ok ? 'set' : `failed (${report.file.error})`}`);
+      write(`database latch: ${report.database.ok ? 'set' : `failed (${report.database.error})`}`);
+      for (const builder of report.builders) write(`builder ${builder.name}: ${builder.ok ? 'stopped' : `NOT stopped (${builder.error})`}`);
+      if (!report.file.ok || !report.database.ok || report.builders.some(builder => !builder.ok)) {
+        fail('not stopped: fix the failing latch or container, then run kill set again');
+      }
+      write('stopped');
+    } else {
+      if (args[0] === 'clear') setKill(store, false);
+      write(killed(store) ? 'stopped' : 'clear');
+    }
   } else if (command === 'worker') {
     const worker = new Worker(store);
     do {
@@ -164,7 +186,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
       if (!args.includes('--once')) await new Promise(resolve => setTimeout(resolve, 250));
     } while (!args.includes('--once'));
   } else if (command === 'watchdog') {
-    const result = watchdog(store, { heartbeatMs: Number(value('--heartbeat-ms') || 15000), runMs: Number(value('--run-ms') || 900000), outboxMs: Number(value('--outbox-ms') || 900000) });
+    const result = watchdog(store, { heartbeatMs: Number(value('--heartbeat-ms') || 15000), runMs: Number(value('--run-ms') || 900000), outboxMs: Number(value('--outbox-ms') || 900000), docker: new DockerCli() });
     write(JSON.stringify(result));
   } else if (command === 'init') {
     if (auth.db.prepare('SELECT 1 FROM users LIMIT 1').get()) fail('already initialized');
@@ -212,11 +234,9 @@ export async function main(argv = process.argv.slice(2), env = process.env, writ
     write(store.exportJsonl());
   } else if (command === 'backup') {
     const target = value('--to') || fail('missing --to');
-    if (!existsSync(file)) fail('database missing');
     if (existsSync(target)) fail('backup target exists');
-    auth.db.exec('PRAGMA wal_checkpoint(FULL)');
-    copyFileSync(file, target, constants.COPYFILE_EXCL);
-    chmodSync(target, 0o600);
+    const manifest = writeBackup(store, target);
+    write(JSON.stringify({ backup: target, events: manifest.events, items: manifest.items, sha256: manifest.sha256 }));
   } else if (command === 'serve') {
     const port = Number(value('--port') || '8080');
     const origin = value('--origin') || `http://127.0.0.1:${port}`;

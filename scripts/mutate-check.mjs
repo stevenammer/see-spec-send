@@ -21,7 +21,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/slice20.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs', 'test/slice23.test.mjs', 'test/slice24.test.mjs',
-  'test/slice19.test.mjs', 'test/slice25.test.mjs'];
+  'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
@@ -310,6 +310,18 @@ const mutants = [
   ['slice25 model try lookup', 'event.artifact_hash === artifact[2] && event.model_output === true);', 'event.artifact_hash === artifact[2] && false);'],
   ['slice25 model try frame', `modelTry ? 'sandbox=""'`, `modelTry ? 'sandbox="allow-scripts"'`],
   ['slice25 worker records model output', 'model_output: this.adapter.modelOutput === true,', 'model_output: false,'],
+  ['slice26 egress dials the checked address', 'connector(pin.url, { address: pin.address,', 'connector(pin.url, { address: undefined,'],
+  ['slice26 egress pins the default lookup', 'lookup: (_host, options, done) => (options?.all ? done(null, [{ address, family }]) : done(null, address, family)) }', 'lookup: undefined }'],
+  ['slice26 CGNAT range reserved', "'100.64.0.0/10'", "'100.64.0.0/32'"],
+  ['slice26 benchmark range reserved', "'198.18.0.0/15'", "'198.18.0.0/32'"],
+  ['slice26 IPv4-mapped IPv6 checked as IPv4', 'if (top96 === 0xffffn || top96 === (0x0064ff9bn << 64n)) return reservedV4(', 'if (top96 === (0x0064ff9bn << 64n)) return reservedV4('],
+  ['slice26 IPv6 literal brackets stripped', "const literal = hostname => hostname.startsWith('[') ? hostname.slice(1, -1) : hostname;", 'const literal = hostname => hostname;'],
+  ['slice26 providers file beside the database', "join(dirname(resolve(env.SSS_DB || 'sss.db')), 'sss.providers.json')", "resolve('sss.providers.json')"],
+  ['slice26 providers file writable refused', 'if (stat.mode & 0o022) throw', 'if (false) throw'],
+  ['slice26 providers file owner refused', 'if (stat.uid !== uid) throw', 'if (false) throw'],
+  ['slice26 providers file checked on read', 'assertOwnerOnly(statSync(file));', 'void file;'],
+  ['slice26 API key file checked', 'readKeyFile(provider.apiKeyFile)', "readFileSync(provider.apiKeyFile, 'utf8').trim()"],
+  ['slice26 local command abort wired', "request.signal?.addEventListener('abort', abort, { once: true });", 'void abort;'],
 ];
 
 function run(cwd, args) {

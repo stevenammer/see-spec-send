@@ -1,5 +1,5 @@
 import { createHmac, createHash, timingSafeEqual, randomBytes } from 'node:crypto';
-import { checkedUrl, redact } from '../provider/safe-http.js';
+import { resolvePinned, pinnedFetch, redact } from '../provider/safe-http.js';
 import { refused } from '../core/errors.js';
 import { keyFileFor, loadKey, seal, open } from '../core/secrets.js';
 
@@ -34,8 +34,8 @@ const strictSeen = value => {
 const safeError = error => redact(String(error?.message || 'delivery failed')).slice(0, 300);
 
 export class Integrations {
-  constructor(store, { clock = () => Date.now(), fetcher = fetch, origin = 'https://localhost', keyFile = null } = {}) {
-    this.store = store; this.db = store.db; this.clock = clock; this.fetcher = fetcher; this.origin = origin;
+  constructor(store, { clock = () => Date.now(), fetcher = pinnedFetch, resolver, origin = 'https://localhost', keyFile = null } = {}) {
+    this.store = store; this.db = store.db; this.clock = clock; this.fetcher = fetcher; this.resolver = resolver; this.origin = origin;
     this.buckets = new Map();
     this.keyFile = keyFile;
     this.keyBytes = null;
@@ -132,8 +132,8 @@ export class Integrations {
     const bytes = Buffer.from(row.payload); const timestamp = String(this.clock());
     try {
       const secrets = this.secrets(row.secret);
-      const url = await checkedUrl(row.url, { hosts: [new URL(row.url).hostname], allowPrivate: row.allow_loopback === 1 });
-      const response = await this.fetcher(url, { method: 'POST', redirect: 'error', headers: { 'content-type': 'application/json', 'x-sss-timestamp': timestamp, 'x-sss-signature': `sha256=${signature(secrets[0], timestamp, bytes)}`, ...(secrets[1] ? { 'x-sss-signature-previous': `sha256=${signature(secrets[1], timestamp, bytes)}` } : {}), 'idempotency-key': `outbox-${row.id}` }, body: bytes, signal: AbortSignal.timeout(10_000) });
+      const pin = await resolvePinned(row.url, { hosts: [new URL(row.url).hostname], allowPrivate: row.allow_loopback === 1, resolver: this.resolver });
+      const response = await this.fetcher(pin.url, { method: 'POST', redirect: 'error', address: pin.address, family: pin.family, headers: { 'content-type': 'application/json', 'x-sss-timestamp': timestamp, 'x-sss-signature': `sha256=${signature(secrets[0], timestamp, bytes)}`, ...(secrets[1] ? { 'x-sss-signature-previous': `sha256=${signature(secrets[1], timestamp, bytes)}` } : {}), 'idempotency-key': `outbox-${row.id}` }, body: bytes, signal: AbortSignal.timeout(10_000) });
       if (!response.ok) throw Error(`destination HTTP ${response.status}`);
       this.db.prepare("UPDATE integration_outbox SET state='delivered',delivered=?,last_error=NULL WHERE id=?").run(this.clock(), row.id);
     } catch (error) {

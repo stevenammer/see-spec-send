@@ -1,13 +1,24 @@
-import { existsSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, chmodSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { adapters } from './adapters.js';
 import { priceRate } from '../gateway/ledger.js';
 
 const kinds = Object.keys(adapters);
 const integer = value => Number.isSafeInteger(value) && value >= 0;
-export const configPath = env => resolve(env.SSS_PROVIDERS_FILE || 'sss.providers.json');
+// Defaults to the directory of the database, so the file doesn't depend on where the CLI was started.
+export const configPath = env => env.SSS_PROVIDERS_FILE
+  ? resolve(env.SSS_PROVIDERS_FILE)
+  : join(dirname(resolve(env.SSS_DB || 'sss.db')), 'sss.providers.json');
+// A file another local user can write could swap in a provider or a key, so it must be owner-only.
+export function assertOwnerOnly(stat, uid = process.getuid()) {
+  if (stat.mode & 0o022) throw Error('file is group or world writable; refusing to use it');
+  if (stat.uid !== uid) throw Error('file is not owned by the service user; refusing to use it');
+  return stat;
+}
+const readKeyFile = path => { assertOwnerOnly(statSync(path)); return readFileSync(path, 'utf8').trim(); };
 export function readProviders(env = process.env) {
   const file = configPath(env); if (!existsSync(file)) return { providers: [], defaults: {} };
+  assertOwnerOnly(statSync(file));
   let parsed; try { parsed = JSON.parse(readFileSync(file, 'utf8')); } catch { throw Error('invalid provider config'); }
   if (!parsed || !Array.isArray(parsed.providers) || !parsed.defaults || typeof parsed.defaults !== 'object') throw Error('invalid provider config');
   for (const provider of parsed.providers) validateProvider(provider);
@@ -26,7 +37,7 @@ export function validateProvider(provider) {
 export function saveProviders(data, env = process.env) { const file = configPath(env); writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 }); chmodSync(file, 0o600); }
 export function providerFor(name, env = process.env) {
   const provider = readProviders(env).providers.find(entry => entry.name === name && entry.enabled); if (!provider) throw Error('provider is not enabled');
-  const apiKey = provider.apiKeyEnv ? env[provider.apiKeyEnv] : provider.apiKeyFile ? readFileSync(provider.apiKeyFile, 'utf8').trim() : undefined;
+  const apiKey = provider.apiKeyEnv ? env[provider.apiKeyEnv] : provider.apiKeyFile ? readKeyFile(provider.apiKeyFile) : undefined;
   if ((provider.apiKeyEnv || provider.apiKeyFile) && !apiKey) throw Error('provider credential unavailable');
   return adapters[provider.kind]({ ...provider, apiKey });
 }

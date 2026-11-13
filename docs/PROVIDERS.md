@@ -1,10 +1,12 @@
 # Bring your own provider
 
 See / Spec / Send doesn't keep provider keys in its database. It reads a plain
-`sss.providers.json` file, normally from the directory where you run the CLI.
+`sss.providers.json` file, in the same directory as the database (`SSS_DB`).
 Set `SSS_PROVIDERS_FILE` to use another absolute or relative location. The file
 contains provider names, hosts, prices, and references to credentials. It must
 not contain a key itself. The CLI writes it with owner-only file permissions.
+The file, and any `apiKeyFile` a provider names, is refused when it is group or
+world writable or not owned by the user running the service.
 
 Every enabled provider has an explicit table in integer micro-dollars per million
 tokens. Zero is valid and is how an organization declares an entirely local

@@ -25,9 +25,10 @@ export function webhook(config) { return { async complete(request) {
 export function localCommand(config) { return { async complete(request) {
   if (!Array.isArray(config.command) || !config.command.length || !config.command.every(part => typeof part === 'string' && part)) throw Error('local command required');
   const cap = config.responseBytes || 128 * 1024; const timeout = config.timeoutMs || 10_000;
+  if (request.signal?.aborted) throw Error('local command aborted');
   return await new Promise((resolve, reject) => {
     let done = false; let output = Buffer.alloc(0); let stderr = Buffer.alloc(0);
-    const finish = (error, value) => { if (done) return; done = true; clearTimeout(timer); config.signal?.removeEventListener('abort', abort); error ? reject(error) : resolve(value); };
+    const finish = (error, value) => { if (done) return; done = true; clearTimeout(timer); request.signal?.removeEventListener('abort', abort); error ? reject(error) : resolve(value); };
     const child = spawn(config.command[0], config.command.slice(1), { stdio: ['pipe', 'pipe', 'pipe'], shell: false,
       // An org's executable gets a minimal environment, never the server's API keys or other secrets.
       env: { PATH: process.env.PATH || '/usr/bin:/bin' } });
@@ -38,7 +39,7 @@ export function localCommand(config) { return { async complete(request) {
       if (next.length > cap) { child.kill('SIGKILL'); finish(Error('local command output limit')); return stream; }
       return next;
     };
-    config.signal?.addEventListener('abort', abort, { once: true });
+    request.signal?.addEventListener('abort', abort, { once: true });
     child.stdout.on('data', chunk => { output = collect(chunk, output); });
     child.stderr.on('data', chunk => { stderr = collect(chunk, stderr); });
     child.on('error', () => finish(Error('local command failed')));

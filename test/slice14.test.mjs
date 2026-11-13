@@ -24,7 +24,7 @@ test('portable Quest prompt imports only the deterministic shared memo', async (
   assert.equal(importPortableMemo(JSON.stringify({ memo: expected }), doc).memo.recommendation, 'BUILD');
   assert.throws(() => importPortableMemo(JSON.stringify({ memo: { ...expected, recommendation: 'KILL' } }), doc), /does not match/);
   const dir = mkdtempSync(join(tmpdir(), 'sss-provider-')); const config = join(dir, 'providers.json');
-  writeFileSync(config, JSON.stringify({ providers: [{ name:'local', kind:'command', command:['true'], enabled:true, model:'local', price:{ inputMicrosPerMillion:0, outputMicrosPerMillion:0 } }], defaults:{} }));
+  writeFileSync(config, JSON.stringify({ providers: [{ name:'local', kind:'command', command:['true'], enabled:true, model:'local', price:{ inputMicrosPerMillion:0, outputMicrosPerMillion:0 } }], defaults:{} }), { mode: 0o600 });
   const packet = preflightQuestModel({ providerName:'local', doc }, { SSS_PROVIDERS_FILE: config });
   assert.equal(packet.provider, 'local'); assert.match(packet.label, /Model output/);
   await assert.rejects(draftQuestModel({ providerName:'local', doc, approved:false }, { SSS_PROVIDERS_FILE: config }), /explicit approval/);

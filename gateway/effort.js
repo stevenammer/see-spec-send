@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { killed, transaction } from '../worker/control.js';
 import { canonical } from './ledger.js';
 
-export const EFFORT_LIMITS = Object.freeze({ calls_per_person_day: 10, calls_per_item_day: 30, automatic_calls_per_person_day: 2, automatic_calls_per_item_day: 2, output_tokens: 256, person_day_micros: 100_000 });
+export const EFFORT_LIMITS = Object.freeze({ calls_per_person_day: 10, calls_per_item_day: 30, automatic_calls_per_person_day: 50, automatic_calls_per_item_day: 2, output_tokens: 256, person_day_micros: 100_000 });
 const digest = value => createHash('sha256').update(value).digest('hex');
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const demand = (value, message) => { if (!value) throw Error(message); };

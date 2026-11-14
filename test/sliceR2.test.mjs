@@ -48,6 +48,10 @@ test('R2 N-06: history diff preserves line order and duplicate counts', () => {
     { kind: 'removed', line: 'A' }, { kind: 'same', line: 'B' }, { kind: 'added', line: 'A' },
   ]);
   assert.deepEqual(lineDiff('A\nA', 'A'), [{ kind: 'same', line: 'A' }, { kind: 'removed', line: 'A' }]);
+  // A line moved to the front: the longest common run (A, B) stays 'same'; only the moved line shows as added and removed.
+  assert.deepEqual(lineDiff('A\nB\nC', 'C\nA\nB'), [
+    { kind: 'added', line: 'C' }, { kind: 'same', line: 'A' }, { kind: 'same', line: 'B' }, { kind: 'removed', line: 'C' },
+  ]);
   assert.deepEqual(lineDiff('', ''), []);
 });
 
@@ -60,4 +64,16 @@ test('R2 N-04/N-05: the page distinguishes originator from steward and shows att
   assert.match(page, /Originator: op\. Current steward: op\./);
   assert.match(page, /credit: maya, quoted/);
   assert.match(page, new RegExp(`href="#comment-${source}"`));
+});
+
+test('R2 the Effort prompt always fits the gateway input limit, however long and long-winded the thread', async () => {
+  const { effortPrompt } = await import('../effort/prompt.js');
+  const long = 'x'.repeat(2000);
+  const events = Array.from({ length: 60 }, (_, n) => ({ type: 'commented', actor: `person${n}`, kind: 'comment', comment: `${n} ${long}`, body_hash: 'h'.repeat(64) }));
+  const prompt = effortPrompt(long.repeat(5), events);
+  assert.ok(Buffer.byteLength(prompt.input) <= 8192, `prompt is ${Buffer.byteLength(prompt.input)} bytes`);
+  const parsed = JSON.parse(prompt.input);
+  assert.ok(parsed.thread.length > 0, 'the most recent comments are kept');
+  assert.equal(parsed.thread.at(-1).text.startsWith('59 '), true, 'the newest comment is the last entry');
+  assert.equal(parsed.thread.length + parsed.omitted_comments, 60, 'what was left out is counted');
 });

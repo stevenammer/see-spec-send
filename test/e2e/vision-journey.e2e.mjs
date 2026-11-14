@@ -382,7 +382,7 @@ async function main() {
     const tagJobs = (await jobLines()).filter(line => line.startsWith('Effort: tag'));
     assert.equal(tagJobs.length, 10, `ten mentions are answered and the 11th is not queued: ${tagJobs.join(' / ')}`);
     assert.equal((await jobLines()).length, 11, 'one first-comment job plus ten tag jobs, nothing for the 11th');
-    assert.ok((await agentComments(olive).count()) >= 10, 'Effort answered the mentions under the cap');
+    assert.ok((await agentComments(olive).count()) >= 10, `Effort answered the mentions under the cap (saw ${await agentComments(olive).count()}): ${(await jobLines()).join(' / ')}`);
     assert.ok((await agentComments(olive).count()) <= 11, 'never more than the first comment plus ten replies');
     assert.equal(await olive.locator('li > p:has-text("@effort ping number 11")').count(), 1, 'the 11th mention still landed');
     step('11th @effort mention landed with no Effort reply');

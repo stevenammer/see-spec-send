@@ -69,7 +69,8 @@ const mutants = [
   ['R check-in does not invalidate', "event.type === 'checked_in' && person(who)", "event.type === 'checked_in' && person(who) && context.phase !== 'SENDING'"],
   ['R SPEC include version binding', 'event.base_spec_hash === undefined || event.base_spec_hash === context.specHash', 'true'],
   ['R handled stale completion', "this.db.prepare(\"UPDATE runs SET status='stopped' WHERE id=?\").run(id);", "this.db.prepare(\"UPDATE runs SET status='active' WHERE id=?\").run(id);"],
-  ['R Effort prompt bounded', 'const thread = events.slice(-limit);', 'const thread = events;'],
+  ['R2 Effort prompt bounded by bytes', 'while (thread.length > 0 && Buffer.byteLength(build()) > maxBytes) thread = thread.slice(1);', ''],
+  ['R Effort prompt bounded', 'let thread = comments.slice(-MAX_ENTRIES);', 'let thread = comments;'],
   ['R reassignment requires consent or inactivity', "if (!consented && !inactiveForFourteenDays) throw refused('steward consent or fourteen days of inactivity required');", 'if (false) throw refused(\'steward consent or fourteen days of inactivity required\');'],
   ['R2 tagged Effort reply keeps its parent', "...(job.kind === 'tag' ? { parent: triggerBody.body_hash } : {})", ''],
   ['R2 separate mention quota ignores automatic replies', "mine.filter(sameClass).length < (automatic ? EFFORT_LIMITS.automatic_calls_per_person_day : EFFORT_LIMITS.calls_per_person_day)", 'mine.length < EFFORT_LIMITS.calls_per_person_day'],
@@ -385,7 +386,7 @@ const mutants = [
 
 const files = ['compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'cli.js',
   'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js', 'core/diff.js',
-  'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'app/effort.js', 'app/pages-spec.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/effort.js', 'gateway/http.js', 'effort/prompt.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js', 'public/app.js'];
+  'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'app/effort.js', 'app/pages-spec.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/effort.js', 'gateway/http.js', 'effort/prompt.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js', 'public/app.js', 'effort/prompt.js'];
 
 function run(cwd, args) {
   // A surviving mutation must never leave the verification job hung forever.

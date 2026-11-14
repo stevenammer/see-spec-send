@@ -12,7 +12,7 @@ import { Ledger } from '../gateway/ledger.js';
 import { main as cli } from '../cli.js';
 
 // Bump together with a new entry in core/migrations.js.
-const CURRENT = 6;
+const CURRENT = 7;
 const temp = () => join(mkdtempSync(join(tmpdir(), 'sss-slice21-')), 'db.sqlite');
 const fixtureSql = name => readFileSync(new URL(`./fixtures/golden/${name}.sql`, import.meta.url), 'utf8');
 
@@ -89,6 +89,25 @@ for (const [name, label] of [
     assert.equal(userVersion(copies[0]), 0, 'the backup is the pre-migration database');
   });
 }
+
+// A database written by the pushed journey code (schema 6) with a person, a leader, an approved item and its run.
+test('golden schema 6 (journey code) upgrades to the current schema with its run and history intact', () => {
+  const file = loadFixture('8bec169-v6');
+  assert.equal(userVersion(file), 6);
+  const store = new Store(file);
+  try {
+    const rows = store.verifyAll();
+    assert.deepEqual(rows.filter(row => !row.ok), []);
+    assert.equal(rows.length, 1);
+    assert.equal(store.db.prepare('SELECT count(*) AS n FROM runs').get().n, 1, 'the run survives');
+    assert.ok(store.db.prepare('PRAGMA table_info(runs)').all().some(column => column.name === 'see_hash'), 'the SEE fence column exists');
+    assert.equal(store.read('golden-item').state, 'TRYING');
+  } finally { store.close(); }
+  assert.equal(userVersion(file), CURRENT);
+  const copies = backups(file);
+  assert.equal(copies.length, 1);
+  assert.equal(userVersion(copies[0]), 6, 'the backup is the schema 6 database');
+});
 
 test('a routine open of a current database runs no schema work, no backfill, and takes no write lock', () => {
   const file = temp();

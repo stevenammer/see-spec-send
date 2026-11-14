@@ -4,12 +4,16 @@ export function buildPacket({ original, see, spec, credits = [], comments = [], 
   const openConcerns = comments.filter(comment => comment.kind === 'concern' && !comment.erased)
     .map(comment => ({ author: comment.actor, text: comment.comment }));
   const included = new Set(credits.map(credit => credit.comment));
+  const acceptedCredits = credits.map(credit => {
+    const comment = comments.find(entry => entry.body_hash === credit.comment);
+    return { ...credit, author: comment?.actor || 'unknown', text: comment?.comment || '[erased or unavailable]' };
+  });
   return {
     v: 1,
     original,
     see,
     spec,
-    credits,
+    credits: acceptedCredits,
     openConcerns,
     unincludedComments: comments.filter(comment => !comment.erased && !included.has(comment.body_hash)).length,
     research: 'No source connected, nothing checked',

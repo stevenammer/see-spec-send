@@ -1,5 +1,9 @@
 # Threat model, slice 2
 
+## Rules 2 stale authorization (2026-11-14)
+
+A SEE revision after SEND is a stale-authorization boundary. The machine records the revision, stops active work, preserves the old approval as history, and prevents its artifact from reaching HELPS. HTTP rejects stale thread anchors and the worker retires an obsolete iteration. Ordinary comments and check-ins do not cross this boundary.
+
 | Attack | Control | Proof |
 | --- | --- | --- |
 | Stolen database | Password, invite, session, and API tokens are digests | `auth rejects plaintext storage` |

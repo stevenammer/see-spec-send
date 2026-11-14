@@ -5,7 +5,9 @@ import { killed, transaction } from './control.js';
 const digest = value => createHash('sha256').update(value).digest('hex');
 const terminal = state => ['stopped', 'failed'].includes(state);
 const current = (context, run) => context.phase === 'SENDING'
-  && context.approval === run.approval && context.specHash === run.spec_hash;
+  && context.approval === run.approval && context.specHash === run.spec_hash
+  && (run.see_hash === null || run.see_hash === undefined || context.seeHash === run.see_hash)
+  && (context.iteration ?? 0) === run.iteration;
 const credential = () => randomBytes(32).toString('base64url');
 
 export class Worker {
@@ -29,8 +31,8 @@ export class Worker {
         const gatewayToken = credential();
         this.store.registerToken(digest(runToken), { kind: 'run', item });
         this.store.registerToken(digest(gatewayToken), { kind: 'gateway', item });
-        this.db.prepare('INSERT INTO runs(id,item,approval,iteration,spec_hash,run_actor,gateway_actor,status,delivered,started_at) VALUES(?,?,?,?,?,?,?,?,?,?)')
-          .run(id, item, context.approval, context.iteration || 0, context.specHash, digest(runToken), digest(gatewayToken), 'active', 0, Date.now());
+        this.db.prepare('INSERT INTO runs(id,item,approval,iteration,spec_hash,see_hash,run_actor,gateway_actor,status,delivered,started_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
+          .run(id, item, context.approval, context.iteration || 0, context.specHash, context.seeHash ?? null, digest(runToken), digest(gatewayToken), 'active', 0, Date.now());
       }
     });
     for (const run of this.db.prepare("SELECT * FROM runs WHERE status!='stopped'").all()) {
@@ -78,6 +80,12 @@ export class Worker {
       if (run.delivered) return false;
       const context = this.store.read(run.item).context;
       if (run.status !== 'active' || killed(this.store) || !current(context, run)) {
+        // A later steering iteration is ordinary stale completion, not a crash.
+        if (context.approval === run.approval && context.specHash === run.spec_hash
+            && (context.iteration ?? 0) !== run.iteration) {
+          this.db.prepare("UPDATE runs SET status='stopped' WHERE id=?").run(id);
+          return false;
+        }
         throw new Error('delivery refused for stopped or stale run');
       }
       const artifact_hash = this.store.putArtifact(run.item, html);

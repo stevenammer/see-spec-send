@@ -61,9 +61,14 @@ document.addEventListener('submit', async event => {
     } else if (form.dataset.adopt) {
       await post(`/api/items/${id}/steer`, { instruction: input.instruction, source: input.source, mode: 'paraphrased' });
     } else if (form.dataset.include) {
-      await post(`/api/items/${id}/events`, { type: 'revised', text: input.text,
+      const mode = event.submitter?.value === 'quoted' ? 'quoted' : 'paraphrased';
+      if (form.dataset.include === 'spec') {
+        await post(`/api/items/${id}/events`, { type: 'specced', see_hash: input.see_hash, base_spec_hash: input.base_spec_hash,
+          must: String(input.must).split('\n').filter(Boolean), how_we_know: String(input.how_we_know).split('\n').filter(Boolean),
+          out_of_scope: String(input.out_of_scope).split('\n').filter(Boolean), credits: [{ comment: input.comment, mode }] });
+      } else await post(`/api/items/${id}/events`, { type: 'revised', text: input.text,
         base_hash: form.closest('main').querySelector('form[data-event="revised"] input[name="base_hash"]').value,
-        credits: [{ comment: input.comment, mode: 'paraphrased' }] });
+        credits: [{ comment: input.comment, mode }] });
     } else if (form.dataset.artifact) {
       await post(`/api/items/${id}/artifact`, { html: input.html });
     } else {

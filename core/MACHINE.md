@@ -1,5 +1,9 @@
 # Machine
 
+## Rules 2 current-chain fence (2026-11-14)
+
+The current SEE hash binds a SPEC, then its packet, approval and run iteration. A later SEE revision supersedes a submitted or active chain and emits `build.stop`; it does not erase the historical approval. The next build needs a new SPEC, SEND and independent approval. Parent replies bind both anchor kind and hash.
+
 The table is the machine oracle. `open` means every state except `HELPS` and
 `SHELVED`; a steward alternative requires that state to already have a steward.
 Each event has an actor id, timestamp, and idempotency key. An event

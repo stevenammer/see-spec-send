@@ -64,7 +64,7 @@ function currentApproval(state, event) {
 }
 
 function stopsBuild(state, next, reason) {
-  return state.phase === 'SENDING' && next !== 'SENDING'
+  return ['SENDING', 'TRYING'].includes(state.phase) && next !== 'SENDING'
     ? [{ kind: 'build.stop', reason }]
     : [];
 }
@@ -114,12 +114,14 @@ export function step(state, event, who) {
   if (event.type === 'revised' && context.rules >= 2 && steward(context, event, who)
       && nonempty(event.text) && event.text.length <= 4000 && event.base_hash === context.seeHash
       && validCredits(event.credits)) {
-    const next = { ...context, phase: context.phase === 'SUBMITTED' ? 'SPECCED' : context.phase,
-      seeHash: event.body_hash, seeVersion: context.seeVersion + 1, sent: null };
+    const invalidates = ['SUBMITTED', 'SENDING', 'TRYING'].includes(context.phase);
+    const next = { ...context, phase: invalidates ? 'SPECCED' : context.phase,
+      seeHash: event.body_hash, seeVersion: context.seeVersion + 1, sent: null,
+      ...(invalidates ? { superseded: true, supersededArtifact: context.artifact || null } : {}) };
     return result(next, stopsBuild(context, next.phase, event.type));
   }
   if (event.type === 'steward_changed' && leader(who) && nonempty(event.steward)
-      && (!(context.rules >= 2) || nonempty(event.reason))) {
+      && (!(context.rules >= 2) || (nonempty(event.reason) && event.reason.length >= 12))) {
     const ineligibleHelpers = addIneligible(context, event.steward);
     const helpers = context.helpers.filter(id => id !== event.steward);
     const authors = context.rules >= 2 && !context.authors.includes(event.steward)
@@ -142,10 +144,12 @@ export function step(state, event, who) {
       && ((context.rules >= 2 && ['SEEN', 'SPECCED', 'SUBMITTED', 'SENDING', 'TRYING'].includes(context.phase)
         && event.see_hash === context.seeHash && validWords(event.assumptions) && validWords(event.open_questions)) ||
         (!(context.rules >= 2) && ['CHECKED', 'SPECCED', 'SENDING', 'TRYING'].includes(context.phase)))
-      && steward(context, event, who) && validSpec(event)) {
+      && steward(context, event, who) && validSpec(event)
+      && (event.base_spec_hash === undefined || event.base_spec_hash === context.specHash)) {
     const next = { ...context, phase: 'SPECCED', specAuthor: event.actor, specHash: event.body_hash || event.spec_hash,
       ...(context.rules >= 2 ? { specSeeHash: event.see_hash, specVersion: (context.specVersion || 0) + 1 } : {}),
-      sent: null, artifact: null, helpers: [], ineligibleHelpers: addIneligible(context, event.actor) };
+      sent: null, artifact: null, helpers: [], superseded: false, supersededArtifact: null,
+      ineligibleHelpers: addIneligible(context, event.actor) };
     return result(next, stopsBuild(context, 'SPECCED', event.type));
   }
   if (event.type === 'sent' && context.rules >= 2 && context.phase === 'SPECCED'

@@ -5,7 +5,7 @@ export function dumpGolden(file) {
   const db = new DatabaseSync(file, { readOnly: true });
   try {
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  const dump = db.prepare("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY type,name").all()
+  const dump = db.prepare("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END,name").all()
     .map(row => row.sql.endsWith(';') ? row.sql : `${row.sql};`).join('\n');
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all();
   const literal = value => value === null ? 'NULL' : typeof value === 'number' ? String(value) : `'${String(value).replaceAll("'", "''")}'`;

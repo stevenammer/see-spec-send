@@ -148,9 +148,11 @@ const validEvent = input => {
       && stringList(input.found) && ['already_have', 'setting', 'free', 'pay', 'build_needed'].includes(input.verdict)
       && (input.evidence === undefined || Array.isArray(input.evidence));
     case 'specced': return (exactKeys(input, ['type', 'must', 'how_we_know', 'out_of_scope']) ||
-        (exactKeys(input, ['type', 'see_hash', 'must', 'how_we_know', 'out_of_scope', 'assumptions', 'open_questions'])
+        (exactKeys(input, ['type', 'see_hash', 'base_spec_hash', 'must', 'how_we_know', 'out_of_scope', 'assumptions', 'open_questions', 'credits'])
           && hex(input.see_hash) && (input.assumptions === undefined || stringList(input.assumptions))
-          && (input.open_questions === undefined || stringList(input.open_questions))))
+          && (input.open_questions === undefined || stringList(input.open_questions))
+          && (input.base_spec_hash === undefined || hex(input.base_spec_hash))
+          && (input.credits === undefined || (Array.isArray(input.credits) && input.credits.every(credit => credit && hex(credit.comment) && ['quoted', 'paraphrased'].includes(credit.mode))))))
       && stringList(input.must) && stringList(input.how_we_know) && input.how_we_know.length > 0 && stringList(input.out_of_scope);
     case 'approved': return (exactKeys(input, ['type', 'cap_usd', 'quorum'])
         || (exactKeys(input, ['type', 'spec_hash', 'expected_seq', 'cap_usd', 'quorum'])
@@ -406,7 +408,9 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         const spec = events.find(event => event.type === 'specced' && event.body_hash === input.spec_hash);
         const see = events.filter(event => event.type === 'revised').at(-1)?.text || first?.original;
         if (!first || !spec) throw refused('current spec required');
-        const packet = buildPacket({ original: first.original, see, spec: { ...spec, hash: input.spec_hash }, credits: [],
+        const credits = events.filter(event => ['revised', 'specced'].includes(event.type))
+          .flatMap(event => event.credits || []);
+        const packet = buildPacket({ original: first.original, see, spec: { ...spec, hash: input.spec_hash }, credits,
           comments: events.filter(event => event.type === 'commented'), gatewayPolicy: {}, sandboxLimits: {} });
         const packet_hash = store.putArtifact(send[1], JSON.stringify(packet));
         const result = store.append(send[1], { type: 'sent', actor: session.person, spec_hash: input.spec_hash, packet_hash,
@@ -420,7 +424,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         const current = events.filter(event => event.type === 'revised').at(-1)?.text || first?.original;
         if (!parent || !first) throw refused('parent required');
         const id = randomUUID();
-        const result = store.append(id, { type: 'forked', actor: session.person, original: current, rules: CURRENT_RULES,
+        const result = store.append(id, { type: 'forked', actor: session.person, original: current, rules: CURRENT_RULES, reason: input.reason,
           parent: { item: fork[1], seq: parent.seq, hash: parent.hash }, at: new Date().toISOString() },
         { idem: req.headers['idempotency-key'] || `fork:${fork[1]}:${parent.hash}:${session.person}` });
         return json(res, 201, { id, ...result });

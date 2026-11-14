@@ -179,19 +179,19 @@ export function itemPage(item, events, person, leader) {
   }).join('') : '';
   const revise = rules2 && context.steward === person ? `<form data-event="revised"><h2>Revise SEE</h2><input type="hidden" name="base_hash" value="${escape(context.seeHash)}"><label>Current SEE<textarea name="text" required maxlength="4000">${escape(events.filter(event => event.type === 'revised').at(-1)?.text || firstEvent.original)}</textarea></label><button>Save revision</button></form>` : '';
   const see = rules2 ? `<section><h2>Original</h2><p>${escape(firstEvent.original)}</p><p>Hash ${escape(firstEvent.body_hash)}, posted ${escape(firstEvent.at)}</p><h2>Current SEE v${escape(context.seeVersion)}</h2><p>${escape(events.filter(event => event.type === 'revised').at(-1)?.text || firstEvent.original)}</p><h2>Version history</h2><ol><li>SEE v1: ${escape(firstEvent.original)}</li>${revisions}</ol>${context.specHash ? `<p><a class="button" href="/items/${encodeURIComponent(item.id)}/spec">Open the spec</a></p>` : ''}</section>` : '';
-  const forkedFrom = context.parent ? `<p>Forked from <a href="/items/${encodeURIComponent(context.parent.item)}">the original item</a>.</p>` : '';
+  const forkedFrom = context.parent ? `<p>Forked from <a href="/items/${encodeURIComponent(context.parent.item)}">the original item</a>${firstEvent?.reason ? `: ${escape(firstEvent.reason)}` : ''}.</p>` : '';
   const fork = rules2 ? `<form data-fork="true"><h2>Fork</h2><label>Why try another direction?<input name="reason" required maxlength="2000"></label><button>Fork</button></form>` : '';
   const reassign = rules2 && leader && !['HELPS', 'SHELVED'].includes(item.state)
     ? `<form data-event="steward_changed"><h2>Reassign the original poster</h2><label>New original poster (person ID)<input name="steward" required maxlength="64"></label><label>Note, at least 12 characters<input name="reason" required minlength="12" maxlength="2000"></label><button>Reassign the original poster</button></form>` : '';
   const checkin = `<form data-event="checked_in"><h2>Check-in</h2><label>What changed?<input name="note" required maxlength="2000"></label><button>Post check-in</button></form>`;
-  const effortStatus = (item.effort || []).map(job => `<p>Effort: ${escape(job.kind)} is ${escape(job.state)}${job.last_error ? ` (${escape(job.last_error)})` : ''}.</p>`).join('');
+  const effortStatus = (item.effort || []).map(job => `<p>Effort: ${escape(job.kind)} is ${escape(job.state === 'queued' || job.state === 'running' ? 'thinking' : job.state === 'blocked' || job.state === 'failed' ? 'unavailable, retrying' : job.state)}${job.last_error ? ` (${escape(job.last_error)})` : ''}.</p>`).join('');
   const instructions = events.filter(event => event.type === 'steered' && event.approval === context.approval)
     .map(event => `<li>${escape(event.instruction)}${event.source ? ` (from ${escape(event.source)})` : ''}</li>`).join('');
   return shell(
     problem,
     '<p><a href="/">Back to the work</a></p>' +
       `<p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1>` +
-      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${forkedFrom}${effortStatus}${see}${questMemo}${specSummary}${revise}${action}${packetView}${tryThread}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${shelve}${reassign}${checkin}${comment}` +
+      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${context.superseded ? `<p>This old approval is superseded. Update the spec, SEND IT!, and get a new leader approval.${context.supersededArtifact ? ' The delivered try is superseded and cannot receive new Helps votes.' : ''}</p>` : ''}${forkedFrom}${effortStatus}${see}${questMemo}${specSummary}${revise}${action}${packetView}${tryThread}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${shelve}${reassign}${checkin}${comment}` +
       `<h2>${rules2 ? 'Thread' : 'Comments'}</h2>${rules2 ? (renderThread(events, { ...context, steward: context.steward === person ? context.steward : null }) || '<p>No comments yet.</p>') : `<ol>${anchoredComments || '<li>No comments yet.</li>'}</ol>`}<h2>What happened</h2><ol>${events.filter(event => event.type !== 'commented' && event.type !== 'revised').map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
   );
 }

@@ -2,6 +2,8 @@
 
 Status: F1's in-process journey is available: post a SEE without Vision Quest, discuss it with Effort queued first, write a separate SPEC, send one frozen packet for a reasoned leader decision, fork, and adopt OP-only builder instructions. The builder remains a clearly labeled fixture.
 
+Rules 2 verification (2026-11-14): unit, public-file and demo-parity checks run locally. The separate CI browser job runs the Vision and E2E journeys. See `docs/INVARIANTS.md` for the stale-state authorization chain. Effort is always shown first as an honest status or reply. Vision Quest is optional.
+
 Everybody at work already knows the thing that's broken. The workaround has a name. Somebody has a spreadsheet for it. And nobody fixes it, because the people who feel it don't get to build anything, and the people who build things never feel it.
 
 This is my attempt at a free, open-source way for any organization to fix that with AI, and to do it the right way:

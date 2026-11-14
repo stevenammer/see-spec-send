@@ -50,7 +50,7 @@ function redactBody(type, body) {
   const structural = ['verdict', 'quorum', 'cap_usd', 'approval', 'spec_hash',
     'artifact_hash', 'usd', 'steward', 'body_hash', 'redacted_hash', 'delivered_by',
     'anchor_kind', 'anchor_hash', 'parent', 'kind', 'base_hash', 'rules', 'source_label', 'honesty_label',
-    'see_hash', 'spec_hash', 'packet_hash', 'approval', 'iteration', 'job', 'receipt', 'model', 'mode', 'credits', 'questMemo'];
+    'see_hash', 'spec_hash', 'base_spec_hash', 'packet_hash', 'approval', 'iteration', 'job', 'receipt', 'model', 'mode', 'credits', 'questMemo', 'consent', 'absent'];
   const textFields = ['problem', 'looked', 'found', 'must', 'how_we_know', 'out_of_scope',
     'note', 'reason', 'comment', 'original', 'text', 'assumptions', 'open_questions', 'instruction'];
   // Preserve only known machine fields; unknown metadata may contain personal writing.
@@ -137,6 +137,13 @@ export class Store {
       usage TEXT, outcome TEXT, seal TEXT NOT NULL, item TEXT NOT NULL, job TEXT NOT NULL,
       UNIQUE(person,idem)
     );`);
+  }
+
+  migrateR() {
+    const columns = this.db.prepare('PRAGMA table_info(runs)').all().map(row => row.name);
+    if (!columns.includes('see_hash')) this.db.exec('ALTER TABLE runs ADD COLUMN see_hash TEXT');
+    // The machine now tracks supersession, so the derived item cache is rebuilt from the events.
+    this.rebuild();
   }
 
   // Runs as the authority migration step on every upgrade. The runner holds the transaction,
@@ -313,7 +320,7 @@ export class Store {
       if (!parent) throw refused('parent must be a comment in this item');
       let body;
       try { body = JSON.parse(parent.bytes); } catch { throw refused('parent is invalid'); }
-      if (body.anchor_kind !== event.anchor_kind) throw refused('parent anchor does not match');
+      if (body.anchor_kind !== event.anchor_kind || body.anchor_hash !== event.anchor_hash) throw refused('parent anchor does not match');
     }
     const comment = hash => this.db.prepare(`SELECT b.bytes,b.erased FROM events e JOIN bodies b ON b.hash=e.body_hash
       WHERE e.item=? AND e.body_hash=? AND e.type='commented'`).get(item, hash);

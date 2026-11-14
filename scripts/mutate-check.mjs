@@ -65,6 +65,12 @@ const mutants = [
   ['R worker iteration current', '(context.iteration ?? 0) === run.iteration', 'true'],
   ['R fork reason persists', 'rules: CURRENT_RULES, reason: input.reason,', 'rules: CURRENT_RULES,'],
   ['R packet credit source derived', 'const comment = comments.find(entry => entry.body_hash === credit.comment);', 'const comment = null;'],
+  ['R superseded artifact cannot help', "context.phase === 'TRYING' && person(who)", "context.phase === 'TRYING' && !context.superseded && person(who)"],
+  ['R check-in does not invalidate', "event.type === 'checked_in' && person(who)", "event.type === 'checked_in' && person(who) && context.phase !== 'SENDING'"],
+  ['R SPEC include version binding', 'event.base_spec_hash === undefined || event.base_spec_hash === context.specHash', 'true'],
+  ['R handled stale completion', "this.db.prepare(\"UPDATE runs SET status='stopped' WHERE id=?\").run(id);", "this.db.prepare(\"UPDATE runs SET status='active' WHERE id=?\").run(id);"],
+  ['R Effort prompt bounded', 'const thread = events.slice(-limit);', 'const thread = events;'],
+  ['R reassignment requires consent or inactivity', "if (!consented && !inactiveForFourteenDays) throw refused('steward consent or fourteen days of inactivity required');", 'if (false) throw refused(\'steward consent or fourteen days of inactivity required\');'],
   ['gateway disabled default', "demand(policy.enabled, 'gateway disabled');", ''],
   ['gateway run cap', "demand(add(used, worst) <= cap, 'run cap exceeded');", ''],
   ['gateway global cap', "demand(add(sum(combined), worst) <= policy.global_micros, 'global cap exceeded');", ''],
@@ -379,7 +385,13 @@ const files = ['compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-s
   'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'app/effort.js', 'app/pages-spec.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/effort.js', 'gateway/http.js', 'effort/prompt.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js', 'public/app.js'];
 
 function run(cwd, args) {
-  return spawnSync(process.execPath, args, { cwd, stdio: 'pipe', encoding: 'utf8' });
+  // A surviving mutation must never leave the verification job hung forever.
+  // The serial security baseline can take several minutes on a constrained
+  // runner. Keep a finite ceiling, but leave enough room for normal coverage
+  // and for its complete TAP output.
+  return spawnSync(process.execPath, args, {
+    cwd, stdio: 'pipe', encoding: 'utf8', timeout: 600_000, maxBuffer: 16 * 1024 * 1024,
+  });
 }
 
 const onlyAt = process.argv.indexOf('--only');

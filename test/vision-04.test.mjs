@@ -4,6 +4,7 @@ import { Store } from '../core/store.js';
 import { Ledger, fixturePolicy } from '../gateway/ledger.js';
 import { EffortGateway } from '../gateway/effort.js';
 import { EffortWorker } from '../app/effort.js';
+import { itemPage } from '../app/pages.js';
 
 const at = n => `2026-11-13T00:00:${String(n).padStart(2, '0')}.000Z`;
 const append = (store, event, n) => store.append('f2', { ...event, at: at(n) }, { idem: `f2:${n}` });
@@ -29,8 +30,10 @@ test('F2 credits a paraphrase, preserves the source, and leader reassignment nee
   const source = store.events('f2').at(-1).body_hash;
   append(store, { type: 'revised', actor: 'op', text: 'Show the context before transfer.', base_hash: see, credits: [{ comment: source, mode: 'paraphrased' }] }, 3);
   assert.equal(store.events('f2').find(event => event.body_hash === source).comment, 'Show the last caller note.');
-  assert.throws(() => append(store, { type: 'steward_changed', actor: 'leader', steward: 'member' }, 4), /event not allowed/);
-  append(store, { type: 'steward_changed', actor: 'leader', steward: 'member', reason: 'The original poster is unavailable this week.' }, 5);
+  assert.throws(() => append(store, { type: 'steward_changed', actor: 'leader', steward: 'member' }, 4), /consent|inactive/);
+  append(store, { type: 'checked_in', actor: 'op', note: 'I consent to hand this to the next steward.', consent: true }, 5);
+  assert.match(itemPage({ id: 'f2', ...store.read('f2'), effort: [] }, store.events('f2'), 'op', false), /name="consent" value="true"/);
+  append(store, { type: 'steward_changed', actor: 'leader', steward: 'member', reason: 'The original poster is unavailable this week.' }, 6);
   assert.equal(store.read('f2').context.steward, 'member');
 });
 

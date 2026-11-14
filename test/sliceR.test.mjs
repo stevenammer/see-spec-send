@@ -4,6 +4,7 @@ import { Store } from '../core/store.js';
 import { Worker } from '../worker/runner.js';
 import { buildPacket } from '../core/packet.js';
 import { effortPrompt } from '../effort/prompt.js';
+import { itemPage } from '../app/pages.js';
 
 const at = n => `2026-11-14T00:00:${String(n).padStart(2, '0')}.000Z`;
 const append = (store, item, event, n) => store.append(item, { ...event, at: at(n) }, { idem: `${item}-${n}` });
@@ -83,4 +84,50 @@ test('R SPEC inclusion is version-bound and Effort prompt omits old thread entri
   const prompt = JSON.parse(effortPrompt('Original', Array.from({ length: 30 }, (_, n) => ({ comment: `reply ${n}` }))).input);
   assert.equal(prompt.thread.length, 20);
   assert.equal(prompt.omitted_comments, 10);
+});
+
+test('R reassignment needs the steward\'s recorded consent or fourteen days of event inactivity', () => {
+  const store = new Store(); people(store);
+  const stamp = day => `2026-10-${String(day).padStart(2, '0')}T00:00:00.000Z`;
+  const put = (event, day) => store.append('i', { ...event, at: stamp(day) }, { idem: `reassign-${day}-${event.type}` });
+  put({ type: 'posted', actor: 'op', original: 'Original SEE', rules: 2 }, 1);
+  assert.throws(() => put({ type: 'steward_changed', actor: 'leader', steward: 'member', reason: 'The work needs a new steward.' }, 14), /consent|inactive/);
+  put({ type: 'checked_in', actor: 'op', note: 'I consent to this handoff.', consent: true }, 14);
+  put({ type: 'steward_changed', actor: 'leader', steward: 'member', reason: 'The work needs a new steward.' }, 15);
+  assert.equal(store.read('i').context.originator, 'op');
+  assert.equal(store.read('i').context.steward, 'member');
+  assert.ok(store.read('i').context.authors.includes('member'));
+  assert.ok(store.read('i').context.ineligibleHelpers.includes('member'));
+
+  const inactive = new Store(); people(inactive);
+  const old = (event, day) => inactive.append('old', { ...event, at: stamp(day) }, { idem: `old-${day}-${event.type}` });
+  old({ type: 'posted', actor: 'op', original: 'Old SEE', rules: 2 }, 1);
+  old({ type: 'steward_changed', actor: 'leader', steward: 'member', reason: 'No activity from the original steward.' }, 15);
+  assert.equal(inactive.read('old').context.steward, 'member');
+});
+
+test('R a post reserves an honest Effort slot before a person comments, and keeps it on refresh', () => {
+  const store = new Store(); people(store);
+  append(store, 'i', { type: 'posted', actor: 'op', original: 'Original SEE', rules: 2 }, 1);
+  const see = store.read('i').context.seeHash;
+  append(store, 'i', { type: 'commented', actor: 'member', comment: 'A person can comment now.', kind: 'comment', anchor_kind: 'see', anchor_hash: see }, 2);
+  const item = { id: 'i', ...store.read('i'), effort: store.db.prepare('SELECT kind,state,last_error FROM effort_jobs WHERE item=?').all('i') };
+  const first = itemPage(item, store.events('i'), 'member', false);
+  const refresh = itemPage(item, store.events('i'), 'member', false);
+  assert.match(first, /Effort: see_first is thinking/);
+  assert.match(first, /A person can comment now/);
+  assert.equal(first, refresh);
+  item.effort[0].state = 'failed';
+  assert.match(itemPage(item, store.events('i'), 'member', false), /Effort: see_first is unavailable, retrying/);
+  item.effort[0].state = 'done';
+  assert.match(itemPage(item, store.events('i'), 'member', false), /Effort: see_first is answered/);
+});
+
+test('R quoted credit is refused unless the new SEE contains the exact source words', () => {
+  const store = new Store(); people(store);
+  append(store, 'i', { type: 'posted', actor: 'op', original: 'Original SEE', rules: 2 }, 1);
+  const see = store.read('i').context.seeHash;
+  append(store, 'i', { type: 'commented', actor: 'member', comment: 'Use the caller name exactly.', kind: 'comment', anchor_kind: 'see', anchor_hash: see }, 2);
+  const credit = store.events('i').at(-1).body_hash;
+  assert.throws(() => append(store, 'i', { type: 'revised', actor: 'op', text: 'Use their name.', base_hash: see, credits: [{ comment: credit, mode: 'quoted' }] }, 3), /verbatim/);
 });

@@ -73,6 +73,7 @@ document.addEventListener('submit', async event => {
       await post(`/api/items/${id}/artifact`, { html: input.html });
     } else {
       const data = { type: form.dataset.event, ...input };
+      if (data.type === 'checked_in' && Object.hasOwn(data, 'consent')) data.consent = data.consent === 'true';
       if (data.type === 'specced') {
         for (const key of ['must', 'how_we_know', 'out_of_scope']) {
           data[key] = String(data[key] ?? '').split('\n').filter(Boolean);

@@ -84,7 +84,7 @@ function eventWords(event) {
     tried: 'delivered a try',
     helped: 'said the try helps',
     shelved: 'shelved this item',
-    steward_changed: 'reassigned the original poster',
+    steward_changed: 'reassigned the steward',
     commented: 'left a comment',
     checked_in: 'posted a check-in',
   };
@@ -173,18 +173,28 @@ export function itemPage(item, events, person, leader) {
   const tryThread = rules2 && item.state === 'TRYING' && context.artifact
     ? `<h2>Try thread</h2><form data-event="commented"><label>Comment on this try<textarea name="comment" required maxlength="4000"></textarea></label><input type="hidden" name="kind" value="comment"><input type="hidden" name="anchor_kind" value="artifact"><input type="hidden" name="anchor_hash" value="${escape(context.artifact)}"><button>Post comment</button></form>${renderThread(events, { ...context, steward: context.steward === person ? context.steward : null }, 'artifact') || '<p>No try comments yet.</p>'}` : '';
   let priorSee = firstEvent?.original || '';
+  const creditHistory = credits => (credits || []).map(credit => {
+    const source = events.find(entry => entry.type === 'commented' && entry.body_hash === credit.comment);
+    if (!source || source.comment === '[erased]') return 'credit source erased';
+    return `credit: ${escape(source.actor)}, ${escape(credit.mode)} (<a href="#comment-${escape(credit.comment)}">source comment</a>)`;
+  }).join('; ');
   const revisions = rules2 ? events.filter(event => event.type === 'revised').map((event, index) => {
     const diff = lineDiff(priorSee, event.text); priorSee = event.text;
-    return `<li>SEE v${index + 2}: ${escape(event.text)}${event.credits?.length ? ` (credit: ${escape(event.credits.map(credit => credit.mode).join(', '))})` : ''}<details><summary>What changed</summary>${diff.map(row => `<p>${escape(row.kind)}: ${escape(row.line)}</p>`).join('')}</details></li>`;
+    return `<li>SEE v${index + 2}: ${escape(event.text)}${event.credits?.length ? ` (${creditHistory(event.credits)})` : ''}<details><summary>What changed</summary>${diff.map(row => `<p>${escape(row.kind)}: ${escape(row.line)}</p>`).join('')}</details></li>`;
   }).join('') : '';
   const revise = rules2 && context.steward === person ? `<form data-event="revised"><h2>Revise SEE</h2><input type="hidden" name="base_hash" value="${escape(context.seeHash)}"><label>Current SEE<textarea name="text" required maxlength="4000">${escape(events.filter(event => event.type === 'revised').at(-1)?.text || firstEvent.original)}</textarea></label><button>Save revision</button></form>` : '';
   const see = rules2 ? `<section><h2>Original</h2><p>${escape(firstEvent.original)}</p><p>Hash ${escape(firstEvent.body_hash)}, posted ${escape(firstEvent.at)}</p><h2>Current SEE v${escape(context.seeVersion)}</h2><p>${escape(events.filter(event => event.type === 'revised').at(-1)?.text || firstEvent.original)}</p><h2>Version history</h2><ol><li>SEE v1: ${escape(firstEvent.original)}</li>${revisions}</ol>${context.specHash ? `<p><a class="button" href="/items/${encodeURIComponent(item.id)}/spec">Open the spec</a></p>` : ''}</section>` : '';
   const forkedFrom = context.parent ? `<p>Forked from <a href="/items/${encodeURIComponent(context.parent.item)}">the original item</a>${firstEvent?.reason ? `: ${escape(firstEvent.reason)}` : ''}.</p>` : '';
   const fork = rules2 ? `<form data-fork="true"><h2>Fork</h2><label>Why try another direction?<input name="reason" required maxlength="2000"></label><button>Fork</button></form>` : '';
   const reassign = rules2 && leader && !['HELPS', 'SHELVED'].includes(item.state)
-    ? `<form data-event="steward_changed"><h2>Reassign the original poster</h2><label>New original poster (person ID)<input name="steward" required maxlength="64"></label><label>Note, at least 12 characters<input name="reason" required minlength="12" maxlength="2000"></label><button>Reassign the original poster</button></form>` : '';
-  const checkin = `<form data-event="checked_in"><h2>Check-in</h2><label>What changed?<input name="note" required maxlength="2000"></label><button>Post check-in</button></form>`;
-  const effortStatus = (item.effort || []).map(job => `<p>Effort: ${escape(job.kind)} is ${escape(job.state === 'queued' || job.state === 'running' ? 'thinking' : job.state === 'blocked' || job.state === 'failed' ? 'unavailable, retrying' : job.state)}${job.last_error ? ` (${escape(job.last_error)})` : ''}.</p>`).join('');
+    ? `<form data-event="steward_changed"><h2>Reassign steward</h2><p>Only after the current steward records consent, or has made no event anywhere for 14 days.</p><label>New steward (person ID)<input name="steward" required maxlength="64"></label><label>Note, at least 12 characters<input name="reason" required minlength="12" maxlength="2000"></label><button>Reassign steward</button></form>` : '';
+  const checkin = `<form data-event="checked_in"><h2>Check-in</h2><label>What changed?<input name="note" required maxlength="2000"></label>${rules2 && context.steward === person ? '<label><input type="checkbox" name="consent" value="true"> I consent to a leader assigning a new steward.</label>' : ''}<button>Post check-in</button></form>`;
+  const effortStatus = (item.effort || []).map(job => {
+    const status = job.state === 'queued' || job.state === 'running' ? 'thinking'
+      : job.state === 'blocked' || job.state === 'failed' ? 'unavailable, retrying'
+        : job.state === 'done' ? 'answered' : job.state;
+    return `<p>Effort: ${escape(job.kind)} is ${escape(status)}${job.last_error ? ` (${escape(job.last_error)})` : ''}.</p>`;
+  }).join('') || '<p>Effort is not turned on on this server.</p>';
   const instructions = events.filter(event => event.type === 'steered' && event.approval === context.approval)
     .map(event => `<li>${escape(event.instruction)}${event.source ? ` (from ${escape(event.source)})` : ''}</li>`).join('');
   return shell(

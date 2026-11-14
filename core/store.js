@@ -304,6 +304,19 @@ export class Store {
     if (event.type === 'steward_changed') {
       const next = this.db.prepare('SELECT kind FROM actors WHERE id=?').get(event.steward);
       if (!next || next.kind !== 'person') throw invalid('steward must be a registered person');
+      const context = this.read(item).context;
+      if (context.rules >= 2) {
+        const consented = this.events(item).some(entry => entry.type === 'checked_in'
+          && entry.actor === context.steward && entry.consent === true);
+        const last = this.db.prepare('SELECT at FROM events WHERE actor=? ORDER BY at DESC LIMIT 1').get(context.steward);
+        // Both values are event data, not a wall-clock read. The event being
+        // appended supplies the comparison point, which keeps replay deterministic.
+        const currentAt = new Date(event.at).getTime();
+        const lastAt = last && new Date(last.at).getTime();
+        const inactiveForFourteenDays = Number.isSafeInteger(currentAt) && Number.isSafeInteger(lastAt)
+          && currentAt - lastAt >= 14 * 24 * 60 * 60 * 1000;
+        if (!consented && !inactiveForFourteenDays) throw refused('steward consent or fourteen days of inactivity required');
+      }
     }
     if (event.type === 'posted' && this.eventRows(item).length !== 0) throw refused('posted event requires a fresh item');
     if (event.type === 'forked') {

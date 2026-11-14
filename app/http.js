@@ -161,7 +161,9 @@ const validEvent = input => {
           && hex(input.spec_hash) && hex(input.packet_hash) && text(input.reason, 2000)))
       && typeof input.cap_usd === 'number' && Number.isInteger(input.quorum) && input.quorum >= 1;
     case 'returned': case 'shelved': case 'checked_in':
-      return exactKeys(input, ['type', input.type === 'shelved' ? 'reason' : 'note']) && text(input[input.type === 'shelved' ? 'reason' : 'note'], 2000);
+      return exactKeys(input, input.type === 'checked_in' ? ['type', 'note', 'consent'] : ['type', input.type === 'shelved' ? 'reason' : 'note'])
+        && text(input[input.type === 'shelved' ? 'reason' : 'note'], 2000)
+        && (input.type !== 'checked_in' || input.consent === undefined || input.consent === true);
     case 'helped': return exactKeys(input, ['type', 'artifact_hash']) && hex(input.artifact_hash);
     case 'steward_changed': return exactKeys(input, ['type', 'steward', 'reason']) && text(input.steward, 64)
       && (input.reason === undefined || text(input.reason, 2000));

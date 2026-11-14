@@ -224,6 +224,16 @@ async function main() {
     assert.match(await olive.locator('li > p:has-text("Effort, AI")').first().innerText(), /Use as starting point/);
     step('spec post shows Effort\'s Use as starting point comment');
 
+    // 5b. SPEC Include is a real click, distinct from Paraphrase, and binds the current spec version.
+    await maya.goto(`${itemUrl}/spec`);
+    await maya.locator('form[data-event=commented] [name=comment]').fill('Keep the caller name with the transfer.');
+    await maya.locator('form[data-event=commented]').getByRole('button', { name: 'Post comment' }).click();
+    await olive.goto(`${itemUrl}/spec`);
+    const specInclude = olive.locator('li:has-text("Keep the caller name") form[data-include="spec"]');
+    await specInclude.getByRole('button', { name: 'Include' }).click();
+    await olive.getByRole('heading', { name: 'Spec v2' }).waitFor();
+    step('SPEC Include clicked and created a version-bound spec update');
+
     // 6. SEND IT!
     await olive.getByRole('button', { name: 'SEND IT!' }).click();
     await olive.waitForFunction(() => !document.querySelector('form[data-send]'));
@@ -308,7 +318,7 @@ async function main() {
     assert.ok((await agentComments(olive).count()) >= 2, "Effort's comments are still there");
     step("no delete or hide for Effort's comment");
 
-    // 13. A leader reassigns the original poster with a note; the old poster's credit stays.
+    // 13. Reassignment needs recorded OP consent; the originator's credit stays.
     await ben.goto(itemUrl);
     assert.equal(await ben.locator('form[data-event=steward_changed]').count(), 0, 'a member has no reassign control');
     assert.equal(await olive.locator('form[data-event=steward_changed]').count(), 0, 'the original poster has no reassign control');
@@ -320,11 +330,17 @@ async function main() {
     const reassign = leader.locator('form[data-event=steward_changed]');
     await reassign.locator('[name=steward]').fill('maya');
     await reassign.locator('[name=reason]').fill('too short');
-    await reassign.getByRole('button', { name: 'Reassign the original poster' }).click();
-    assert.equal(await leader.getByText('reassigned the original poster').count(), 0, 'a short note does not reassign');
+    await reassign.getByRole('button', { name: 'Reassign steward' }).click();
+    assert.equal(await leader.getByText('reassigned the steward').count(), 0, 'a short note does not reassign');
     await reassign.locator('[name=reason]').fill('Olive is moving to another team, Maya owns this now.');
-    await reassign.getByRole('button', { name: 'Reassign the original poster' }).click();
-    await leader.getByText(/reassigned the original poster to maya\. Note: Olive is moving to another team, Maya owns this now\./).waitFor();
+    await reassign.getByRole('button', { name: 'Reassign steward' }).click();
+    assert.equal(await leader.getByText('reassigned the steward').count(), 0, 'a leader cannot bypass the fourteen-day consent rule');
+    assert.equal(await rawPost(olive, `/api/items/${itemId}/events`, { type: 'checked_in', note: 'I consent to Maya taking this work.', consent: true }), 201);
+    await leader.reload();
+    await leader.locator('form[data-event=steward_changed] [name=steward]').fill('maya');
+    await leader.locator('form[data-event=steward_changed] [name=reason]').fill('Olive is moving to another team, Maya owns this now.');
+    await leader.locator('form[data-event=steward_changed]').getByRole('button', { name: 'Reassign steward' }).click();
+    await leader.getByText(/reassigned the steward to maya\. Note: Olive is moving to another team, Maya owns this now\./).waitFor();
     await olive.goto(itemUrl);
     assert.equal(await olive.locator('form[data-event=revised]').count(), 0, 'the old poster can no longer revise');
     assert.ok(await olive.getByText('olive posted this SEE').count() > 0, "the old poster's own post is still credited");

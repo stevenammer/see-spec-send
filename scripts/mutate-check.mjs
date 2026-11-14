@@ -22,7 +22,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs', 'test/slice23.test.mjs', 'test/slice24.test.mjs',
   'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs', 'test/slice27.test.mjs', 'test/password-screen.test.mjs',
-  'test/vision-01.test.mjs', 'test/vision-02.test.mjs', 'test/vision-03.test.mjs', 'test/vision-04.test.mjs'];
+  'test/vision-01.test.mjs', 'test/vision-02.test.mjs', 'test/vision-03.test.mjs', 'test/vision-04.test.mjs', 'test/sliceR.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
@@ -65,7 +65,7 @@ const mutants = [
   ['R worker iteration current', '(context.iteration ?? 0) === run.iteration', 'true'],
   ['R fork reason persists', 'rules: CURRENT_RULES, reason: input.reason,', 'rules: CURRENT_RULES,'],
   ['R packet credit source derived', 'const comment = comments.find(entry => entry.body_hash === credit.comment);', 'const comment = null;'],
-  ['R superseded artifact cannot help', "context.phase === 'TRYING' && person(who)", "context.phase === 'TRYING' && !context.superseded && person(who)"],
+  ['R revision supersedes a delivered try', "const invalidates = ['SUBMITTED', 'SENDING', 'TRYING'].includes(context.phase);", "const invalidates = ['SUBMITTED', 'SENDING'].includes(context.phase);"],
   ['R check-in does not invalidate', "event.type === 'checked_in' && person(who)", "event.type === 'checked_in' && person(who) && context.phase !== 'SENDING'"],
   ['R SPEC include version binding', 'event.base_spec_hash === undefined || event.base_spec_hash === context.specHash', 'true'],
   ['R handled stale completion', "this.db.prepare(\"UPDATE runs SET status='stopped' WHERE id=?\").run(id);", "this.db.prepare(\"UPDATE runs SET status='active' WHERE id=?\").run(id);"],

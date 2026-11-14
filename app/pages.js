@@ -172,6 +172,11 @@ export function itemPage(item, events, person, leader) {
     : `<form data-event="commented"><h2>Comment</h2><label>Comment<textarea name="comment" required maxlength="4000"></textarea></label>${anchor ? `<input type="hidden" name="anchor_kind" value="${anchor.kind}"><input type="hidden" name="anchor_hash" value="${escape(anchor.hash)}"><p>Attached to the current ${anchor.kind} version.</p>` : '<p>There is no spec version yet.</p>'}<button>Post comment</button></form>`;
   const tryThread = rules2 && item.state === 'TRYING' && context.artifact
     ? `<h2>Try thread</h2><form data-event="commented"><label>Comment on this try<textarea name="comment" required maxlength="4000"></textarea></label><input type="hidden" name="kind" value="comment"><input type="hidden" name="anchor_kind" value="artifact"><input type="hidden" name="anchor_hash" value="${escape(context.artifact)}"><button>Post comment</button></form>${renderThread(events, { ...context, steward: context.steward === person ? context.steward : null }, 'artifact') || '<p>No try comments yet.</p>'}` : '';
+  // Feedback on a superseded try stays readable as history (read-only: no reply, adopt or include controls).
+  const oldTryFeedback = rules2 && context.superseded && item.state !== 'TRYING'
+    ? events.filter(event => event.type === 'commented' && event.anchor_kind === 'artifact')
+      .map(event => `<li id="comment-${escape(event.body_hash)}"><p><strong>${escape(event.actor)}</strong>${event.kind === 'agent' ? ' (Effort, AI)' : ` (${escape(event.kind)})`}: ${escape(event.comment)}</p></li>`).join('') : '';
+  const oldTryHistory = oldTryFeedback ? `<section><h2>Feedback on the superseded try</h2><ol>${oldTryFeedback}</ol></section>` : '';
   let priorSee = firstEvent?.original || '';
   const creditHistory = credits => (credits || []).map(credit => {
     const source = events.find(entry => entry.type === 'commented' && entry.body_hash === credit.comment);
@@ -201,7 +206,7 @@ export function itemPage(item, events, person, leader) {
     problem,
     '<p><a href="/">Back to the work</a></p>' +
       `<p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1>` +
-      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${context.superseded ? `<p>This old approval is superseded. Update the spec, SEND IT!, and get a new leader approval.${context.supersededArtifact ? ' The delivered try is superseded and cannot receive new Helps votes.' : ''}</p>` : ''}${forkedFrom}${effortStatus}${see}${questMemo}${specSummary}${revise}${action}${packetView}${tryThread}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${shelve}${reassign}${checkin}${comment}` +
+      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${context.superseded ? `<p>This old approval is superseded. Update the spec, SEND IT!, and get a new leader approval.${context.supersededArtifact ? ' The delivered try is superseded and cannot receive new Helps votes.' : ''}</p>` : ''}${forkedFrom}${effortStatus}${see}${questMemo}${specSummary}${revise}${action}${packetView}${tryThread}${oldTryHistory}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${shelve}${reassign}${checkin}${comment}` +
       `<h2>${rules2 ? 'Thread' : 'Comments'}</h2>${rules2 ? (renderThread(events, { ...context, steward: context.steward === person ? context.steward : null }) || '<p>No comments yet.</p>') : `<ol>${anchoredComments || '<li>No comments yet.</li>'}</ol>`}<h2>What happened</h2><ol>${events.filter(event => event.type !== 'commented' && event.type !== 'revised').map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
   );
 }

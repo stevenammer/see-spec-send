@@ -35,6 +35,22 @@ test('R stale SEE revision stops the run, supersedes its artifact, and a check-i
   assert.throws(() => append(store, 'i', { type: 'tried', actor: 'run-token', approval: 1, spec_hash: spec, iteration: 0, artifact_hash: 'a'.repeat(64) }, 7), /stopped|not allowed/);
 });
 
+test('R a SEE revision after a try is delivered supersedes it, so it cannot collect Helps', () => {
+  const store = new Store(); const { see, spec } = ready(store);
+  store.db.prepare("INSERT INTO runs(id,item,approval,iteration,spec_hash,run_actor,gateway_actor,status,delivered) VALUES(?,?,?,?,?,?,?,?,?)")
+    .run('r1', 'i', 1, 0, spec, 'run-token', 'gate-token', 'active', 0);
+  store.registerToken('run-token', { kind: 'run', item: 'i' }); store.registerToken('gate-token', { kind: 'gateway', item: 'i' });
+  const artifact = store.putArtifact('i', '<p>try</p>');
+  append(store, 'i', { type: 'tried', actor: 'run-token', approval: 1, spec_hash: spec, iteration: 0, artifact_hash: artifact, model_output: false }, 5);
+  assert.equal(store.read('i').state, 'TRYING');
+  // A comment on the try does not touch it; a revision of the SEE does.
+  append(store, 'i', { type: 'revised', actor: 'op', text: 'The problem is different now', base_hash: see }, 6);
+  assert.equal(store.read('i').state, 'SPECCED');
+  assert.equal(store.read('i').context.superseded, true);
+  assert.equal(store.read('i').context.supersededArtifact, artifact);
+  assert.throws(() => append(store, 'i', { type: 'helped', actor: 'member', artifact_hash: artifact }, 7), /not allowed/);
+});
+
 test('R reply parent must bind both thread kind and exact version hash', () => {
   const store = new Store(); people(store);
   append(store, 'i', { type: 'posted', actor: 'op', original: 'Original', rules: 2 }, 1);
@@ -71,6 +87,9 @@ test('R stale worker completion is a handled false result, not an exception', ()
   append(store, 'i', { type: 'steered', actor: 'op', approval: 1, spec_hash: spec, instruction: 'Try another direction' }, 5);
   assert.equal(worker.deliver('late', '<p>late</p>'), false);
   assert.equal(store.read('i').context.iteration, 1);
+  // The stale run is retired, not left active to be retried, and nothing was delivered for it.
+  assert.equal(store.db.prepare("SELECT status FROM runs WHERE id='late'").get().status, 'stopped');
+  assert.equal(store.db.prepare("SELECT delivered FROM runs WHERE id='late'").get().delivered, 0);
 });
 
 test('R SPEC inclusion is version-bound and Effort prompt omits old thread entries honestly', () => {
@@ -130,4 +149,29 @@ test('R quoted credit is refused unless the new SEE contains the exact source wo
   append(store, 'i', { type: 'commented', actor: 'member', comment: 'Use the caller name exactly.', kind: 'comment', anchor_kind: 'see', anchor_hash: see }, 2);
   const credit = store.events('i').at(-1).body_hash;
   assert.throws(() => append(store, 'i', { type: 'revised', actor: 'op', text: 'Use their name.', base_hash: see, credits: [{ comment: credit, mode: 'quoted' }] }, 3), /verbatim/);
+});
+
+// The fork route must store the reason the person typed (the unit test above appends events directly).
+test('R the fork route stores the reason and shows it with the parent link', async () => {
+  const { Readable } = await import('node:stream');
+  const { Auth } = await import('../app/auth.js');
+  const { createHandler } = await import('../app/http.js');
+  class Res { constructor() { this.headers = {}; this.status = 200; this.text = ''; } setHeader(k, v) { this.headers[k.toLowerCase()] = v; } writeHead(c, h = {}) { this.status = c; Object.assign(this.headers, h); } end(v = '') { this.text += v; } }
+  const call = async (handler, method, path, input, headers = {}) => {
+    const req = Readable.from(input === undefined ? [] : [JSON.stringify(input)]); req.method = method; req.url = path;
+    req.headers = { ...(input === undefined ? {} : { 'content-type': 'application/json' }), ...headers }; req.socket = { remoteAddress: '127.0.0.1' };
+    const res = new Res(); await handler(req, res); let body = null; try { body = JSON.parse(res.text); } catch {}
+    return { status: res.status, headers: res.headers, text: res.text, body };
+  };
+  const store = new Store(); const auth = new Auth(store); const handler = createHandler({ store, auth, secure: false, origin: 'http://127.0.0.1' });
+  await auth.createUser('olive', 'Olive-long-password-9x', false); await auth.createUser('maya', 'Maya-long-password-9x', false);
+  const login = async (id, password) => { const r = await call(handler, 'POST', '/api/login', { id, password }); return { cookie: r.headers['set-cookie'].split(';')[0], origin: 'http://127.0.0.1', 'x-csrf-token': r.body.csrf }; };
+  const olive = await login('olive', 'Olive-long-password-9x'); const maya = await login('maya', 'Maya-long-password-9x');
+  const made = await call(handler, 'POST', '/api/items', { original: 'Callers lose context during transfer.' }, olive);
+  assert.equal(made.status, 201);
+  const forked = await call(handler, 'POST', `/api/items/${made.body.id}/fork`, { reason: 'Our team needs a different local workflow.' }, maya);
+  assert.equal(forked.status, 201);
+  assert.equal(store.events(forked.body.id)[0].reason, 'Our team needs a different local workflow.');
+  const page = await call(handler, 'GET', `/items/${forked.body.id}`, undefined, maya);
+  assert.match(page.text, /Our team needs a different local workflow/);
 });

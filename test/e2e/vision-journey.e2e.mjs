@@ -192,21 +192,21 @@ async function main() {
     await olive.reload();
     assert.equal(await olive.locator('li:has-text("Maya rewrote it.")').count(), 0);
     const include = olive.locator('li:has-text("Does the caller repeat") form[data-include]').first();
-    await include.locator('[name=text]').fill('Callers lose context when a call is transferred, and repeat their account number.');
+    await include.locator('[name=text]').fill('Callers lose context when a call is transferred. Does the caller repeat their account number?');
     await include.getByRole('button', { name: 'Include' }).click();
     await olive.getByText('SEE v2:').waitFor();
     step('OP included the comment; member refused');
 
     // 4b. The credit and the diff show in the SEE history; Paraphrase makes another credited revision.
     const v2 = olive.locator('li:has-text("SEE v2:")').first();
-    assert.match(await v2.textContent(), /credit: paraphrased/);
-    assert.match(await v2.locator('details').textContent(), /What changed[\s\S]*added: Callers lose context when a call is transferred, and repeat their account number\./);
+    assert.match(await v2.textContent(), /credit: maya, quoted/);
+    assert.match(await v2.locator('details').textContent(), /What changed[\s\S]*added: Callers lose context when a call is transferred\. Does the caller repeat their account number\?/);
     assert.match(await v2.locator('details').textContent(), /removed: Callers lose context when a call is transferred\./);
     const paraphrase = olive.locator('li:has-text("@effort what is the risk")').filter({ has: olive.locator('form[data-include]') }).first().locator('form[data-include]');
     await paraphrase.locator('[name=text]').fill('Callers lose context on transfer, and nobody says what the risk is.');
     await paraphrase.getByRole('button', { name: 'Paraphrase' }).click();
     await olive.getByText('SEE v3:').waitFor();
-    assert.match(await olive.locator('li:has-text("SEE v3:")').first().textContent(), /credit: paraphrased/);
+    assert.match(await olive.locator('li:has-text("SEE v3:")').first().textContent(), /credit: maya, paraphrased/);
     assert.equal(await olive.locator('li:has(> p:has-text("Effort, AI")) form[data-include]').count(), 0, "Effort's own comments cannot be included as credit");
     step('SEE history shows credit: paraphrased and What changed');
 
@@ -226,8 +226,9 @@ async function main() {
 
     // 5b. SPEC Include is a real click, distinct from Paraphrase, and binds the current spec version.
     await maya.goto(`${itemUrl}/spec`);
-    await maya.locator('form[data-event=commented] [name=comment]').fill('Keep the caller name with the transfer.');
-    await maya.locator('form[data-event=commented]').getByRole('button', { name: 'Post comment' }).click();
+    await maya.locator('form[data-event=commented] [name=comment]').first().fill('Keep the caller name with the transfer.');
+    await maya.locator('form[data-event=commented]').first().getByRole('button', { name: 'Post comment' }).click();
+    await maya.getByText('Keep the caller name with the transfer.').first().waitFor();
     await olive.goto(`${itemUrl}/spec`);
     const specInclude = olive.locator('li:has-text("Keep the caller name") form[data-include="spec"]');
     await specInclude.getByRole('button', { name: 'Include' }).click();
@@ -344,7 +345,7 @@ async function main() {
     await olive.goto(itemUrl);
     assert.equal(await olive.locator('form[data-event=revised]').count(), 0, 'the old poster can no longer revise');
     assert.ok(await olive.getByText('olive posted this SEE').count() > 0, "the old poster's own post is still credited");
-    assert.match(await olive.locator('li:has-text("SEE v2:")').first().textContent(), /credit: paraphrased/, 'earlier credit remains');
+    assert.match(await olive.locator('li:has-text("SEE v2:")').first().textContent(), /credit: maya, quoted/, 'earlier credit remains');
     await maya.goto(itemUrl);
     assert.equal(await maya.locator('form[data-event=revised]').count(), 1, 'the new poster can revise');
     step('leader reassigned the original poster with a note; credit remains');
@@ -368,7 +369,7 @@ async function main() {
     const jobLines = () => olive.locator('main > p:has-text("Effort:")').allInnerTexts();
     for (let tries = 0; ; tries += 1) {
       const lines = await jobLines();
-      if (lines.length >= 11 && lines.every(line => /is (done|failed|blocked)/.test(line))) break;
+      if (lines.length >= 11 && lines.every(line => /is (answered|unavailable, retrying|done|failed|blocked)/.test(line))) break;
       assert.ok(tries < 120, `Effort jobs never finished: ${lines.join(' / ')}`);
       await new Promise(resolve => setTimeout(resolve, 700));
       await olive.reload();
@@ -406,6 +407,75 @@ async function main() {
     await waitForAgentComments(maya, 1);
     assert.match(await agentComments(maya).first().innerText(), /Fixture/i);
     step('Vision Quest (BUILD) opened as a SEE with an Effort first reply');
+
+    // 16. F-01 / REG-02: a plain comment and a check-in leave a delivered try alone; a SEE revision supersedes it.
+    await olive.goto(`${origin}/items/new`);
+    await olive.locator('[name=original]').fill('Agents re-key the caller phone number after every transfer.');
+    await olive.getByRole('button', { name: 'Post SEE' }).click();
+    await olive.waitForURL(/\/items\/(?!new$)[^/]+$/);
+    const regUrl = olive.url();
+    const regId = regUrl.split('/').at(-1);
+    await olive.locator('form[data-event=specced] [name=must]').fill('Carry the phone number across the transfer.');
+    await olive.locator('form[data-event=specced] [name=how_we_know]').fill('Agents stop re-keying it.');
+    await olive.getByRole('button', { name: 'SPEC IT!' }).click();
+    await olive.getByRole('link', { name: 'Open the spec' }).waitFor();
+    await olive.goto(`${regUrl}/spec`);
+    await olive.getByRole('button', { name: 'SEND IT!' }).click();
+    await olive.waitForFunction(() => !document.querySelector('form[data-send]'));
+    await leader.goto(regUrl);
+    const regReason = 'Small and clear, worth one try.';
+    await leader.locator('form[data-approve] [name=reason]').fill(regReason);
+    await leader.locator('form[data-approve] [name=cap_usd]').fill('2');
+    await leader.locator('form[data-approve] [name=quorum]').fill('1');
+    await leader.locator('form[data-approve] [name=password]').fill(leaderPassword);
+    await leader.locator('form[data-approve] button').click();
+    await leader.locator('.stage', { hasText: /Send/ }).waitFor();
+    await olive.goto(regUrl);
+    await eventually(olive, 'iframe[title="Playable try"]', 'the REG-02 try', 30000);
+    const regArtifact = await ben.goto(regUrl).then(() => ben.locator('form[data-event=helped] [name=artifact_hash]').inputValue());
+    const feedback = 'Please keep the number visible after the transfer.';
+    await maya.goto(regUrl);
+    await maya.getByLabel('Comment on this try').fill(feedback);
+    await maya.locator('form[data-event=commented]', { has: maya.getByLabel('Comment on this try') }).getByRole('button', { name: 'Post comment' }).click();
+    await maya.getByText(feedback).first().waitFor();
+    assert.equal(await rawPost(maya, `/api/items/${regId}/events`, { type: 'commented', comment: 'A plain comment on the SEE.', kind: 'comment', anchor_kind: 'see', anchor_hash: await maya.locator('form[data-event=commented] [name=anchor_hash]').last().inputValue() }), 201);
+    assert.equal(await rawPost(maya, `/api/items/${regId}/events`, { type: 'checked_in', note: 'Still watching how this one goes.' }), 201);
+    await olive.goto(regUrl);
+    await olive.locator('iframe[title="Playable try"]').waitFor();
+    assert.equal(await olive.locator('.stage', { hasText: /Send/ }).count() > 0, true, 'a comment and a check-in leave the item in Send');
+    assert.equal(await olive.getByText('superseded').count(), 0, 'a comment and a check-in do not supersede the try');
+    assert.equal(await ben.goto(regUrl).then(() => ben.locator('form[data-event=helped]').count()), 1, 'the helper can still say it helps');
+    step('comment and check-in left the delivered try alone');
+
+    // The OP revises the SEE: the old try is superseded.
+    const regBase = await olive.locator('form[data-event=revised] [name=base_hash]').inputValue();
+    await olive.locator('form[data-event=revised] [name=text]').fill('Agents re-key the caller phone number and the account number after every transfer.');
+    await olive.locator('form[data-event=revised]').getByRole('button', { name: 'Save revision' }).click();
+    await olive.getByText('SEE v2:').waitFor();
+    assert.notEqual(regBase, await olive.locator('form[data-event=revised] [name=base_hash]').inputValue(), 'the revision made a new SEE hash');
+    await olive.getByText('This old approval is superseded.').waitFor();
+    const oldNote = await olive.locator('p:has-text("This old approval is superseded.")').innerText();
+    assert.match(oldNote, /The delivered try is superseded and cannot receive new Helps votes\./);
+    assert.match(oldNote, /Update the spec, SEND IT!, and get a new leader approval\./, 'the OP is told a new spec, SEND and leader approval are needed');
+    assert.equal(await olive.locator('iframe[title="Playable try"]').count(), 0, 'no playable old try is offered');
+    const { DatabaseSync } = await import('node:sqlite');
+    const probe = new DatabaseSync(db, { readOnly: true });
+    let runs = [];
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      runs = probe.prepare('SELECT status FROM runs WHERE item=?').all(regId);
+      if (runs.length && runs.every(run => run.status === 'stopped')) break;
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    probe.close();
+    assert.ok(runs.length > 0 && runs.every(run => run.status === 'stopped'), `the old run is stopped, saw ${JSON.stringify(runs)}`);
+    await ben.goto(regUrl);
+    assert.equal(await ben.locator('form[data-event=helped]').count(), 0, 'a helper has no Helps control for the superseded try');
+    const stale = await rawPost(ben, `/api/items/${regId}/events`, { type: 'helped', artifact_hash: regArtifact });
+    assert.ok(stale >= 400 && stale < 500, `a direct Helps for the old artifact must be refused with a 4xx, got ${stale}`);
+    await ben.reload();
+    assert.ok(await ben.getByText(regReason).count() > 0, 'the old approval reason stays visible as history');
+    assert.ok(await ben.getByText(feedback).count() > 0, 'the old try feedback stays visible as history');
+    step('SEE revision superseded the try; Helps refused; history and next steps shown');
 
     assert.deepEqual(problems, [], `browser problems:\n${problems.join('\n')}`);
     console.log('PASS: Vision journey in a real browser: SEE, Effort, mention, include and credit, SPEC IT!, SEND IT!, decision, fork, adopted steer, reassign, mention cap, Vision Quest.');

@@ -103,6 +103,17 @@ test('ordinary gateway reservations count already-settled Quest spend', async ()
   } finally { store.close(); }
 });
 
+test('ordinary gateway reservations count already-settled Effort spend', async () => {
+  const { store, ledger, token } = fixture(':memory:', { global_micros: 40, day_micros: 40 });
+  try {
+    const { EffortGateway } = await import('../gateway/effort.js');
+    const effort = new EffortGateway(ledger, async () => ({ output: 'ok', usage: { input_tokens: 9, output_tokens: 1 } }));
+    const done = await effort.call('member', 'effort-before-gateway', { model: 'fixture:text-v1', input: 'x', max_output_tokens: 1 }, 'item', 'job');
+    assert.equal(done.status, 200);
+    assert.throws(() => ledger.reserve(token, 'gateway-after-effort', request()), /global cap exceeded/);
+  } finally { store.close(); }
+});
+
 test('gateway CLI versions policy, lists holds, and releases four timed-out holds so a fifth is admitted', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'sss-slice17-')); const file = join(dir, 'sss.db');
   try {

@@ -90,7 +90,7 @@ function eventWords(event) {
   };
   // A try is written by a per-item token, so name the person who delivered it instead.
   if (event.type === 'seen') return `${escape(event.source_label)} reported this as ${escape(event.honesty_label)} evidence`;
-  return `${escape(event.type === 'tried' && event.delivered_by ? event.delivered_by : event.actor)} ${words[event.type] || 'updated this item'}${event.type === 'approved' && event.reason ? `. Reason: ${escape(event.reason)}` : ''}${event.type === 'tried' && event.model_output ? ' (model output)' : ''}`;
+  return `${escape(event.type === 'tried' && event.delivered_by ? event.delivered_by : event.actor)} ${words[event.type] || 'updated this item'}${event.type === 'approved' && event.reason ? `. Reason: ${escape(event.reason)}` : ''}${event.type === 'steward_changed' ? ` to ${escape(event.steward)}${event.reason ? `. Note: ${escape(event.reason)}` : ''}` : ''}${event.type === 'tried' && event.model_output ? ' (model output)' : ''}`;
 }
 
 export function itemPage(item, events, person, leader) {
@@ -181,6 +181,8 @@ export function itemPage(item, events, person, leader) {
   const see = rules2 ? `<section><h2>Original</h2><p>${escape(firstEvent.original)}</p><p>Hash ${escape(firstEvent.body_hash)}, posted ${escape(firstEvent.at)}</p><h2>Current SEE v${escape(context.seeVersion)}</h2><p>${escape(events.filter(event => event.type === 'revised').at(-1)?.text || firstEvent.original)}</p><h2>Version history</h2><ol><li>SEE v1: ${escape(firstEvent.original)}</li>${revisions}</ol>${context.specHash ? `<p><a class="button" href="/items/${encodeURIComponent(item.id)}/spec">Open the spec</a></p>` : ''}</section>` : '';
   const forkedFrom = context.parent ? `<p>Forked from <a href="/items/${encodeURIComponent(context.parent.item)}">the original item</a>.</p>` : '';
   const fork = rules2 ? `<form data-fork="true"><h2>Fork</h2><label>Why try another direction?<input name="reason" required maxlength="2000"></label><button>Fork</button></form>` : '';
+  const reassign = rules2 && leader && !['HELPS', 'SHELVED'].includes(item.state)
+    ? `<form data-event="steward_changed"><h2>Reassign the original poster</h2><label>New original poster (person ID)<input name="steward" required maxlength="64"></label><label>Note, at least 12 characters<input name="reason" required minlength="12" maxlength="2000"></label><button>Reassign the original poster</button></form>` : '';
   const checkin = `<form data-event="checked_in"><h2>Check-in</h2><label>What changed?<input name="note" required maxlength="2000"></label><button>Post check-in</button></form>`;
   const effortStatus = (item.effort || []).map(job => `<p>Effort: ${escape(job.kind)} is ${escape(job.state)}${job.last_error ? ` (${escape(job.last_error)})` : ''}.</p>`).join('');
   const instructions = events.filter(event => event.type === 'steered' && event.approval === context.approval)
@@ -189,7 +191,7 @@ export function itemPage(item, events, person, leader) {
     problem,
     '<p><a href="/">Back to the work</a></p>' +
       `<p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1>` +
-      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${forkedFrom}${effortStatus}${see}${questMemo}${specSummary}${revise}${action}${packetView}${tryThread}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${shelve}${checkin}${comment}` +
+      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${forkedFrom}${effortStatus}${see}${questMemo}${specSummary}${revise}${action}${packetView}${tryThread}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${shelve}${reassign}${checkin}${comment}` +
       `<h2>${rules2 ? 'Thread' : 'Comments'}</h2>${rules2 ? (renderThread(events, { ...context, steward: context.steward === person ? context.steward : null }) || '<p>No comments yet.</p>') : `<ol>${anchoredComments || '<li>No comments yet.</li>'}</ol>`}<h2>What happened</h2><ol>${events.filter(event => event.type !== 'commented' && event.type !== 'revised').map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
   );
 }

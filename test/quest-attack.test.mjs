@@ -65,10 +65,10 @@ test('authority: a quest can only post what its signed-in person could post by h
     const [event, ...rest] = store.events(made.json.id);
     assert.equal(rest.length, 0);
     assert.equal(event.actor, 'maker');
-    assert.equal(event.type, 'checked');
+    assert.equal(event.type, 'posted'); // every Quest result now posts a SEE (F2)
     const extras = ['role', 'helpers', 'approval', 'cap_usd', 'quorum'];
     assert.deepEqual(Object.keys(event).filter(k => extras.includes(k)), []);
-    assert.equal(made.json.state.state, 'CHECKED');
+    assert.equal(made.json.state.state, 'SEEN');
     assert.equal(made.json.state.context.helpers.length, 0);
     // A quest cannot ride on any later step, so it cannot skip, approve, deliver or help.
     for (const type of ['specced', 'approved', 'helped', 'tried', 'shelved', 'commented', 'charged']) {
@@ -228,7 +228,7 @@ test('draft spec: a build proposal prefills the steward spec form and nothing el
   assert.match(plain, /name="must" required><\/textarea>/);
 });
 
-test('process change posts as the existing setting verdict, kill stays a memo', async () => {
+test('process change posts a SEE with the memo attached, kill stays a memo', async () => {
   const process = completedQuest({ approach: 'process' }, 'maker');
   assert.equal(deriveQuest(process).recommendation, 'PROCESS CHANGE');
   assert.equal(checkedFromQuest(process, 'maker').verdict, 'setting');
@@ -239,9 +239,9 @@ test('process change posts as the existing setting verdict, kill stays a memo', 
   try {
     const made = await call(handler, 'POST', '/api/items', { quest: process }, who.maker);
     assert.equal(made.status, 201);
-    assert.equal(made.json.state.state, 'CHECKED');
+    assert.equal(made.json.state.state, 'SEEN');
     const page = await call(handler, 'GET', `/items/${made.json.id}`, undefined, who.maker);
     assert.match(page.text, /PROCESS CHANGE/);
-    assert.doesNotMatch(page.text, /data-event="specced"/);
+    assert.match(page.text, /data-event="specced"/);
   } finally { store.close(); }
 });

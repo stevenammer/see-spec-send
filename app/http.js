@@ -376,7 +376,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         // This entire lookup/append block is synchronous. Concurrent requests cannot
         // interleave it; the deterministic item ID also survives server restarts.
         const prior = input.quest ? store.events(id) : [];
-        const questAsSee = input.quest && eventBody.questMemo.recommendation === 'CONFIGURE';
+        const questAsSee = Boolean(input.quest); // every Quest result posts a SEE: Effort replies and the thread opens
         if (prior.length) {
           if ((input.quest && prior[0].type !== (questAsSee ? 'posted' : 'checked')) || (!input.quest && prior[0].type !== 'checked') || prior[0].actor !== session.person) {
             throw invalid('Quest receipt owner does not match.');

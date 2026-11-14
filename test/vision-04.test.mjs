@@ -36,7 +36,9 @@ test('F2 credits a paraphrase, preserves the source, and leader reassignment nee
 
 test('F2 stops at thirty item tags and Effort spec drafts are comments, never specs', async () => {
   const store = setup(); const see = store.read('f2').context.seeHash;
-  for (let n = 2; n <= 31; n += 1) append(store, { type: 'commented', actor: ['op', 'member', 'leader'][n % 3], comment: `@effort tag ${n}`, kind: 'comment', anchor_kind: 'see', anchor_hash: see }, n);
+  // Five people rotate so no one reaches their own ten-a-day limit; only the per-item limit of thirty can stop the 31st.
+  const crowd = ['op', 'member', 'leader', 'p4', 'p5']; for (const id of ['p4', 'p5']) store.registerPerson(id);
+  for (let n = 2; n <= 32; n += 1) append(store, { type: 'commented', actor: crowd[n % 5], comment: `@effort tag ${n}`, kind: 'comment', anchor_kind: 'see', anchor_hash: see }, n);
   assert.equal(store.db.prepare("SELECT count(*) AS n FROM effort_jobs WHERE item='f2' AND kind='tag'").get().n, 30);
   const draftStore = setup(); const draftSee = draftStore.read('f2').context.seeHash;
   append(draftStore, { type: 'specced', actor: 'op', see_hash: draftSee, must: ['Keep the handoff'], how_we_know: ['A person reads it'], out_of_scope: [] }, 2);

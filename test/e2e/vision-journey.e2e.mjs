@@ -36,7 +36,7 @@ async function main() {
   await cli(['init', '--id', 'admin']);
   await cli(['gateway', 'fixture-enable']);
   const invites = { leader: await cli(['invite', 'create', '--role', 'leader']) };
-  for (const name of ['olive', 'maya', 'ben'])
+  for (const name of ['olive', 'maya', 'ben', 'cara'])
     invites[name] = await cli(['invite', 'create', '--role', 'member']);
 
   const children = [];
@@ -121,6 +121,18 @@ async function main() {
       { path, body },
     );
 
+  // Wait, reloading, until at least `count` Effort comments show on the page.
+  const agentComments = page => page.locator('li > p:has-text("Effort, AI")');
+  async function waitForAgentComments(page, count, timeout = 30000) {
+    const end = Date.now() + timeout;
+    for (;;) {
+      if ((await agentComments(page).count()) >= count) return;
+      if (Date.now() > end) throw new Error(`never saw ${count} Effort comments at ${page.url()}; saw ${await agentComments(page).count()}. Effort jobs: ${(await page.locator('main > p:has-text("Effort:")').allInnerTexts()).join(' / ')}. Problems: ${problems.join(' | ')}`);
+      await new Promise(resolve => setTimeout(resolve, 700));
+      await page.reload();
+    }
+  }
+
   const step = (name) => process.stdout.write(`  ok ${name}\n`);
 
   try {
@@ -153,6 +165,20 @@ async function main() {
     await maya.getByText('Does the caller repeat their account number?').first().waitFor();
     step('member commented');
 
+    // 3b. A mention asks Effort for a reply: a threaded-after AI comment with the fixture label.
+    const mention = '@effort what is the risk here?';
+    await maya.locator('form[data-event=commented] [name=comment]').first().fill(mention);
+    await maya.locator('form[data-event=commented]').first().getByRole('button', { name: 'Post comment' }).click();
+    await maya.getByText(mention).first().waitFor();
+    await waitForAgentComments(maya, 2);
+    const agentLines = await agentComments(maya).allInnerTexts();
+    assert.equal(agentLines.length, 2, 'the first comment and exactly one reply to the mention');
+    assert.match(agentLines[1], /effort \(Effort, AI\)/);
+    assert.match(agentLines[1], /Fixture/i, 'the tagged reply must say it is a fixture');
+    const order = await maya.locator('li > p').allInnerTexts();
+    assert.ok(order.findIndex(line => line.includes(mention)) < order.findLastIndex(line => line.includes('Effort, AI')), "Effort's reply comes after the mention");
+    step('@effort mention got a labeled AI reply');
+
     // 4. Only OP can include it.
     assert.equal(await maya.locator('form[data-include]').count(), 0, 'a member sees no Include control');
     await ben.goto(itemUrl);
@@ -171,6 +197,19 @@ async function main() {
     await olive.getByText('SEE v2:').waitFor();
     step('OP included the comment; member refused');
 
+    // 4b. The credit and the diff show in the SEE history; Paraphrase makes another credited revision.
+    const v2 = olive.locator('li:has-text("SEE v2:")').first();
+    assert.match(await v2.textContent(), /credit: paraphrased/);
+    assert.match(await v2.locator('details').textContent(), /What changed[\s\S]*added: Callers lose context when a call is transferred, and repeat their account number\./);
+    assert.match(await v2.locator('details').textContent(), /removed: Callers lose context when a call is transferred\./);
+    const paraphrase = olive.locator('li:has-text("@effort what is the risk")').filter({ has: olive.locator('form[data-include]') }).first().locator('form[data-include]');
+    await paraphrase.locator('[name=text]').fill('Callers lose context on transfer, and nobody says what the risk is.');
+    await paraphrase.getByRole('button', { name: 'Paraphrase' }).click();
+    await olive.getByText('SEE v3:').waitFor();
+    assert.match(await olive.locator('li:has-text("SEE v3:")').first().textContent(), /credit: paraphrased/);
+    assert.equal(await olive.locator('li:has(> p:has-text("Effort, AI")) form[data-include]').count(), 0, "Effort's own comments cannot be included as credit");
+    step('SEE history shows credit: paraphrased and What changed');
+
     // 5. SPEC IT! makes the spec post, where Effort comments first too.
     await olive.locator('form[data-event=specced] [name=must]').fill('Pass the account number on transfer.\nShow it to the next agent.');
     await olive.locator('form[data-event=specced] [name=how_we_know]').fill('Callers stop repeating it.');
@@ -181,6 +220,9 @@ async function main() {
     await eventually(olive, 'li:has-text("Effort, AI")', "Effort's first spec comment");
     assert.match(await olive.locator('li:has-text("Effort, AI")').first().innerText(), /Fixture/i);
     step('spec post and Effort comment');
+
+    assert.match(await olive.locator('li > p:has-text("Effort, AI")').first().innerText(), /Use as starting point/);
+    step('spec post shows Effort\'s Use as starting point comment');
 
     // 6. SEND IT!
     await olive.getByRole('button', { name: 'SEND IT!' }).click();
@@ -251,8 +293,106 @@ async function main() {
     assert.equal(await olive.locator('section:has(h2:text("Builder instructions")) li', { hasText: ignored }).count(), 0);
     step('adopted comment reached the next try; the other did not');
 
+    // 12. The OP page has no way to delete or hide Effort's comment, and a direct erase is refused.
+    await olive.goto(itemUrl);
+    const effortItem = olive.locator('li:has(> p:has-text("Effort, AI"))').first();
+    const effortButtons = (await effortItem.locator('button').allInnerTexts()).map(text => text.trim());
+    assert.deepEqual(effortButtons, ['Reply'], `Effort's comment offers only Reply, saw ${effortButtons}`);
+    assert.equal(await olive.getByRole('button', { name: /delete|hide|remove|erase/i }).count(), 0, 'no delete or hide control anywhere on the OP page');
+    const effortHash = await effortItem.locator('input[name=parent]').inputValue();
+    for (const [who, page] of [['OP', olive], ['member', ben], ['leader', leader]]) {
+      const erase = await rawPost(page, `/api/items/${itemId}/events`, { type: 'erased', body_hash: effortHash });
+      assert.ok(erase >= 400, `${who} cannot erase Effort's comment, got ${erase}`);
+    }
+    await olive.goto(itemUrl);
+    assert.ok((await agentComments(olive).count()) >= 2, "Effort's comments are still there");
+    step("no delete or hide for Effort's comment");
+
+    // 13. A leader reassigns the original poster with a note; the old poster's credit stays.
+    await ben.goto(itemUrl);
+    assert.equal(await ben.locator('form[data-event=steward_changed]').count(), 0, 'a member has no reassign control');
+    assert.equal(await olive.locator('form[data-event=steward_changed]').count(), 0, 'the original poster has no reassign control');
+    for (const [who, page] of [['member', ben], ['original poster', olive]]) {
+      const refusedReassign = await rawPost(page, `/api/items/${itemId}/events`, { type: 'steward_changed', steward: 'maya', reason: 'I would like to hand this over.' });
+      assert.ok(refusedReassign >= 400, `${who} direct reassign must be refused, got ${refusedReassign}`);
+    }
+    await leader.goto(itemUrl);
+    const reassign = leader.locator('form[data-event=steward_changed]');
+    await reassign.locator('[name=steward]').fill('maya');
+    await reassign.locator('[name=reason]').fill('too short');
+    await reassign.getByRole('button', { name: 'Reassign the original poster' }).click();
+    assert.equal(await leader.getByText('reassigned the original poster').count(), 0, 'a short note does not reassign');
+    await reassign.locator('[name=reason]').fill('Olive is moving to another team, Maya owns this now.');
+    await reassign.getByRole('button', { name: 'Reassign the original poster' }).click();
+    await leader.getByText(/reassigned the original poster to maya\. Note: Olive is moving to another team, Maya owns this now\./).waitFor();
+    await olive.goto(itemUrl);
+    assert.equal(await olive.locator('form[data-event=revised]').count(), 0, 'the old poster can no longer revise');
+    assert.ok(await olive.getByText('olive posted this SEE').count() > 0, "the old poster's own post is still credited");
+    assert.match(await olive.locator('li:has-text("SEE v2:")').first().textContent(), /credit: paraphrased/, 'earlier credit remains');
+    await maya.goto(itemUrl);
+    assert.equal(await maya.locator('form[data-event=revised]').count(), 1, 'the new poster can revise');
+    step('leader reassigned the original poster with a note; credit remains');
+
+    // 14. Mention cap: the 11th mention by one person in one day still lands, with no Effort reply.
+    await join_('cara');
+    await olive.goto(`${origin}/items/new`);
+    await olive.locator('[name=original]').fill('New hires cannot find the transfer script.');
+    await olive.getByRole('button', { name: 'Post SEE' }).click();
+    await olive.waitForURL(/\/items\/(?!new$)[^/]+$/);
+    const capUrl = olive.url();
+    const capId = capUrl.split('/').at(-1);
+    await waitForAgentComments(olive, 1);
+    await people.cara.goto(capUrl);
+    const seeAnchor = await people.cara.locator('form[data-event=commented] [name=anchor_hash]').first().inputValue();
+    for (let n = 1; n <= 11; n += 1) {
+      const status = await rawPost(people.cara, `/api/items/${capId}/events`, { type: 'commented', comment: `@effort ping number ${n}`, anchor_kind: 'see', anchor_hash: seeAnchor, kind: 'comment' });
+      assert.ok(status < 300, `mention ${n} must land, got ${status}`);
+    }
+    // Effort's jobs are listed on the page. Wait for every one of them to finish, then count.
+    const jobLines = () => olive.locator('main > p:has-text("Effort:")').allInnerTexts();
+    for (let tries = 0; ; tries += 1) {
+      const lines = await jobLines();
+      if (lines.length >= 11 && lines.every(line => /is (done|failed|blocked)/.test(line))) break;
+      assert.ok(tries < 120, `Effort jobs never finished: ${lines.join(' / ')}`);
+      await new Promise(resolve => setTimeout(resolve, 700));
+      await olive.reload();
+    }
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    await olive.reload();
+    const tagJobs = (await jobLines()).filter(line => line.startsWith('Effort: tag'));
+    assert.equal(tagJobs.length, 10, `ten mentions are answered and the 11th is not queued: ${tagJobs.join(' / ')}`);
+    assert.equal((await jobLines()).length, 11, 'one first-comment job plus ten tag jobs, nothing for the 11th');
+    assert.ok((await agentComments(olive).count()) >= 10, 'Effort answered the mentions under the cap');
+    assert.ok((await agentComments(olive).count()) <= 11, 'never more than the first comment plus ten replies');
+    assert.equal(await olive.locator('li > p:has-text("@effort ping number 11")').count(), 1, 'the 11th mention still landed');
+    step('11th @effort mention landed with no Effort reply');
+
+    // 15. Vision Quest, finished with a BUILD recommendation (not CONFIGURE), opens as a SEE with Effort's first reply.
+    await maya.goto(`${origin}/quest`);
+    const picks = { have: 'unavailable', pay_for: 'unavailable', free: 'unavailable', setting: 'unavailable', playback: 'yes', risk: 'low', impact: '4', repeat: '4', control: '4', evidence: '4', approach: 'build' };
+    const questForm = '#quest-content > form[data-quest-step]';
+    await maya.locator(questForm).waitFor();
+    for (let guard = 0; guard < 60; guard += 1) {
+      const form = maya.locator(questForm);
+      if (!(await form.count())) break;
+      const key = await form.getAttribute('data-quest-step');
+      const field = form.locator('[name=answer]');
+      if (picks[key]) await field.selectOption(picks[key]); else await field.fill(`${key}: transfers drop the account number every time on a real call`);
+      await form.getByRole('button', { name: 'Save answer and continue' }).click();
+      await maya.waitForFunction(previous => document.querySelector('#quest-content > form[data-quest-step]')?.dataset.questStep !== previous, key, { timeout: 8000 }).catch(() => {});
+    }
+    await maya.getByRole('heading', { name: 'BUILD', exact: true }).waitFor({ timeout: 8000 });
+    await maya.locator('[name=reviewed]').check();
+    await maya.getByRole('button', { name: 'Post my checked problem' }).click();
+    await maya.waitForURL(/\/items\/[^/]+$/);
+    await maya.getByRole('heading', { name: 'Original' }).waitFor();
+    await maya.getByRole('heading', { name: 'Vision Quest memo' }).waitFor();
+    await waitForAgentComments(maya, 1);
+    assert.match(await agentComments(maya).first().innerText(), /Fixture/i);
+    step('Vision Quest (BUILD) opened as a SEE with an Effort first reply');
+
     assert.deepEqual(problems, [], `browser problems:\n${problems.join('\n')}`);
-    console.log('PASS: Vision journey in a real browser: SEE, Effort, include, SPEC IT!, SEND IT!, decision, fork, adopted steer.');
+    console.log('PASS: Vision journey in a real browser: SEE, Effort, mention, include and credit, SPEC IT!, SEND IT!, decision, fork, adopted steer, reassign, mention cap, Vision Quest.');
   } finally {
     await browser.close();
     for (const child of children) child.kill('SIGTERM');

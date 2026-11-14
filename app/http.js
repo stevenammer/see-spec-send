@@ -346,7 +346,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         return page(
           res,
           itemPage({ id: view[1], ...state, packet: state.context.sent && store.artifact(view[1], state.context.sent.packetHash),
-            effort: store.db.prepare('SELECT kind,state,last_error FROM effort_jobs WHERE item=? ORDER BY created').all(view[1]) }, events, session.person, leader),
+            effort: store.db.prepare('SELECT kind,state,last_error,requester,created FROM effort_jobs WHERE item=? ORDER BY created').all(view[1]) }, events, session.person, leader),
         );
       }
       if (req.method === 'GET' && url.pathname === '/api/items') {

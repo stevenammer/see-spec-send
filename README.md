@@ -1,8 +1,18 @@
 # See / Spec / Send
 
-Status: F1's in-process journey is available: post a SEE without Vision Quest, discuss it with Effort queued first, write a separate SPEC, send one frozen packet for a reasoned leader decision, fork, and adopt OP-only builder instructions. The builder remains a clearly labeled fixture.
+Status: the F2 and repair journey is available: post a SEE without Vision Quest, discuss it with Effort queued first, write a separate SPEC, send one frozen packet for a reasoned leader decision, fork, and adopt OP-only builder instructions. The builder remains a clearly labeled fixture.
 
 Rules 2 verification (2026-11-14): unit, public-file and demo-parity checks run locally. The separate CI browser job runs the Vision and E2E journeys. See `docs/INVARIANTS.md` for the stale-state authorization chain. Effort is always shown first as an honest status or reply. Vision Quest is optional.
+
+| Gate | Command | Commit | Date | Environment | Result |
+| --- | --- | --- | --- | --- | --- |
+| Unit and in-process HTTP | `npm test` | `0d6c83c` | 2026-11-14 | Node 22 | NOT RUN for this uncommitted repair |
+| Public files | `npm run check:public` | `0d6c83c` | 2026-11-14 | Node 22 | NOT RUN for this uncommitted repair |
+| Demo parity | `npm run check:demo` | `0d6c83c` | 2026-11-14 | Node 22 | NOT RUN for this uncommitted repair |
+| Browser journey | `npm run test:vision` | `0d6c83c` | 2026-11-14 | Chrome + Playwright | NOT RUN in this sandbox |
+| Mutation controls | `npm run check:mutants` | `0d6c83c` | 2026-11-14 | Node 22 | NOT RUN for this uncommitted repair |
+| Docker acceptance | `npm run test:container` | `0d6c83c` | 2026-11-14 | Docker + local mock | NOT RUN in this sandbox |
+| Hosted model/vendor | explicit opt-in only | `0d6c83c` | 2026-11-14 | bounded provider | NOT AUTHORIZED / NOT RUN |
 
 Everybody at work already knows the thing that's broken. The workaround has a name. Somebody has a spreadsheet for it. And nobody fixes it, because the people who feel it don't get to build anything, and the people who build things never feel it.
 

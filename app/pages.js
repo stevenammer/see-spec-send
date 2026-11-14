@@ -200,13 +200,17 @@ export function itemPage(item, events, person, leader) {
         : job.state === 'done' ? 'answered' : job.state;
     return `<p>Effort: ${escape(job.kind)} is ${escape(status)}${job.last_error ? ` (${escape(job.last_error)})` : ''}.</p>`;
   }).join('') || '<p>Effort is not turned on on this server.</p>';
+  const today = new Date().toISOString().slice(0, 10);
+  const usedMentions = (item.effort || []).filter(job => job.kind === 'tag' && job.requester === person && new Date(job.created).toISOString().slice(0, 10) === today).length;
+  const usedAutomatic = (item.effort || []).filter(job => ['see_first', 'spec_first', 'spec_draft'].includes(job.kind) && job.requester === person && new Date(job.created).toISOString().slice(0, 10) === today).length;
+  const effortAllowance = `<p>Effort replies left today: ${Math.max(0, 10 - usedMentions)} mentions. Startup replies use a separate small allowance: ${Math.max(0, 2 - usedAutomatic)} left. All replies still stop at the shared spend caps.</p>`;
   const instructions = events.filter(event => event.type === 'steered' && event.approval === context.approval)
     .map(event => `<li>${escape(event.instruction)}${event.source ? ` (from ${escape(event.source)})` : ''}</li>`).join('');
   return shell(
     problem,
     '<p><a href="/">Back to the work</a></p>' +
-      `<p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1>` +
-      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${context.superseded ? `<p>This old approval is superseded. Update the spec, SEND IT!, and get a new leader approval.${context.supersededArtifact ? ' The delivered try is superseded and cannot receive new Helps votes.' : ''}</p>` : ''}${forkedFrom}${effortStatus}${see}${questMemo}${specSummary}${revise}${action}${packetView}${tryThread}${oldTryHistory}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${shelve}${reassign}${checkin}${comment}` +
+      `<p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1><p>Originator: ${escape(context.originator || context.steward)}. Current steward: ${escape(context.steward)}.</p>` +
+      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${context.superseded ? `<p>This old approval is superseded. Update the spec, SEND IT!, and get a new leader approval.${context.supersededArtifact ? ' The delivered try is superseded and cannot receive new Helps votes.' : ''}</p>` : ''}${forkedFrom}${effortStatus}${effortAllowance}${see}${questMemo}${specSummary}${revise}${action}${packetView}${tryThread}${oldTryHistory}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${shelve}${reassign}${checkin}${comment}` +
       `<h2>${rules2 ? 'Thread' : 'Comments'}</h2>${rules2 ? (renderThread(events, { ...context, steward: context.steward === person ? context.steward : null }) || '<p>No comments yet.</p>') : `<ol>${anchoredComments || '<li>No comments yet.</li>'}</ol>`}<h2>What happened</h2><ol>${events.filter(event => event.type !== 'commented' && event.type !== 'revised').map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
   );
 }

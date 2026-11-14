@@ -22,7 +22,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs', 'test/slice23.test.mjs', 'test/slice24.test.mjs',
   'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs', 'test/slice27.test.mjs', 'test/password-screen.test.mjs',
-  'test/vision-01.test.mjs', 'test/vision-02.test.mjs', 'test/vision-03.test.mjs', 'test/vision-04.test.mjs', 'test/sliceR.test.mjs'];
+  'test/vision-01.test.mjs', 'test/vision-02.test.mjs', 'test/vision-03.test.mjs', 'test/vision-04.test.mjs', 'test/sliceR.test.mjs', 'test/sliceR2.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
@@ -53,7 +53,7 @@ const mutants = [
   ['F1 stale iteration refused', 'event.iteration !== context.iteration', 'false'],
   ['F1 Effort single first-comment idem', 'idem: `effort:${job.id}`', 'idem: `effort:${job.id}:${job.attempts}`'],
   ['F1 Effort kill latch', "demand(!killed(this.store), 'stopped run'); const policy", "demand(true, 'stopped run'); const policy"],
-  ['F1 Effort per-person cap', 'mine.length < EFFORT_LIMITS.calls_per_person_day', 'true'],
+  ['F1 Effort per-person cap', "mine.filter(sameClass).length < (automatic ? EFFORT_LIMITS.automatic_calls_per_person_day : EFFORT_LIMITS.calls_per_person_day)", 'true'],
   ['F2 tag cap keeps eleventh comment unqueued', 'if (tagsByPerson < 10 && tagsByItem < 30)', 'if (tagsByPerson < 11 && tagsByItem < 30)'],
   ['F2 tag item cap reaches thirty', 'if (tagsByPerson < 10 && tagsByItem < 30) this.db', 'if (tagsByPerson < 10) this.db'],
   ['F2 agent mention never loops', "event.type === 'commented' && authority.kind === 'person' && /@effort\\b/i.test(event.comment)", "event.type === 'commented' && /@effort\\b/i.test(event.comment)"],
@@ -71,6 +71,9 @@ const mutants = [
   ['R handled stale completion', "this.db.prepare(\"UPDATE runs SET status='stopped' WHERE id=?\").run(id);", "this.db.prepare(\"UPDATE runs SET status='active' WHERE id=?\").run(id);"],
   ['R Effort prompt bounded', 'const thread = events.slice(-limit);', 'const thread = events;'],
   ['R reassignment requires consent or inactivity', "if (!consented && !inactiveForFourteenDays) throw refused('steward consent or fourteen days of inactivity required');", 'if (false) throw refused(\'steward consent or fourteen days of inactivity required\');'],
+  ['R2 tagged Effort reply keeps its parent', "...(job.kind === 'tag' ? { parent: triggerBody.body_hash } : {})", ''],
+  ['R2 separate mention quota ignores automatic replies', "mine.filter(sameClass).length < (automatic ? EFFORT_LIMITS.automatic_calls_per_person_day : EFFORT_LIMITS.calls_per_person_day)", 'mine.length < EFFORT_LIMITS.calls_per_person_day'],
+  ['R2 sequence diff preserves duplicates and order', 'lengths[oldAt][newAt] = oldLines[oldAt] === newLines[newAt]', 'lengths[oldAt][newAt] = false'],
   ['gateway disabled default', "demand(policy.enabled, 'gateway disabled');", ''],
   ['gateway run cap', "demand(add(used, worst) <= cap, 'run cap exceeded');", ''],
   ['gateway global cap', "demand(add(sum(combined), worst) <= policy.global_micros, 'global cap exceeded');", ''],

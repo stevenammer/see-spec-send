@@ -74,7 +74,7 @@ test('F1 Effort leaves the post visible with an honest failure, disabled, and ki
   }
 });
 
-test('F1 Effort uses a sealed, per-person capped receipt and counts in global and day caps', async () => {
+test('F1 Effort uses sealed separate automatic and mention quotas, both inside global and day caps', async () => {
   const store = new Store(); people(store); const ledger = new Ledger(store);
   ledger.configure(fixturePolicy());
   const effort = new EffortGateway(ledger, async () => ({ output: 'A useful question.', usage: { input_tokens: 1, output_tokens: 1 } }));
@@ -84,7 +84,8 @@ test('F1 Effort uses a sealed, per-person capped receipt and counts in global an
   assert.equal(receipt.state, 'settled');
   for (const idem of ['another', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'])
     effort.reserve('op', idem, { model: 'fixture:text-v1', input: 'x', max_output_tokens: 16 }, 'item', 'job');
-  assert.throws(() => effort.reserve('op', 'eleventh', { model: 'fixture:text-v1', input: 'x', max_output_tokens: 16 }, 'item', 'job'), /person daily call limit/);
+  effort.reserve('op', 'eleventh', { model: 'fixture:text-v1', input: 'x', max_output_tokens: 16 }, 'item', 'job');
+  assert.throws(() => effort.reserve('op', 'twelfth', { model: 'fixture:text-v1', input: 'x', max_output_tokens: 16 }, 'item', 'job'), /mention daily call limit/);
   store.db.prepare("UPDATE gateway_effort_receipts SET seal='bad' WHERE id=?").run(receipt.id);
   assert.throws(() => effort.receipts(), /corrupt Effort receipt/);
 });

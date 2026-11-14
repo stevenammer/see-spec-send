@@ -24,8 +24,11 @@ export class EffortWorker {
       const anchor_kind = job.kind === 'spec_draft' ? 'spec' : job.kind === 'tag' ? triggerBody?.anchor_kind : 'see';
       const anchor_hash = job.kind === 'spec_draft' ? state.context.specHash : job.kind === 'tag' ? triggerBody?.anchor_hash : state.context.seeHash;
       if (!anchor_kind || !anchor_hash) throw Error('tag anchor unavailable');
+      // A mention is a reply to one exact comment and version. Do not move it to
+      // the newest version if that version changed while Effort was thinking.
+      if (job.kind === 'tag' && state.context[`${anchor_kind}Hash`] !== anchor_hash) throw Error('outdated, not answered');
       transaction(this.store, () => {
-        this.store.appendInTransaction(job.item, { type: 'commented', actor: 'effort', comment: `${job.kind === 'spec_draft' ? 'Use as starting point: ' : ''}${result.body.output}`, kind: 'agent', job: job.id, receipt: result.body.id, model: this.gateway.ledger.rate.model, anchor_kind, anchor_hash, at: new Date(this.clock()).toISOString() }, { idem: `effort:${job.id}` });
+        this.store.appendInTransaction(job.item, { type: 'commented', actor: 'effort', comment: `${job.kind === 'spec_draft' ? 'Use as starting point: ' : ''}${result.body.output}`, kind: 'agent', job: job.id, receipt: result.body.id, model: this.gateway.ledger.rate.model, anchor_kind, anchor_hash, ...(job.kind === 'tag' ? { parent: triggerBody.body_hash } : {}), at: new Date(this.clock()).toISOString() }, { idem: `effort:${job.id}` });
         this.db.prepare("UPDATE effort_jobs SET state='done',last_error=NULL WHERE id=?").run(job.id);
       });
       return true;

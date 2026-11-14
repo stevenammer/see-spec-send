@@ -177,7 +177,10 @@ async function main() {
     assert.match(agentLines[1], /Fixture/i, 'the tagged reply must say it is a fixture');
     const order = await maya.locator('li > p').allInnerTexts();
     assert.ok(order.findIndex(line => line.includes(mention)) < order.findLastIndex(line => line.includes('Effort, AI')), "Effort's reply comes after the mention");
-    step('@effort mention got a labeled AI reply');
+    const mentionThread = maya.locator('li').filter({ has: maya.locator('p', { hasText: mention }) }).first();
+    assert.equal(await mentionThread.locator('li:has-text("Effort, AI")').count(), 1, 'the mention reply remains in its exact nested thread');
+    assert.match(await maya.locator('main').textContent(), /Effort replies left today: 9 mentions/);
+    step('@effort mention got a nested labeled AI reply and the remaining quota');
 
     // 4. Only OP can include it.
     assert.equal(await maya.locator('form[data-include]').count(), 0, 'a member sees no Include control');
@@ -348,7 +351,7 @@ async function main() {
     assert.match(await olive.locator('li:has-text("SEE v2:")').first().textContent(), /credit: maya, quoted/, 'earlier credit remains');
     await maya.goto(itemUrl);
     assert.equal(await maya.locator('form[data-event=revised]').count(), 1, 'the new poster can revise');
-    step('leader reassigned the original poster with a note; credit remains');
+    step('leader reassigned the steward with a note; originator credit remains');
 
     // 14. Mention cap: the 11th mention by one person in one day still lands, with no Effort reply.
     await join_('cara');

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { killed, transaction } from '../worker/control.js';
 import { canonical } from './ledger.js';
 
-export const EFFORT_LIMITS = Object.freeze({ calls_per_person_day: 10, calls_per_item_day: 30, output_tokens: 256, person_day_micros: 100_000 });
+export const EFFORT_LIMITS = Object.freeze({ calls_per_person_day: 10, calls_per_item_day: 30, automatic_calls_per_person_day: 2, automatic_calls_per_item_day: 2, output_tokens: 256, person_day_micros: 100_000 });
 const digest = value => createHash('sha256').update(value).digest('hex');
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const demand = (value, message) => { if (!value) throw Error(message); };
@@ -22,9 +22,13 @@ export class EffortGateway {
       if (existing) { demand(existing.payload_hash === hash, 'idempotency payload conflict'); return { row: existing, fresh: false }; }
       const day = new Date(this.clock()).toISOString().slice(0, 10); const mine = all.filter(row => row.person === person && row.day === day);
       const itemCalls = all.filter(row => row.item === item && row.day === day);
+      const jobKind = this.db.prepare('SELECT kind FROM effort_jobs WHERE id=?').get(job)?.kind;
+      const automatic = jobKind === 'see_first' || jobKind === 'spec_first' || jobKind === 'spec_draft';
+      const receiptKind = row => this.db.prepare('SELECT kind FROM effort_jobs WHERE id=?').get(row.job)?.kind;
+      const sameClass = row => automatic === (['see_first', 'spec_first', 'spec_draft'].includes(receiptKind(row)));
       const sum = rows => rows.reduce((total, row) => total + row.charged_micros, 0);
-      demand(mine.length < EFFORT_LIMITS.calls_per_person_day, 'person daily call limit');
-      demand(itemCalls.length < EFFORT_LIMITS.calls_per_item_day, 'item daily call limit');
+      demand(mine.filter(sameClass).length < (automatic ? EFFORT_LIMITS.automatic_calls_per_person_day : EFFORT_LIMITS.calls_per_person_day), automatic ? 'automatic daily call limit' : 'mention daily call limit');
+      demand(itemCalls.filter(sameClass).length < (automatic ? EFFORT_LIMITS.automatic_calls_per_item_day : EFFORT_LIMITS.calls_per_item_day), automatic ? 'automatic item call limit' : 'mention item call limit');
       demand(sum(mine) + worst <= EFFORT_LIMITS.person_day_micros, 'person daily budget exceeded');
       const combined = this.ledger.allMeteredReceipts();
       demand(sum(combined) + worst <= policy.global_micros, 'global cap exceeded');

@@ -376,13 +376,15 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         // This entire lookup/append block is synchronous. Concurrent requests cannot
         // interleave it; the deterministic item ID also survives server restarts.
         const prior = input.quest ? store.events(id) : [];
+        const questAsSee = input.quest && eventBody.questMemo.recommendation === 'CONFIGURE';
         if (prior.length) {
-          if (prior[0].type !== 'checked' || prior[0].actor !== session.person) {
+          if ((input.quest && prior[0].type !== (questAsSee ? 'posted' : 'checked')) || (!input.quest && prior[0].type !== 'checked') || prior[0].actor !== session.person) {
             throw invalid('Quest receipt owner does not match.');
           }
           return json(res, 200, { id, state: store.read(id), idempotent: true });
         }
-        store.append(id, { type: 'checked', actor: session.person,
+        store.append(id, questAsSee ? { type: 'posted', actor: session.person, original: eventBody.problem,
+          questMemo: eventBody.questMemo, rules: CURRENT_RULES, at: new Date().toISOString() } : { type: 'checked', actor: session.person,
           at: new Date().toISOString(), ...eventBody },
         { idem: input.quest ? `quest:${id}` : randomUUID() });
         return json(res, 201, { id, state: store.read(id) });

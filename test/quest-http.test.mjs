@@ -53,16 +53,15 @@ test('quest creation is explicit, signed-in, CSRF guarded and server-derived; me
       quest, verdict: 'build_needed', problem: 'Ignore the transcript', memo: { verified: true },
     }, headers);
     assert.equal(made.status, 201);
-    assert.equal(made.json.state.state, 'CHECKED');
+    assert.equal(made.json.state.state, 'SEEN');
     const events = store.events(made.json.id);
     assert.equal(events.length, 1);
-    assert.equal(events[0].verdict, 'setting');
-    assert.equal(events[0].problem, quest.turns.find(t => t.step === 'problem').value);
+    assert.equal(events[0].original, quest.turns.find(t => t.step === 'problem').value);
     assert.equal(events[0].quest, undefined);
     assert.equal(events[0].questMemo.recommendation, 'CONFIGURE');
     const rendered = await call(handler, 'GET', `/items/${made.json.id}`, undefined, headers);
     assert.match(rendered.text, /CONFIGURE/);
-    assert.doesNotMatch(rendered.text, /data-event="specced"/);
+    assert.match(rendered.text, /data-event="specced"/);
     const restored = new Store();
     try {
       restored.importJsonl(store.exportJsonl());

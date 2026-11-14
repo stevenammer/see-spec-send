@@ -22,7 +22,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs', 'test/slice23.test.mjs', 'test/slice24.test.mjs',
   'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs', 'test/slice27.test.mjs', 'test/password-screen.test.mjs',
-  'test/vision-01.test.mjs', 'test/vision-02.test.mjs', 'test/vision-03.test.mjs'];
+  'test/vision-01.test.mjs', 'test/vision-02.test.mjs', 'test/vision-03.test.mjs', 'test/vision-04.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
@@ -54,6 +54,10 @@ const mutants = [
   ['F1 Effort single first-comment idem', 'idem: `effort:${job.id}`', 'idem: `effort:${job.id}:${job.attempts}`'],
   ['F1 Effort kill latch', "demand(!killed(this.store), 'stopped run'); const policy", "demand(true, 'stopped run'); const policy"],
   ['F1 Effort per-person cap', 'mine.length < EFFORT_LIMITS.calls_per_person_day', 'true'],
+  ['F2 tag cap keeps eleventh comment unqueued', 'if (tagsByPerson < 10 && tagsByItem < 30)', 'if (tagsByPerson < 11 && tagsByItem < 30)'],
+  ['F2 tag item cap reaches thirty', 'const tagsByItem = this.db.prepare("SELECT count(*) AS n FROM effort_jobs WHERE kind=\'tag\' AND item=? AND created>=? AND created<?")', 'const tagsByItem = this.db.prepare("SELECT count(*) AS n FROM effort_jobs WHERE kind=\'tag\' AND item=? AND created>? AND created<?")'],
+  ['F2 agent mention never loops', "event.type === 'commented' && authority.kind === 'person' && /@effort\\b/i.test(event.comment)", "event.type === 'commented' && /@effort\\b/i.test(event.comment)"],
+  ['F2 draft remains a comment', "type: 'commented', actor: 'effort', comment: `${job.kind === 'spec_draft' ? 'Use as starting point: ' : ''}${result.body.output}`", "type: 'specced', actor: 'effort', comment: `${job.kind === 'spec_draft' ? 'Use as starting point: ' : ''}${result.body.output}`"],
   ['F1 builder excludes comments', "event.type === 'steered'\n        && event.approval === run.approval", "event.type === 'commented'\n        && event.approval === run.approval"],
   ['F1 server builds send event', "case 'sent': case 'forked': case 'steered': return false;", "case 'sent': case 'forked': case 'steered': return true;"],
   ['gateway disabled default', "demand(policy.enabled, 'gateway disabled');", ''],
@@ -365,7 +369,7 @@ const mutants = [
 ];
 
 const files = ['compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'cli.js',
-  'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
+  'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js', 'core/diff.js',
   'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'app/effort.js', 'app/pages-spec.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/effort.js', 'gateway/http.js', 'effort/prompt.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js', 'public/app.js'];
 
 function run(cwd, args) {

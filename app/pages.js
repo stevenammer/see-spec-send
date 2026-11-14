@@ -1,5 +1,6 @@
 import { postedQuestMemo } from '../public/vision-quest.js';
 import { renderThread } from './pages-thread.js';
+import { lineDiff } from '../core/diff.js';
 const escape = value =>
   String(value ?? '').replace(
     /[&<>"']/g,
@@ -83,7 +84,7 @@ function eventWords(event) {
     tried: 'delivered a try',
     helped: 'said the try helps',
     shelved: 'shelved this item',
-    steward_changed: 'changed the steward',
+    steward_changed: 'reassigned the original poster',
     commented: 'left a comment',
     checked_in: 'posted a check-in',
   };
@@ -98,7 +99,7 @@ export function itemPage(item, events, person, leader) {
   const rules2 = context.rules >= 2;
   const problem = firstEvent?.original || events.find(event => event.type === 'checked' || event.type === 'seen')?.problem || '';
   const current = events.at(-1);
-  const questEvent = events.find(event => event.type === 'checked');
+  const questEvent = events.find(event => event.type === 'checked' || (event.type === 'posted' && event.questMemo));
   let questMemo = '';
   let questDraft;
   if (questEvent) {
@@ -171,7 +172,11 @@ export function itemPage(item, events, person, leader) {
     : `<form data-event="commented"><h2>Comment</h2><label>Comment<textarea name="comment" required maxlength="4000"></textarea></label>${anchor ? `<input type="hidden" name="anchor_kind" value="${anchor.kind}"><input type="hidden" name="anchor_hash" value="${escape(anchor.hash)}"><p>Attached to the current ${anchor.kind} version.</p>` : '<p>There is no spec version yet.</p>'}<button>Post comment</button></form>`;
   const tryThread = rules2 && item.state === 'TRYING' && context.artifact
     ? `<h2>Try thread</h2><form data-event="commented"><label>Comment on this try<textarea name="comment" required maxlength="4000"></textarea></label><input type="hidden" name="kind" value="comment"><input type="hidden" name="anchor_kind" value="artifact"><input type="hidden" name="anchor_hash" value="${escape(context.artifact)}"><button>Post comment</button></form>${renderThread(events, { ...context, steward: context.steward === person ? context.steward : null }, 'artifact') || '<p>No try comments yet.</p>'}` : '';
-  const revisions = rules2 ? events.filter(event => event.type === 'revised').map((event, index) => `<li>SEE v${index + 2}: ${escape(event.text)}</li>`).join('') : '';
+  let priorSee = firstEvent?.original || '';
+  const revisions = rules2 ? events.filter(event => event.type === 'revised').map((event, index) => {
+    const diff = lineDiff(priorSee, event.text); priorSee = event.text;
+    return `<li>SEE v${index + 2}: ${escape(event.text)}${event.credits?.length ? ` (credit: ${escape(event.credits.map(credit => credit.mode).join(', '))})` : ''}<details><summary>What changed</summary>${diff.map(row => `<p>${escape(row.kind)}: ${escape(row.line)}</p>`).join('')}</details></li>`;
+  }).join('') : '';
   const revise = rules2 && context.steward === person ? `<form data-event="revised"><h2>Revise SEE</h2><input type="hidden" name="base_hash" value="${escape(context.seeHash)}"><label>Current SEE<textarea name="text" required maxlength="4000">${escape(events.filter(event => event.type === 'revised').at(-1)?.text || firstEvent.original)}</textarea></label><button>Save revision</button></form>` : '';
   const see = rules2 ? `<section><h2>Original</h2><p>${escape(firstEvent.original)}</p><p>Hash ${escape(firstEvent.body_hash)}, posted ${escape(firstEvent.at)}</p><h2>Current SEE v${escape(context.seeVersion)}</h2><p>${escape(events.filter(event => event.type === 'revised').at(-1)?.text || firstEvent.original)}</p><h2>Version history</h2><ol><li>SEE v1: ${escape(firstEvent.original)}</li>${revisions}</ol>${context.specHash ? `<p><a class="button" href="/items/${encodeURIComponent(item.id)}/spec">Open the spec</a></p>` : ''}</section>` : '';
   const forkedFrom = context.parent ? `<p>Forked from <a href="/items/${encodeURIComponent(context.parent.item)}">the original item</a>.</p>` : '';

@@ -54,7 +54,7 @@ test('F1 enqueues Effort for every new SEE, fork, and only the first Spec', () =
   const parent = store.db.prepare("SELECT seq,hash FROM events WHERE item='item' AND seq=1").get();
   append(store, 'fork', { type: 'forked', actor: 'member', original: 'A separate branch.', rules: 2, parent: { item: 'item', seq: parent.seq, hash: parent.hash } }, 1);
   assert.deepEqual(store.db.prepare('SELECT item,kind FROM effort_jobs ORDER BY item,kind').all().map(row => ({ ...row })), [
-    { item: 'fork', kind: 'see_first' }, { item: 'item', kind: 'see_first' }, { item: 'item', kind: 'spec_first' },
+    { item: 'fork', kind: 'see_first' }, { item: 'item', kind: 'see_first' }, { item: 'item', kind: 'spec_draft' },
   ]);
 });
 
@@ -82,9 +82,9 @@ test('F1 Effort uses a sealed, per-person capped receipt and counts in global an
   await new EffortWorker(store, effort).tick();
   const receipt = effort.receipts()[0];
   assert.equal(receipt.state, 'settled');
-  effort.reserve('op', 'another', { model: 'fixture:text-v1', input: 'x', max_output_tokens: 16 }, 'item', 'job');
-  effort.reserve('op', 'third', { model: 'fixture:text-v1', input: 'x', max_output_tokens: 16 }, 'item', 'job');
-  assert.throws(() => effort.reserve('op', 'fourth', { model: 'fixture:text-v1', input: 'x', max_output_tokens: 16 }, 'item', 'job'), /person daily call limit/);
+  for (const idem of ['another', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'])
+    effort.reserve('op', idem, { model: 'fixture:text-v1', input: 'x', max_output_tokens: 16 }, 'item', 'job');
+  assert.throws(() => effort.reserve('op', 'eleventh', { model: 'fixture:text-v1', input: 'x', max_output_tokens: 16 }, 'item', 'job'), /person daily call limit/);
   store.db.prepare("UPDATE gateway_effort_receipts SET seal='bad' WHERE id=?").run(receipt.id);
   assert.throws(() => effort.receipts(), /corrupt Effort receipt/);
 });

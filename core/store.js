@@ -50,7 +50,7 @@ function redactBody(type, body) {
   const structural = ['verdict', 'quorum', 'cap_usd', 'approval', 'spec_hash',
     'artifact_hash', 'usd', 'steward', 'body_hash', 'redacted_hash', 'delivered_by',
     'anchor_kind', 'anchor_hash', 'parent', 'kind', 'base_hash', 'rules', 'source_label', 'honesty_label',
-    'see_hash', 'spec_hash', 'packet_hash', 'approval', 'iteration', 'job', 'receipt', 'model', 'mode'];
+    'see_hash', 'spec_hash', 'packet_hash', 'approval', 'iteration', 'job', 'receipt', 'model', 'mode', 'credits', 'questMemo'];
   const textFields = ['problem', 'looked', 'found', 'must', 'how_we_know', 'out_of_scope',
     'note', 'reason', 'comment', 'original', 'text', 'assumptions', 'open_questions', 'instruction'];
   // Preserve only known machine fields; unknown metadata may contain personal writing.
@@ -394,11 +394,23 @@ export class Store {
       .run(item, outcome.state, hash, seq, stable(outcome.context));
     this.enqueueIntegrationOutbox(item, event, outcome.state, seq);
     if (event.type === 'posted' || event.type === 'forked' || (event.type === 'specced' && prior.context.specHash === null)) {
-      const kind = event.type === 'specced' ? 'spec_first' : 'see_first';
+      const kind = event.type === 'specced' ? 'spec_draft' : 'see_first';
       const now = new Date(event.at).getTime();
       this.db.prepare(`INSERT OR IGNORE INTO effort_jobs(id,item,kind,trigger_seq,requester,state,attempts,next_at,last_error,created)
         VALUES(?,?,?,?,?,'queued',0,?,NULL,?)`)
         .run(digest(stable(['effort', item, kind, seq])), item, kind, seq, event.actor, now, now);
+    }
+    // A mention is a request, never an instruction. Agent output cannot ask itself
+    // for more work, and hitting a cap never prevents the person's comment landing.
+    if (event.type === 'commented' && authority.kind === 'person' && /@effort\b/i.test(event.comment)) {
+      const dayStart = new Date(event.at); dayStart.setUTCHours(0, 0, 0, 0);
+      const dayEnd = dayStart.getTime() + 24 * 60 * 60 * 1000;
+      const tagsByPerson = this.db.prepare("SELECT count(*) AS n FROM effort_jobs WHERE kind='tag' AND requester=? AND created>=? AND created<?")
+        .get(event.actor, dayStart.getTime(), dayEnd).n;
+      const tagsByItem = this.db.prepare("SELECT count(*) AS n FROM effort_jobs WHERE kind='tag' AND item=? AND created>=? AND created<?")
+        .get(item, dayStart.getTime(), dayEnd).n;
+      if (tagsByPerson < 10 && tagsByItem < 30) this.db.prepare(`INSERT OR IGNORE INTO effort_jobs(id,item,kind,trigger_seq,requester,state,attempts,next_at,last_error,created)
+        VALUES(?,?,?,?,?,'queued',0,?,NULL,?)`).run(digest(stable(['effort', item, 'tag', seq])), item, 'tag', seq, event.actor, new Date(event.at).getTime(), new Date(event.at).getTime());
     }
     if (outcome.effects.some(effect => effect.kind === 'build.stop')) {
       this.db.prepare("UPDATE runs SET status='stop_requested' WHERE item=? AND approval=? AND status='active'")

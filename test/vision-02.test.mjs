@@ -40,6 +40,10 @@ test('F1 Effort posts exactly one first comment, even after the call/append cras
   store.db.prepare("UPDATE effort_jobs SET state='running' WHERE item='item'").run();
   await worker.tick();
   assert.equal(store.events('item').filter(event => event.type === 'commented').length, 1);
+  // A requeue (a new attempt number) must still not add a second first comment: the comment's own key has no attempt in it.
+  store.db.prepare("UPDATE effort_jobs SET state='queued' WHERE item='item'").run();
+  await worker.tick();
+  assert.equal(store.events('item').filter(event => event.type === 'commented').length, 1);
 });
 
 test('F1 enqueues Effort for every new SEE, fork, and only the first Spec', () => {

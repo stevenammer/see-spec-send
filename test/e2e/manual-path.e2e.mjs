@@ -34,14 +34,15 @@ async function main() {
     });
 
   const init = await cli(['init', '--id', 'leader']);
-  const leaderPassword = init.match(/one-time password: (\S+)/)[1];
+  let leaderPassword = init.match(/one-time password: (\S+)/)[1];
+  await cli(['gateway', 'fixture-enable']);
   const invites = {};
   for (const name of ['maya', 'ben', 'cleo'])
     invites[name] = await cli(['invite', 'create', '--role', 'member']);
 
   const server = spawn(
     process.execPath,
-    ['cli.js', 'serve', '--port', String(port), '--origin', origin, '--insecure-cookies'],
+    ['cli.js', 'serve', '--port', String(port), '--origin', origin, '--insecure-cookies', '--enable-effort', '--fixture'],
     { cwd: root, env },
   );
   const browser = await playwright.chromium.launch({
@@ -97,12 +98,10 @@ async function main() {
     }
   }
 
-  async function postProblem(page, text, note) {
+  async function postProblem(page, text) {
     await page.goto(`${origin}/items/new`);
-    await page.locator('[name=problem]').fill(text);
-    await page.locator('[name=setting]').check();
-    await page.locator('[name=setting_note]').fill(note);
-    await page.getByRole('button', { name: 'Post what you checked' }).click();
+    await page.locator('[name=original]').fill(text);
+    await page.getByRole('button', { name: 'Post SEE' }).click();
     await page.waitForURL(/\/items\/(?!new$)[^/]+$/);
     return page.url();
   }
@@ -133,38 +132,49 @@ async function main() {
     await leader.locator('[name=id]').fill('leader');
     await leader.locator('[name=password]').fill(leaderPassword);
     await leader.getByRole('button', { name: 'Sign in' }).click();
+    // The first password is temporary: the screen asks for a real one before anything else.
+    await leader.locator('[name=current]').fill(leaderPassword);
+    leaderPassword = 'leader-chosen-password-9x';
+    await leader.locator('form[data-password] [name=password]').fill(leaderPassword);
+    await leader.getByRole('button', { name: 'Change password' }).click();
     await leader.getByRole('link', { name: 'Post a problem' }).waitFor();
 
     for (const name of ['maya', 'ben', 'cleo']) await join_(name);
 
-    // See and Checked: Maya posts a problem she already checked.
+    // SEE: Maya posts a problem she saw.
     const maya = people.maya;
-    const itemUrl = await postProblem(
-      maya,
-      'Every quote needs the same three numbers copied by hand.',
-      'No setting does this today.',
-    );
-    await stage(maya, 'Checked');
+    const itemUrl = await postProblem(maya, 'Every quote needs the same three numbers copied by hand.');
+    await maya.getByRole('heading', { name: 'Original' }).waitFor();
     await shot(maya, 'item-checked');
 
     // The leader sees the same item but is not the steward, so there is no spec form.
     await leader.goto(itemUrl);
     assert.equal(await leader.locator('form[data-event=specced]').count(), 0);
 
-    // Spec: only the steward writes it.
+    // SPEC IT!: only the steward writes it, then sends it for a decision.
     await maya
-      .locator('[name=must]')
+      .locator('form[data-event=specced] [name=must]')
       .fill('Copy the three numbers into the quote.\nShow the total.');
-    await maya.locator('[name=how_we_know]').fill('Reps stop copying by hand.');
-    await maya.locator('form[data-event=specced] button').click();
-    await stage(maya, 'Spec');
+    await maya.locator('form[data-event=specced] [name=how_we_know]').fill('Reps stop copying by hand.');
+    await maya.getByRole('button', { name: 'SPEC IT!' }).click();
+    await maya.getByRole('link', { name: 'Open the spec' }).waitFor();
+    await maya.goto(`${itemUrl}/spec`);
+    await maya.getByRole('button', { name: 'SEND IT!' }).click();
+    await maya.waitForFunction(() => !document.querySelector('form[data-send]'));
+    await maya.goto(itemUrl);
+    await stage(maya, 'Decide');
     assert.equal(await maya.locator('form[data-approve]').count(), 0, 'steward cannot approve');
 
-    // Decide: a leader who is not the steward approves with a cap, a quorum and a step-up.
+    // Decide: a leader who is not the steward reads the packet and approves with a reason,
+    // a cap, a quorum and a step-up.
     await leader.goto(itemUrl);
+    await leader.getByRole('heading', { name: 'Decision packet' }).waitFor();
     await shot(leader, 'item-decide');
-    await leader.locator('[name=cap_usd]').fill('2');
-    await leader.locator('[name=quorum]').fill('2');
+    await leader
+      .locator('form[data-approve] [name=reason]')
+      .fill('Small enough to try and the spec is clear.');
+    await leader.locator('form[data-approve] [name=cap_usd]').fill('2');
+    await leader.locator('form[data-approve] [name=quorum]').fill('2');
     await leader.locator('form[data-approve] [name=password]').fill(leaderPassword);
     await leader.locator('form[data-approve] button').click();
     await stage(leader, 'Send');
@@ -176,7 +186,7 @@ async function main() {
       '<script>document.getElementById("b").onclick=()=>{document.body.append(" 42")}</script>';
     await maya.locator('form[data-artifact] [name=html]').fill(html);
     await maya.locator('form[data-artifact] button').click();
-    await stage(maya, 'Send');
+    await maya.locator('iframe[title="Playable try"]').waitFor();
     assert.equal(await maya.locator('form[data-event=helped]').count(), 0, 'steward cannot vote');
 
     // The approver cannot vote either.
@@ -239,11 +249,7 @@ async function main() {
     await shot(leader, 'feed', 390);
 
     // The shelve path: Ben posts, the leader shelves with a reason.
-    const second = await postProblem(
-      ben,
-      'Two spreadsheets hold the same list.',
-      'The tool we pay for already syncs them.',
-    );
+    const second = await postProblem(ben, 'Two spreadsheets hold the same list.');
     await leader.goto(second);
     await leader
       .locator('form[data-event=shelved] [name=reason]')
@@ -254,7 +260,7 @@ async function main() {
 
     // Hostile text is shown as text and never runs.
     const evil = '<img src=x onerror="window.__xss=1"><script>window.__xss=1</script>';
-    const third = await postProblem(maya, evil, '"><svg onload=window.__xss=1>');
+    const third = await postProblem(maya, evil);
     await maya.goto(third);
     assert.equal(await maya.evaluate(() => window.__xss), undefined, 'posted text must not run');
     assert.match(await maya.locator('h1').innerText(), /<img src=x/);

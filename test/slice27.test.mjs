@@ -53,5 +53,10 @@ test('the CLI worker and gateway commands refuse unsafe or incomplete input', as
   await assert.rejects(cli(['worker', '--builder', 'process', '--once'], env, write), /--builder must be container/);
   await assert.rejects(cli(['gateway', 'serve', '--fixture'], env, write), /--socket/);
   const loose = join(root, 'loose'); mkdirSync(loose); chmodSync(loose, 0o777);
-  await assert.rejects(cli(['gateway', 'serve', '--fixture', '--socket', join(loose, 'g.sock')], env, write), /writable by others/);
+  // Run it as a real process with a time limit: if the check were missing, `gateway serve` would start listening and never return.
+  const { spawnSync } = await import('node:child_process');
+  const run = spawnSync(process.execPath, [new URL('../cli.js', import.meta.url).pathname, 'gateway', 'serve', '--fixture', '--socket', join(loose, 'g.sock')],
+    { env: { ...process.env, ...env }, encoding: 'utf8', timeout: 8000 });
+  assert.match(`${run.stdout}${run.stderr}`, /writable by others/);
+  assert.notEqual(run.status, 0);
 });

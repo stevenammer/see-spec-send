@@ -8,7 +8,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Integrations } from './integrations.js';
-import { feedPage, htmlHeaders, itemPage, newItemPage, questPage, redeemPage, signInPage } from './pages.js';
+import { feedPage, htmlHeaders, itemPage, newItemPage, passwordPage, questPage, redeemPage, signInPage } from './pages.js';
 import { invalid, kindOf, refused, tooLarge as tooLargeError } from '../core/errors.js';
 import { redact } from '../provider/safe-http.js';
 import { CURRENT_RULES } from '../core/machine.js';
@@ -312,8 +312,12 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         res.setHeader('set-cookie', cookie(next.value));
         return json(res, 200, { csrf: next.csrf });
       }
+      if (req.method === 'GET' && url.pathname === '/password') return page(res, passwordPage());
       // A temporary password (init or a reset code) can reach only the routes above until it is replaced.
-      if (session.must_change === 1) return json(res, 403, { error: 'request refused' });
+      if (session.must_change === 1) {
+        if (req.method === 'GET' && !url.pathname.startsWith('/api/')) { res.writeHead(302, { location: '/password', 'cache-control': 'no-store' }); return res.end(); }
+        return json(res, 403, { error: 'request refused' });
+      }
       let leader = false;
       try { leader = store.actor(session.person, '').leader === true; } catch { /* unregistered session holder is not a leader */ }
       if (req.method === 'GET' && url.pathname === '/') {
@@ -465,6 +469,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
             artifact_hash: hash,
             approval: state.context.approval,
             spec_hash: state.context.specHash,
+            iteration: state.context.iteration,
             delivered_by: session.person,
             at: new Date().toISOString(),
           },

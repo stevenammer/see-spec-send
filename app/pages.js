@@ -34,6 +34,14 @@ export function signInPage({ oidc = false } = {}) {
   );
 }
 
+// A temporary password (first leader, or after a reset) can only be used to choose a real one.
+export function passwordPage() {
+  return shell(
+    'Choose a new password',
+    `<h1>Choose a new password</h1><p>This one was temporary. Pick one only you know. You'll be signed in again with it.</p><form data-password="1"><label>Current password<input name="current" type="password" required autocomplete="current-password"></label><label>New password (12 or more characters)<input name="password" type="password" required minlength="12" autocomplete="new-password"></label><button>Change password</button></form>`,
+  );
+}
+
 export function redeemPage() {
   return shell(
     'Redeem invite',
@@ -81,7 +89,7 @@ function eventWords(event) {
   };
   // A try is written by a per-item token, so name the person who delivered it instead.
   if (event.type === 'seen') return `${escape(event.source_label)} reported this as ${escape(event.honesty_label)} evidence`;
-  return `${escape(event.type === 'tried' && event.delivered_by ? event.delivered_by : event.actor)} ${words[event.type] || 'updated this item'}${event.type === 'tried' && event.model_output ? ' (model output)' : ''}`;
+  return `${escape(event.type === 'tried' && event.delivered_by ? event.delivered_by : event.actor)} ${words[event.type] || 'updated this item'}${event.type === 'approved' && event.reason ? `. Reason: ${escape(event.reason)}` : ''}${event.type === 'tried' && event.model_output ? ' (model output)' : ''}`;
 }
 
 export function itemPage(item, events, person, leader) {
@@ -149,6 +157,9 @@ export function itemPage(item, events, person, leader) {
   if (item.state === 'CHECKED' && questDraft && questDraft.recommendation !== 'BUILD') {
     action = '<p>No build is proposed. Ask the decision owner to review the existing option.</p>';
   }
+  // After approval the frozen packet stays readable to everyone, next to the written reason.
+  const packetView = item.packet && ['SENDING', 'TRYING', 'HELPS'].includes(item.state)
+    ? `<section><h2>Decision packet</h2><pre>${escape(item.packet)}</pre></section>` : '';
   const shelve =
     !['HELPS', 'SHELVED'].includes(item.state) && (leader || context.steward === person)
       ? `<form data-event="shelved"><label>Why shelve it?<input name="reason" required></label><button>Shelve with a reason</button></form>`
@@ -158,9 +169,12 @@ export function itemPage(item, events, person, leader) {
   const comment = rules2
     ? `<form data-event="commented"><h2>Join the thread</h2><label>Comment<textarea name="comment" required maxlength="4000"></textarea></label><label>Type<select name="kind"><option value="comment">Comment</option><option value="question">Question</option><option value="concern">Concern</option></select></label><input type="hidden" name="anchor_kind" value="see"><input type="hidden" name="anchor_hash" value="${escape(context.seeHash)}"><button>Post comment</button></form>`
     : `<form data-event="commented"><h2>Comment</h2><label>Comment<textarea name="comment" required maxlength="4000"></textarea></label>${anchor ? `<input type="hidden" name="anchor_kind" value="${anchor.kind}"><input type="hidden" name="anchor_hash" value="${escape(anchor.hash)}"><p>Attached to the current ${anchor.kind} version.</p>` : '<p>There is no spec version yet.</p>'}<button>Post comment</button></form>`;
+  const tryThread = rules2 && item.state === 'TRYING' && context.artifact
+    ? `<h2>Try thread</h2><form data-event="commented"><label>Comment on this try<textarea name="comment" required maxlength="4000"></textarea></label><input type="hidden" name="kind" value="comment"><input type="hidden" name="anchor_kind" value="artifact"><input type="hidden" name="anchor_hash" value="${escape(context.artifact)}"><button>Post comment</button></form>${renderThread(events, { ...context, steward: context.steward === person ? context.steward : null }, 'artifact') || '<p>No try comments yet.</p>'}` : '';
   const revisions = rules2 ? events.filter(event => event.type === 'revised').map((event, index) => `<li>SEE v${index + 2}: ${escape(event.text)}</li>`).join('') : '';
   const revise = rules2 && context.steward === person ? `<form data-event="revised"><h2>Revise SEE</h2><input type="hidden" name="base_hash" value="${escape(context.seeHash)}"><label>Current SEE<textarea name="text" required maxlength="4000">${escape(events.filter(event => event.type === 'revised').at(-1)?.text || firstEvent.original)}</textarea></label><button>Save revision</button></form>` : '';
   const see = rules2 ? `<section><h2>Original</h2><p>${escape(firstEvent.original)}</p><p>Hash ${escape(firstEvent.body_hash)}, posted ${escape(firstEvent.at)}</p><h2>Current SEE v${escape(context.seeVersion)}</h2><p>${escape(events.filter(event => event.type === 'revised').at(-1)?.text || firstEvent.original)}</p><h2>Version history</h2><ol><li>SEE v1: ${escape(firstEvent.original)}</li>${revisions}</ol>${context.specHash ? `<p><a class="button" href="/items/${encodeURIComponent(item.id)}/spec">Open the spec</a></p>` : ''}</section>` : '';
+  const forkedFrom = context.parent ? `<p>Forked from <a href="/items/${encodeURIComponent(context.parent.item)}">the original item</a>.</p>` : '';
   const fork = rules2 ? `<form data-fork="true"><h2>Fork</h2><label>Why try another direction?<input name="reason" required maxlength="2000"></label><button>Fork</button></form>` : '';
   const checkin = `<form data-event="checked_in"><h2>Check-in</h2><label>What changed?<input name="note" required maxlength="2000"></label><button>Post check-in</button></form>`;
   const effortStatus = (item.effort || []).map(job => `<p>Effort: ${escape(job.kind)} is ${escape(job.state)}${job.last_error ? ` (${escape(job.last_error)})` : ''}.</p>`).join('');
@@ -170,7 +184,7 @@ export function itemPage(item, events, person, leader) {
     problem,
     '<p><a href="/">Back to the work</a></p>' +
       `<p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1>` +
-      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${effortStatus}${see}${questMemo}${specSummary}${revise}${action}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${shelve}${checkin}${comment}` +
+      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${forkedFrom}${effortStatus}${see}${questMemo}${specSummary}${revise}${action}${packetView}${tryThread}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${shelve}${checkin}${comment}` +
       `<h2>${rules2 ? 'Thread' : 'Comments'}</h2>${rules2 ? (renderThread(events, { ...context, steward: context.steward === person ? context.steward : null }) || '<p>No comments yet.</p>') : `<ol>${anchoredComments || '<li>No comments yet.</li>'}</ol>`}<h2>What happened</h2><ol>${events.filter(event => event.type !== 'commented' && event.type !== 'revised').map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
   );
 }

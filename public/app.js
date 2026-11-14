@@ -36,7 +36,13 @@ document.addEventListener('submit', async event => {
       location.href = form.dataset.nextItem ? `/items/${out.id}` : form.dataset.next;
       return;
     }
-    const id = location.pathname.split('/').at(-1);
+    const id = location.pathname.match(/^\/items\/([^/]+)/)?.[1] ?? location.pathname.split('/').at(-1);
+    if (form.dataset.password) {
+      await post('/api/stepup', { password: input.current });
+      await post('/api/password', { password: input.password });
+      location.href = '/';
+      return;
+    }
     if (form.dataset.approve) {
       await post('/api/stepup', { password: input.password });
       const approval = { type: 'approved', spec_hash: input.spec_hash,
@@ -52,6 +58,8 @@ document.addEventListener('submit', async event => {
       return;
     } else if (form.dataset.steer) {
       await post(`/api/items/${id}/steer`, { instruction: input.instruction });
+    } else if (form.dataset.adopt) {
+      await post(`/api/items/${id}/steer`, { instruction: input.instruction, source: input.source, mode: 'paraphrased' });
     } else if (form.dataset.include) {
       await post(`/api/items/${id}/events`, { type: 'revised', text: input.text,
         base_hash: form.closest('main').querySelector('form[data-event="revised"] input[name="base_hash"]').value,

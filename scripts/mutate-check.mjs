@@ -21,7 +21,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/slice20.test.mjs',
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs', 'test/slice23.test.mjs', 'test/slice24.test.mjs',
-  'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs', 'test/slice27.test.mjs',
+  'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs', 'test/slice27.test.mjs', 'test/password-screen.test.mjs',
   'test/vision-01.test.mjs', 'test/vision-02.test.mjs', 'test/vision-03.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
@@ -35,7 +35,7 @@ const mutants = [
   ['V1 erase keeps anchors', "'anchor_kind', 'anchor_hash', 'parent'", "'parent'"],
   ['V1 server stamps rules', 'rules: CURRENT_RULES', 'rules: 1'],
   ['V1 comment cap', 'this.commentCount(item) >= 1000', 'this.commentCount(item) >= 1001'],
-  ['F1 comment anchor follows current spec', 'spec: state.specSeeHash === state.seeHash ? state.specHash : null,', 'spec: state.specHash,'],
+  ['F1 comment anchor follows current spec', "spec: state.specSeeHash === state.seeHash ? state.specHash : null,\n      artifact: state.artifact };\n    return current[event.anchor_kind]", "spec: state.specHash,\n      artifact: state.artifact };\n    return current[event.anchor_kind]"],
   ['F1 agent only comments', "who?.kind === 'agent' && event.actor === 'effort'", "who?.kind === 'agent'"],
   ['F1 spec binds current SEE', 'event.see_hash === context.seeHash', 'true'],
   ['F1 sent needs current spec', 'event.spec_hash === context.specHash', 'true'],
@@ -198,9 +198,12 @@ const mutants = [
   ['Quest output ceiling', 'input.max_output_tokens <= QUEST_LIMITS.output_tokens', 'true'],
   ['Quest person daily budget', 'mine.length < QUEST_LIMITS.calls_per_person_day', 'true'],
   ['Quest person daily spend budget', 'sum(mine) + worst <= QUEST_LIMITS.person_day_micros', 'true'],
-  ['Quest gateway lifetime budget', 'sum(normal) + sum(all) + worst <= policy.global_micros', 'true'],
-  ['Quest gateway day budget', 'sum(normal.filter(row => row.day === day)) + sum(all.filter(row => row.day === day)) + worst <= policy.day_micros', 'true'],
-  ['gateway counts Quest spend', 'const combined = rows.concat(this.questReceipts());', 'const combined = rows;'],
+  ['Quest gateway lifetime budget', "const combined = this.ledger.receipts().concat(all, this.ledger.effortReceipts());\n      demand(sum(combined) + worst <= policy.global_micros, 'global cap exceeded');", "const combined = this.ledger.receipts().concat(all, this.ledger.effortReceipts());\n      demand(true, 'global cap exceeded');"],
+  ['Quest gateway day budget', "demand(sum(combined.filter(row => row.day === day)) + worst <= policy.day_micros, 'day cap exceeded');\n      const row = { id: digest(canonical(['quest'", "demand(true, 'day cap exceeded');\n      const row = { id: digest(canonical(['quest'"],
+  ['gateway counts Quest spend', 'const combined = this.allMeteredReceipts();', 'const combined = rows;'],
+  ['temporary password redirects to the change screen', "res.writeHead(302, { location: '/password', 'cache-control': 'no-store' }); return res.end(); }", "return json(res, 403, { error: 'request refused' }); }"],
+  ['password screen asks step-up then change', "await post('/api/stepup', { password: input.current });", "await post('/api/stepup', { password: input.password });"],
+  ['F1 caps count Effort spend', 'this.receipts().concat(this.questReceipts(), this.effortReceipts())', 'this.receipts().concat(this.questReceipts())'],
   ['gateway policy version history', "this.db.prepare('INSERT INTO gateway_policy_versions VALUES(?,?,?)').run(version, bytes, seal);", ''],
   ['Quest hold release audit', 'audit.seal = digest(canonical(audit));', "audit.seal = '';"],
   ['provider command env isolation', "env: { PATH: process.env.PATH || '/usr/bin:/bin' }", 'env: process.env'],
@@ -230,7 +233,7 @@ const mutants = [
   ['account disabled OIDC refused', "if (this.isDisabled(identity.id)) throw new Error('person disabled');", "if (false) throw new Error('person disabled');"],
   ['reset code single use', 'const temporaryUsed = user?.must_change === 1 && user?.temp_used === 1;', 'const temporaryUsed = false;'],
   ['reset code marks itself used', "if (user.must_change === 1) this.db.prepare('UPDATE users SET temp_used=1 WHERE id=?').run(id);", 'undefined;'],
-  ['temporary password restricts the session', "if (session.must_change === 1) return json(res, 403, { error: 'request refused' });", ''],
+  ['temporary password restricts the session', "if (session.must_change === 1) {\n        if (req.method === 'GET' && !url.pathname.startsWith('/api/'))", "if (false) {\n        if (req.method === 'GET' && !url.pathname.startsWith('/api/'))"],
   ['init password is temporary', "await auth.createUser(value('--id') || 'leader', password, true, { mustChange: true });", "await auth.createUser(value('--id') || 'leader', password, true);"],
   ['password change needs step-up', "if (!session || !this.useStepup(value)) throw invalid('step-up unavailable');", "if (!session) throw invalid('step-up unavailable');"],
   ['password change ends old sessions', 'this.revokePerson(session.person);', 'undefined;'],
@@ -363,7 +366,7 @@ const mutants = [
 
 const files = ['compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'cli.js',
   'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js',
-  'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'app/effort.js', 'app/pages-spec.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/effort.js', 'gateway/http.js', 'effort/prompt.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js'];
+  'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'app/effort.js', 'app/pages-spec.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/effort.js', 'gateway/http.js', 'effort/prompt.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js', 'public/app.js'];
 
 function run(cwd, args) {
   return spawnSync(process.execPath, args, { cwd, stdio: 'pipe', encoding: 'utf8' });

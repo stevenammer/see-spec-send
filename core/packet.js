@@ -1,11 +1,9 @@
-export const RESEARCH_SOURCES = Object.freeze([
-  'internal tools and licenses', 'internal prior work', 'configuration options',
-  'open source', 'commercial options', 'process change',
-]);
+export { RESEARCH_SOURCES } from '../research/connectors.js';
+import { RESEARCH_SOURCES } from '../research/connectors.js';
 
 // Deterministic, deliberately plain decision packet. It describes unavailable
 // research instead of pretending that a connector checked it.
-export function buildPacket({ original, see, spec, credits = [], comments = [], gatewayPolicy = {}, sandboxLimits = {}, researched, userEvidence = [] } = {}) {
+export function buildPacket({ original, see, spec, credits = [], comments = [], gatewayPolicy = {}, sandboxLimits = {}, researched, userEvidence = [], estimate, lineage = null } = {}) {
   const openConcerns = comments.filter(comment => comment.kind === 'concern' && !comment.erased)
     .map(comment => ({ author: comment.actor, text: comment.comment }));
   const included = new Set(credits.map(credit => credit.comment));
@@ -23,7 +21,8 @@ export function buildPacket({ original, see, spec, credits = [], comments = [], 
     openConcerns,
     unincludedComments: comments.filter(comment => !comment.erased && !included.has(comment.body_hash)).length,
     researched: researched || Object.fromEntries(RESEARCH_SOURCES.map(source => [source, { status: 'not connected', finding: 'nothing checked' }])),
-    estimate: 'No estimate',
+    estimate: estimate || 'No estimate',
+    lineage,
     worstCaseSpendMicros: Number(gatewayPolicy.worstCaseSpendMicros || 0),
     sandboxLimits,
     doNothing: 'Do nothing / use what we have',

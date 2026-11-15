@@ -46,11 +46,13 @@ const validatePolicy = policy => {
   }
   demand(integer(policy.concurrency, 1000) && policy.concurrency > 0, 'invalid concurrency');
 };
-const live = (store, run) => {
+const live = (store, run, now) => {
   demand(run && !killed(store) && run.status === 'active', 'stopped run');
   const state = store.read(run.item);
   demand(!state.refusal && state.context.phase === 'SENDING'
     && state.context.approval === run.approval && state.context.specHash === run.spec_hash, 'stale approval');
+  const deadline = state.context.leash?.expiresAt;
+  demand(!deadline || (Number.isFinite(Date.parse(deadline)) && now < Date.parse(deadline)), 'approval window expired');
   demand(store.verify(run.item).ok, 'item verification failed');
   return state.context;
 };
@@ -127,7 +129,7 @@ export class Ledger {
     const raw = randomBytes(32).toString('base64url');
     transaction(this.store, () => {
       const run = this.db.prepare('SELECT * FROM runs WHERE id=?').get(runId);
-      live(this.store, run);
+      live(this.store, run, this.clock());
       const expires = add(this.clock(), ttlMs);
       const rawDigest = digest(raw);
       this.db.prepare('INSERT INTO gateway_capabilities VALUES(?,?,?,?,?,?,0)')
@@ -150,7 +152,7 @@ export class Ledger {
     const run = this.db.prepare('SELECT * FROM runs WHERE id=?').get(cap.run);
     demand(run && cap.item === run.item && cap.approval === run.approval && cap.spec_hash === run.spec_hash,
       'capability binding mismatch');
-    live(this.store, run);
+    live(this.store, run, this.clock());
     return run;
   }
 
@@ -264,7 +266,7 @@ export class Ledger {
       const day = new Date(this.clock()).toISOString().slice(0, 10);
       const sum = selected => selected.reduce((n, row) => add(n, row.charged_micros), 0);
       const used = add(legacyMicros(this.store, run.item, run.approval),
-        sum(rows.filter(row => row.run === run.id)));
+        sum(rows.filter(row => row.item === run.item && row.approval === run.approval)));
       demand(add(used, worst) <= cap, 'run cap exceeded');
       const combined = this.allMeteredReceipts();
       demand(add(sum(combined), worst) <= policy.global_micros, 'global cap exceeded');

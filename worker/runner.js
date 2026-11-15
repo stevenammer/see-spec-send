@@ -8,14 +8,16 @@ const current = (context, run) => context.phase === 'SENDING'
   && context.approval === run.approval && context.specHash === run.spec_hash
   && (run.see_hash === null || run.see_hash === undefined || context.seeHash === run.see_hash)
   && (context.iteration ?? 0) === run.iteration;
-const leashExpired = context => context.leash?.expiresAt && Date.now() >= Date.parse(context.leash.expiresAt);
+const leashExpired = (context, now) => context.leash?.expiresAt
+  && (!Number.isFinite(Date.parse(context.leash.expiresAt)) || now >= Date.parse(context.leash.expiresAt));
 const credential = () => randomBytes(32).toString('base64url');
 
 export class Worker {
-  constructor(store, adapter = new FakeAdapter(store)) {
+  constructor(store, adapter = new FakeAdapter(store), { clock = Date.now } = {}) {
     this.store = store;
     this.db = store.db;
     this.adapter = adapter;
+    this.clock = clock;
   }
 
   reconcile() {
@@ -25,7 +27,7 @@ export class Worker {
       for (const { item } of this.db.prepare("SELECT item FROM items WHERE state='SENDING'").all()) {
         if (killed(this.store)) continue;
         const context = this.store.read(item).context;
-        if (context.phase !== 'SENDING' || leashExpired(context)) continue;
+        if (context.phase !== 'SENDING' || leashExpired(context, this.clock())) continue;
         const id = digest(JSON.stringify([item, context.approval, context.iteration || 0]));
         if (this.db.prepare('SELECT 1 FROM runs WHERE id=?').get(id)) continue;
         const runToken = credential();
@@ -48,7 +50,7 @@ export class Worker {
       const run = this.db.prepare('SELECT * FROM runs WHERE id=?').get(id);
       const context = this.store.read(run.item).context;
       if (run.status === 'stopped') return;
-      if (run.status !== 'active' || killed(this.store) || leashExpired(context) || !current(context, run)) {
+      if (run.status !== 'active' || killed(this.store) || leashExpired(context, this.clock()) || !current(context, run)) {
         this.db.prepare("UPDATE runs SET status='stop_requested' WHERE id=?").run(id);
         return;
       }
@@ -66,7 +68,12 @@ export class Worker {
       if (this.adapter.externalStart) externalRequest = request;
       else this.adapter.start(request);
     });
-    if (externalRequest) this.adapter.start(externalRequest);
+    if (externalRequest) {
+      const fresh = this.db.prepare('SELECT * FROM runs WHERE id=?').get(id);
+      const context = this.store.read(fresh.item).context;
+      if (fresh.status !== 'active' || killed(this.store) || leashExpired(context, this.clock()) || !current(context, fresh)) return this.stop(fresh);
+      this.adapter.start(externalRequest);
+    }
     const run = this.db.prepare('SELECT * FROM runs WHERE id=?').get(id);
     if (run.status === 'stop_requested') return this.stop(run);
     const observed = this.adapter.status(id);
@@ -75,12 +82,18 @@ export class Worker {
   }
 
   deliver(id, html) {
-    return transaction(this.store, () => {
+    let expiredRun;
+    const delivered = transaction(this.store, () => {
       const run = this.db.prepare('SELECT * FROM runs WHERE id=?').get(id);
       if (!run) throw new Error('unknown run');
       if (run.delivered) return false;
       const context = this.store.read(run.item).context;
-      if (run.status !== 'active' || killed(this.store) || leashExpired(context) || !current(context, run)) {
+      if (leashExpired(context, this.clock())) {
+        this.db.prepare("UPDATE runs SET status='stop_requested' WHERE id=?").run(id);
+        expiredRun = run;
+        return false;
+      }
+      if (run.status !== 'active' || killed(this.store) || !current(context, run)) {
         // A later steering iteration is ordinary stale completion, not a crash.
         if (context.approval === run.approval && context.specHash === run.spec_hash
             && (context.iteration ?? 0) !== run.iteration) {
@@ -98,6 +111,9 @@ export class Worker {
       this.db.prepare("UPDATE runs SET delivered=1,status='stop_requested' WHERE id=?").run(id);
       return true;
     });
+    // Stop outside the transaction: external adapters may call back into the store.
+    if (expiredRun) this.stop(expiredRun);
+    return delivered;
   }
 
   stop(run) {

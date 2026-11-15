@@ -3,7 +3,7 @@
 // It never decides anything. It only describes a decision the machine already made.
 import { nameOf } from './roster.js';
 
-const known = new Set(['posted', 'revised', 'checked', 'specced', 'approved', 'returned', 'charged', 'tried', 'failed',
+const known = new Set(['posted', 'revised', 'checked', 'specced', 'approved', 'returned', 'not_built', 'researched', 'charged', 'tried', 'failed',
   'helped', 'shelved', 'commented', 'steward_changed', 'erased']);
 const shortText = value => String(value ?? '').slice(0, 40);
 

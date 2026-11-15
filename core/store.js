@@ -60,6 +60,10 @@ function redactBody(type, body) {
   for (const field of textFields) {
     if (Object.hasOwn(body, field)) tombstone[field] = erasedText(body[field]);
   }
+  // Handoff reasons must stay long enough to replay their historical rule.
+  if (type === 'steward_changed' && Object.hasOwn(body, 'reason')) tombstone.reason = '[erased note]';
+  if (type === 'researched') tombstone.sources = Object.fromEntries(Object.entries(body.sources).map(([source, entry]) =>
+    [source, { ...entry, finding: entry.status === 'not connected' ? 'nothing checked' : '[erased]' }]));
   return tombstone;
 }
 
@@ -329,7 +333,7 @@ export class Store {
         const target = this.db.prepare('SELECT type, actor FROM events WHERE item=? AND body_hash=?').get(item, event.body_hash);
         if (!target) { if (!privileged) throw refused('event not allowed'); }
         else {
-          if (['posted', 'approved', 'returned', 'not_built', 'sent'].includes(target.type)) throw refused('decision records and original SEEs cannot erase');
+          if (['posted', 'forked', 'approved', 'returned', 'not_built', 'sent'].includes(target.type)) throw refused('decision records and original SEEs cannot erase');
           if (target.actor !== event.actor) {
             if (!privileged) throw refused('event not allowed');
             if (!['privacy', 'legal', 'safety', 'customer or employee personal data'].includes(event.ground)) throw refused('erase ground required');
@@ -559,7 +563,7 @@ export class Store {
       const target = this.db.prepare('SELECT * FROM events WHERE item=? AND body_hash=?').get(item, targetHash);
       if (!target) throw new Error('body is not part of item');
       const rules2 = this.read(item).context.rules >= 2;
-      if (rules2 && ['posted', 'approved', 'returned', 'not_built', 'sent'].includes(target.type)) throw refused('decision records and original SEEs cannot erase');
+      if (rules2 && ['posted', 'forked', 'approved', 'returned', 'not_built', 'sent'].includes(target.type)) throw refused('decision records and original SEEs cannot erase');
       const authority = this.actor(actor, item);
       if (!rules2 && !(authority?.leader || actor === this.read(item).context.steward)) throw refused('event not allowed');
       if (rules2 && target.actor !== actor) {

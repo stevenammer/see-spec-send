@@ -56,7 +56,7 @@ async function main() {
   const people = {};
 
   async function open(name) {
-    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const context = await browser.newContext({ viewport: name === 'ben' ? { width: 390, height: 844 } : { width: 1280, height: 900 } });
     const page = await context.newPage();
     page.on('pageerror', error => problems.push(`${name} page error: ${error.message}`));
     page.on('dialog', dialog => {
@@ -179,8 +179,8 @@ async function main() {
     assert.ok(order.findIndex(line => line.includes(mention)) < order.findLastIndex(line => line.includes('Effort, AI')), "Effort's reply comes after the mention");
     const mentionThread = maya.locator('li').filter({ has: maya.locator('p', { hasText: mention }) }).first();
     assert.equal(await mentionThread.locator('li:has-text("Effort, AI")').count(), 1, 'the mention reply remains in its exact nested thread');
-    assert.match(await maya.locator('main').textContent(), /Effort replies left today: 9 mentions/);
-    step('@effort mention got a nested labeled AI reply and the remaining quota');
+    assert.match(await maya.locator('main').textContent(), /Effort daily limits: 10 mention replies per person, 30 per item/);
+    step('@effort mention got a nested labeled AI reply and honest quota limits');
 
     // 4. Only OP can include it.
     assert.equal(await maya.locator('form[data-include]').count(), 0, 'a member sees no Include control');
@@ -264,12 +264,16 @@ async function main() {
     await leader.locator('form[data-approve] [name=reason]').fill(reason);
     await leader.locator('form[data-approve] [name=cap_usd]').fill('2');
     await leader.locator('form[data-approve] [name=quorum]').fill('1');
+    await leader.locator('form[data-approve] [name=max_iterations]').fill('2');
+    await leader.locator('form[data-approve] [name=window_minutes]').fill('60');
     await leader.locator('form[data-approve] [name=password]').fill(leaderPassword);
     await leader.locator('form[data-approve] button').click();
     await leader.locator('.stage', { hasText: /Send/ }).waitFor();
     await ben.goto(itemUrl);
     await ben.getByText(reason).first().waitFor();
-    step('leader approved with reason and step-up; member sees the reason');
+    assert.match(await ben.locator('main').innerText(), /up to 2 additional build turns, 60 minutes/i);
+    assert.match(await ben.locator('main').innerText(), /Cap: \$2\.00/);
+    step('leader approved with a configurable leash and password step-up; member sees reason and bounds');
 
     // 9. A member forks. The fork names its parent and has no approval and no build.
     await ben.locator('form[data-fork] [name=reason]').fill('Try passing it through the transfer screen instead.');
@@ -337,7 +341,10 @@ async function main() {
     await reassign.getByRole('button', { name: 'Reassign steward' }).click();
     assert.equal(await leader.getByText('reassigned the steward').count(), 0, 'a short note does not reassign');
     await reassign.locator('[name=reason]').fill('Olive is moving to another team, Maya owns this now.');
+    const deniedReassign = leader.waitForResponse(response => response.url().endsWith(`/api/items/${itemId}/events`) && response.request().method() === 'POST');
     await reassign.getByRole('button', { name: 'Reassign steward' }).click();
+    assert.ok((await deniedReassign).status() >= 400, 'reassignment without consent is refused before proceeding');
+    await reassign.locator('[role=alert]').waitFor();
     assert.equal(await leader.getByText('reassigned the steward').count(), 0, 'a leader cannot bypass the fourteen-day consent rule');
     assert.equal(await rawPost(olive, `/api/items/${itemId}/events`, { type: 'checked_in', note: 'I consent to Maya taking this work.', consent: true }), 201);
     await leader.reload();
@@ -479,6 +486,72 @@ async function main() {
     assert.ok(await ben.getByText(regReason).count() > 0, 'the old approval reason stays visible as history');
     assert.ok(await ben.getByText(feedback).count() > 0, 'the old try feedback stays visible as history');
     step('SEE revision superseded the try; Helps refused; history and next steps shown');
+
+    // 17. Decisions remain public with the exact reviewed packet, even after a return and new spec.
+    await olive.goto(`${origin}/items/new`);
+    await olive.locator('[name=original]').fill('Transfers lose the caller preference.');
+    await olive.getByRole('button', { name: 'Post SEE' }).click();
+    await olive.waitForURL(/\/items\/(?!new$)[^/]+$/);
+    const decisionUrl = olive.url();
+    const decisionId = decisionUrl.split('/').at(-1);
+    await olive.locator('form[data-event=specced] [name=must]').fill('Carry the caller preference across.');
+    await olive.locator('form[data-event=specced] [name=how_we_know]').fill('The second agent sees it.');
+    await olive.getByRole('button', { name: 'SPEC IT!' }).click();
+    await olive.getByRole('link', { name: 'Open the spec' }).waitFor();
+    await olive.goto(`${decisionUrl}/spec`);
+    const researchResponse = olive.waitForResponse(response => response.url().endsWith(`/api/items/${decisionId}/research`) && response.request().method() === 'POST');
+    await Promise.all([olive.waitForEvent('load'), olive.getByRole('button', { name: 'Refresh research record' }).click()]);
+    assert.equal((await researchResponse).status(), 201);
+    await olive.locator('form[data-send] [name=estimate]').fill('OP estimate: one hour to test the existing handoff view.');
+    await olive.getByRole('button', { name: 'SEND IT!' }).click();
+    await olive.waitForFunction(() => !document.querySelector('form[data-send]'));
+    await leader.goto(decisionUrl);
+    const returnForm = leader.locator('form[data-event=returned]');
+    const returnedPacket = await returnForm.locator('[name=packet_hash]').inputValue();
+    const returnReason = 'Check the existing handoff view before adding another.';
+    // Browser validity stops a short reason, and the server refuses a crafted short reason too.
+    await returnForm.locator('[name=reason]').fill('short');
+    await returnForm.getByRole('button', { name: 'Return the spec' }).click();
+    assert.equal(await leader.locator('.stage', { hasText: 'Decide' }).count(), 1);
+    assert.ok(await rawPost(leader, `/api/items/${decisionId}/events`, { type: 'returned', reason: 'short' }) >= 400);
+    await returnForm.locator('[name=reason]').fill(returnReason);
+    await returnForm.getByRole('button', { name: 'Return the spec' }).click();
+    await leader.getByRole('heading', { name: 'Decision history' }).waitFor();
+    await ben.goto(decisionUrl);
+    await ben.getByText(returnReason).first().waitFor();
+    assert.equal(await ben.locator('form[data-event=returned]').count(), 0);
+    assert.match(await ben.locator('main').innerText(), new RegExp(returnedPacket));
+    await ben.getByText('Reviewed evidence snapshot', { exact: true }).click();
+    assert.match(await ben.locator('main').innerText(), /not connected/);
+    assert.match(await ben.locator('main').innerText(), /one hour to test the existing handoff view/);
+    step('return requires a reason and keeps its reviewed packet visible to members');
+
+    await olive.goto(`${decisionUrl}/spec`);
+    const reviseSpec = olive.locator('form[data-event=specced]');
+    await reviseSpec.locator('[name=must]').fill('Use the existing handoff view for the preference.');
+    await reviseSpec.getByRole('button').click();
+    await olive.getByRole('heading', { name: 'Spec v2' }).waitFor();
+    await olive.getByRole('button', { name: 'SEND IT!' }).click();
+    await olive.waitForFunction(() => !document.querySelector('form[data-send]'));
+    await leader.goto(decisionUrl);
+    const notBuilt = leader.locator('form[data-event=not_built]');
+    const newPacket = await notBuilt.locator('[name=packet_hash]').inputValue();
+    assert.notEqual(returnedPacket, newPacket);
+    const noBuildReason = 'The existing handoff view covers this without a new build.';
+    await notBuilt.locator('[name=reason]').fill(noBuildReason);
+    await notBuilt.locator('[name=restricted_evidence]').fill('a restricted source exists; ask Privacy');
+    await notBuilt.locator('[name=pivot_note]').fill('The existing view was verified after the return.');
+    await notBuilt.getByRole('button', { name: 'Not building' }).click();
+    await leader.getByRole('heading', { name: 'Decision history' }).waitFor();
+    await ben.goto(decisionUrl);
+    await ben.getByText(noBuildReason).first().waitFor();
+    assert.equal(ben.viewportSize().width, 390, 'member reads decision history at phone width');
+    assert.match(await ben.locator('main').innerText(), /a restricted source exists; ask Privacy/);
+    assert.match(await ben.locator('main').innerText(), /What changed: The existing view was verified after the return\./);
+    assert.equal(await ben.locator('section:has(h2:text("Decision history")) > ol > li').count(), 2);
+    assert.ok(await ben.getByText(returnReason).count() > 0, 'earlier return reason remains');
+    assert.equal(await ben.locator('iframe[title="Playable try"]').count(), 0);
+    step('Not building records a concrete reason, evidence receipt and pivot note; prior decision stays public');
 
     assert.deepEqual(problems, [], `browser problems:\n${problems.join('\n')}`);
     console.log('PASS: Vision journey in a real browser: SEE, Effort, mention, include and credit, SPEC IT!, SEND IT!, decision, fork, adopted steer, reassign, mention cap, Vision Quest.');

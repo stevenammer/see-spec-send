@@ -1,5 +1,13 @@
 # Threat model, slice 2
 
+## F3 decision and erasure boundaries (2026-11-14)
+
+Approve, return, and Not building bind the frozen spec and decision packet and require a written reason from an independent leader. Approval still requires a single-use password step-up. A browser cannot supply its own approval expiry: the server stamps the time window, and replay checks its duration. The worker checks the expiry before dispatch, during reconciliation, and before delivery. Historical decisions and their reviewed packets stay visible after a later revision or disposition. Decisions and original SEE records cannot be erased through product routes. Erasing another person's content requires a listed privacy/legal ground and a note, with an attributable tombstone.
+
+Research adapters ship disconnected. The research route accepts no connector names, URLs, findings, or checked statuses from the client. Operator adapter output is data, never authority; failures record no verified result. OP estimates are explicitly unverified. No research provider is enabled by this release.
+
+Proof: `test/sliceF3.test.mjs`, `test/sliceF3-http.test.mjs`, `test/sliceF3-worker.test.mjs`, `test/pagesF3.test.mjs`, and the real-browser Vision journey. The broader host administrator and trusted-import limits below still apply.
+
 ## Rules 2 stale authorization (2026-11-14)
 
 A SEE revision after SEND is a stale-authorization boundary. The machine records the revision, stops active work, preserves the old approval as history, and prevents its artifact from reaching HELPS. HTTP rejects stale thread anchors and the worker retires an obsolete iteration. Ordinary comments and check-ins do not cross this boundary.

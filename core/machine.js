@@ -5,6 +5,8 @@ export const CURRENT_RULES = 2;
 export const NOT_BUILT_LABEL = 'Not building';
 const DEFAULT_MAX_ITERATIONS = 5;
 const DEFAULT_WINDOW_MINUTES = 7 * 24 * 60;
+const researchSources = ['internal tools and licenses', 'internal prior work', 'configuration options',
+  'open source', 'commercial options', 'process change'];
 
 export const initial = () => ({
   phase: 'SEEN', steward: null, approver: null, specAuthor: null, specHash: null,
@@ -142,6 +144,14 @@ export function step(state, event, who) {
     return result({ ...context, phase, steward: event.actor,
       ineligibleHelpers: addIneligible(context, event.actor) });
   }
+  if (event.type === 'researched' && context.rules >= 2 && person(who)
+      && event.sources && Object.keys(event.sources).length === researchSources.length
+      && researchSources.every(source => {
+        const entry = event.sources[source];
+        return entry && ['checked', 'not connected', 'failed'].includes(entry.status)
+          && nonempty(entry.finding) && entry.finding.length <= 2000
+          && (entry.status !== 'not connected' || (entry.finding === 'nothing checked' && entry.checkedAt === null));
+      })) return result(context);
   if (event.type === 'specced'
       && ((context.rules >= 2 && ['SEEN', 'SPECCED', 'SUBMITTED', 'SENDING', 'TRYING'].includes(context.phase)
         && event.see_hash === context.seeHash && validWords(event.assumptions) && validWords(event.open_questions)) ||
@@ -168,9 +178,16 @@ export function step(state, event, who) {
       && (event.window_minutes === undefined || (Number.isInteger(event.window_minutes) && event.window_minutes >= 1))) {
     const maxIterations = event.max_iterations ?? DEFAULT_MAX_ITERATIONS;
     const windowMinutes = event.window_minutes ?? DEFAULT_WINDOW_MINUTES;
+    const deadline = new Date(event.at).getTime() + windowMinutes * 60_000;
+    if (event.window_minutes !== undefined && (!Number.isFinite(deadline) || Math.abs(deadline) > 8.64e15))
+      return fail('approval window is out of range');
+    const expiresAt = event.window_minutes === undefined ? (event.expires_at || null)
+      : new Date(deadline).toISOString();
+    if (event.window_minutes !== undefined && event.expires_at !== undefined && event.expires_at !== expiresAt)
+      return fail('approval expiry must match its time window');
     const next = { ...context, phase: 'SENDING', approver: event.actor, capMicros: usdToMicros(event.cap_usd),
       quorum: event.quorum, spentMicros: 0, approval: context.approval + 1, iteration: 0,
-      leash: { maxIterations, expiresAt: event.expires_at || null, windowMinutes }, decided: { disposition: 'approved', actor: event.actor, at: event.at,
+      leash: { maxIterations, expiresAt, windowMinutes }, decided: { disposition: 'approved', actor: event.actor, at: event.at,
         reason: event.reason, packetHash: event.packet_hash, specHash: event.spec_hash },
       ineligibleHelpers: addIneligible(context, event.actor) };
     return result(next, [{ kind: 'build.start', approval: next.approval, spec_hash: event.spec_hash, cap_usd: event.cap_usd }]);

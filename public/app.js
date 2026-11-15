@@ -46,13 +46,16 @@ document.addEventListener('submit', async event => {
     if (form.dataset.approve) {
       await post('/api/stepup', { password: input.password });
       const approval = { type: 'approved', spec_hash: input.spec_hash,
-        cap_usd: Number(input.cap_usd), quorum: Number(input.quorum),
-        max_iterations: Number(input.max_iterations), window_minutes: Number(input.window_minutes) };
+        cap_usd: Number(input.cap_usd), quorum: Number(input.quorum) };
+      if (input.max_iterations !== undefined) approval.max_iterations = Number(input.max_iterations);
+      if (input.window_minutes !== undefined) approval.window_minutes = Number(input.window_minutes);
       if (input.packet_hash) Object.assign(approval, { packet_hash: input.packet_hash, reason: input.reason });
       else approval.expected_seq = Number(input.expected_seq);
       await post(`/api/items/${id}/events`, approval);
+    } else if (form.dataset.research) {
+      await post(`/api/items/${id}/research`, {});
     } else if (form.dataset.send) {
-      await post(`/api/items/${id}/send`, { spec_hash: input.spec_hash });
+      await post(`/api/items/${id}/send`, { spec_hash: input.spec_hash, ...(input.estimate?.trim() ? { estimate: input.estimate.trim() } : {}) });
     } else if (form.dataset.fork) {
       const out = await post(`/api/items/${id}/fork`, { reason: input.reason });
       location.href = `/items/${out.id}`;
@@ -74,6 +77,9 @@ document.addEventListener('submit', async event => {
       await post(`/api/items/${id}/artifact`, { html: input.html });
     } else {
       const data = { type: form.dataset.event, ...input };
+      if (['returned', 'not_built'].includes(data.type)) {
+        for (const key of ['restricted_evidence', 'pivot_note']) if (!data[key]?.trim()) delete data[key];
+      }
       if (data.type === 'checked_in' && Object.hasOwn(data, 'consent')) data.consent = data.consent === 'true';
       if (data.type === 'specced') {
         for (const key of ['must', 'how_we_know', 'out_of_scope']) {

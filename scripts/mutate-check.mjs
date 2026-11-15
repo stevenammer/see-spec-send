@@ -22,7 +22,7 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs', 'test/slice23.test.mjs', 'test/slice24.test.mjs',
   'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs', 'test/slice27.test.mjs', 'test/password-screen.test.mjs',
-  'test/vision-01.test.mjs', 'test/vision-02.test.mjs', 'test/vision-03.test.mjs', 'test/vision-04.test.mjs', 'test/sliceR.test.mjs', 'test/sliceR2.test.mjs', 'test/sliceF3.test.mjs'];
+  'test/vision-01.test.mjs', 'test/vision-02.test.mjs', 'test/vision-03.test.mjs', 'test/vision-04.test.mjs', 'test/sliceR.test.mjs', 'test/sliceR2.test.mjs', 'test/sliceF3.test.mjs', 'test/sliceF3-worker.test.mjs', 'test/pagesF3.test.mjs', 'test/sliceF3-http.test.mjs', 'test/sliceF3-gateway.test.mjs'];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
@@ -76,11 +76,16 @@ const mutants = [
   ['R2 tagged Effort reply keeps its parent', "...(job.kind === 'tag' ? { parent: triggerBody.body_hash } : {})", ''],
   ['R2 separate mention quota ignores automatic replies', "mine.filter(sameClass).length < (automatic ? EFFORT_LIMITS.automatic_calls_per_person_day : EFFORT_LIMITS.calls_per_person_day)", 'mine.length < EFFORT_LIMITS.calls_per_person_day'],
   ['R2 sequence diff preserves duplicates and order', 'lengths[oldAt][newAt] = oldLines[oldAt] === newLines[newAt]', 'lengths[oldAt][newAt] = false'],
-  ['F3 not building requires a reason', "nonempty(event.reason) && event.reason.length >= 12", 'true'],
+  ['F3 not building requires a reason', "event.packet_hash === context.sent?.packetHash && nonempty(event.reason) && event.reason.length >= 12\n      && (event.restricted_evidence", "event.packet_hash === context.sent?.packetHash\n      && (event.restricted_evidence"],
+  ['F3 gateway approval deadline', "demand(!deadline || (Number.isFinite(Date.parse(deadline)) && now < Date.parse(deadline)), 'approval window expired');", ''],
+  ['F3 gateway total cap covers every turn', 'sum(rows.filter(row => row.item === run.item && row.approval === run.approval))', 'sum(rows.filter(row => row.run === run.id))'],
+  ['F3 worker fixed deadline', 'now >= Date.parse(context.leash.expiresAt)', 'false'],
+  ['F3 worker rejects late ready artifact', 'if (leashExpired(context, this.clock())) {', 'if (false) {'],
+  ['F3 external dispatch rechecks expiry', "fresh.status !== 'active' || killed(this.store) || leashExpired(context, this.clock()) || !current(context, fresh)", "fresh.status !== 'active' || killed(this.store) || !current(context, fresh)"],
+  ['F3 explicit expiry matches duration', 'event.window_minutes !== undefined && event.expires_at !== undefined && event.expires_at !== expiresAt', 'false'],
   ['F3 leash limits iteration', 'context.iteration + 1 <= (context.leash?.maxIterations ?? DEFAULT_MAX_ITERATIONS)', 'true'],
-  ['F3 erase another needs ground', "if (!['privacy', 'legal', 'safety', 'customer or employee personal data'].includes(ground)) throw refused('erase ground required');", ''],
-  ['F3 research has six honest slots', "'open source', 'commercial options', 'process change',", "'open source', 'commercial options',"],
-  ['F3 decision records cannot erase', "['posted', 'approved', 'returned', 'not_built', 'sent'].includes(target.type)", "['posted', 'approved', 'returned', 'sent'].includes(target.type)"],
+  ['F3 research has six honest slots', "export const RESEARCH_SOURCES = Object.freeze([\n  'internal tools and licenses', 'internal prior work', 'configuration options',\n  'open source', 'commercial options', 'process change',\n]);", "export const RESEARCH_SOURCES = Object.freeze(['internal tools and licenses', 'internal prior work', 'configuration options', 'commercial options', 'process change']);"],
+  ['F3 decision records cannot erase', "['posted', 'forked', 'approved', 'returned', 'not_built', 'sent'].includes(target.type)", "['posted', 'forked', 'approved', 'returned', 'sent'].includes(target.type)"],
   ['gateway disabled default', "demand(policy.enabled, 'gateway disabled');", ''],
   ['gateway run cap', "demand(add(used, worst) <= cap, 'run cap exceeded');", ''],
   ['gateway global cap', "demand(add(sum(combined), worst) <= policy.global_micros, 'global cap exceeded');", ''],
@@ -96,7 +101,7 @@ const mutants = [
   ['gateway cancelled releases only on no call', "{ state: 'cancelled', charged_micros: 0 }", "{ state: 'cancelled' }"],
   ['worker canonical kill path', '`${realpathSync(file)}.kill`', '`${file}.kill`'],
   ['worker current approval', "&& context.approval === run.approval && context.specHash === run.spec_hash", '&& true'],
-  ['worker stopped delivery', "run.status !== 'active' || killed(this.store) || leashExpired(context) || !current(context, run)", 'false'],
+  ['worker stopped delivery', "if (run.status !== 'active' || killed(this.store) || !current(context, run)) {", 'if (false) {'],
   ['worker single run', "if (this.db.prepare('SELECT 1 FROM runs WHERE id=?').get(id)) continue;", ''],
   ['worker duplicate delivery', 'if (run.delivered) return false;', ''],
   ['worker independent kill', 'readFileSync(store.killFile); return true;', 'readFileSync(store.killFile); return false;'],
@@ -390,7 +395,7 @@ const mutants = [
   ['slice27 gateway socket directory is private', "if (statSync(parent).mode & 0o022) fail(", "if (false) fail("],
 ];
 
-const files = ['compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'cli.js',
+const files = ['compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'research/connectors.js', 'cli.js',
   'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js', 'core/diff.js',
   'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'app/effort.js', 'app/pages-spec.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/effort.js', 'gateway/http.js', 'effort/prompt.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js', 'public/app.js', 'effort/prompt.js'];
 

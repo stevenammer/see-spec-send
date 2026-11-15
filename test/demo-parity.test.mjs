@@ -41,6 +41,7 @@ const expected = {
   'spec-change-sending': { state: 'SPECCED', refused: [] },
   'stale-approval': { state: 'SENDING', refused: [6] },
   'stale-artifact': { state: 'TRYING', refused: [5] },
+  'rules-2-research': { state: 'SEEN', refused: [3] },
   'rules-2-posted': { state: 'SEEN', refused: [] },
   'rules-2-journey': { state: 'SPECCED', refused: [] },
   'rules-2-refusals': { state: 'SPECCED', refused: [2, 4] },

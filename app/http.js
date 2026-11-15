@@ -14,6 +14,7 @@ import { redact } from '../provider/safe-http.js';
 import { CURRENT_RULES } from '../core/machine.js';
 import { buildPacket } from '../core/packet.js';
 import { specPage } from './pages-spec.js';
+import { researchRecord } from '../research/connectors.js';
 
 // Object key order does not change a retry identity. Array order is meaningful.
 const canonical = value => JSON.stringify(value, (_key, entry) =>
@@ -164,9 +165,10 @@ const validEvent = input => {
       && typeof input.cap_usd === 'number' && Number.isInteger(input.quorum) && input.quorum >= 1
       && (input.max_iterations === undefined || (Number.isInteger(input.max_iterations) && input.max_iterations >= 1 && input.max_iterations <= 5))
       && (input.window_minutes === undefined || (Number.isInteger(input.window_minutes) && input.window_minutes >= 1));
-    case 'returned': case 'not_built': return exactKeys(input, ['type', 'reason', 'restricted_evidence', 'pivot_note'])
+    case 'returned': case 'not_built': return exactKeys(input, ['type', 'reason', 'restricted_evidence', 'pivot_note', 'spec_hash', 'packet_hash'])
       && text(input.reason, 2000) && (input.restricted_evidence === undefined || text(input.restricted_evidence, 2000))
-      && (input.pivot_note === undefined || text(input.pivot_note, 2000));
+      && (input.pivot_note === undefined || text(input.pivot_note, 2000))
+      && (input.spec_hash === undefined || hex(input.spec_hash)) && (input.packet_hash === undefined || hex(input.packet_hash));
     case 'shelved': case 'checked_in':
       return exactKeys(input, input.type === 'checked_in' ? ['type', 'note', 'consent'] : ['type', input.type === 'shelved' ? 'reason' : 'note'])
         && text(input[input.type === 'shelved' ? 'reason' : 'note'], 2000)
@@ -352,7 +354,11 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           auth.reviewApproval(sessionToken, view[1], state.context.specHash, events.length);
         return page(
           res,
-          itemPage({ id: view[1], ...state, packet: state.context.sent && store.artifact(view[1], state.context.sent.packetHash),
+          itemPage({ id: view[1], ...state,
+            packet: (state.context.sent?.packetHash || state.context.decided?.packetHash)
+              ? store.artifact(view[1], state.context.sent?.packetHash || state.context.decided.packetHash) : null,
+            decisionPackets: Object.fromEntries(events.filter(event => ['approved', 'returned', 'not_built'].includes(event.type) && event.packet_hash)
+              .map(event => [event.packet_hash, store.artifact(view[1], event.packet_hash)])),
             effort: store.db.prepare('SELECT kind,state,last_error,requester,created FROM effort_jobs WHERE item=? ORDER BY created').all(view[1]) }, events, session.person, leader),
         );
       }
@@ -410,9 +416,20 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         if (typeof questModel.draft !== 'function') return json(res, 404, { error: 'not found' });
         return json(res, 200, await questModel.draft(session.person, input, req.headers['idempotency-key'] || randomUUID()));
       }
+      const research = url.pathname.match(/^\/api\/items\/([^/]+)\/research$/);
+      if (req.method === 'POST' && research) {
+        if (!exactKeys(input, [])) return json(res, 409, { error: 'request refused' });
+        const state = store.read(research[1]).context;
+        if (state.steward !== session.person) throw refused('only the steward can refresh research');
+        const at = new Date(clock()).toISOString();
+        const sources = await researchRecord({ at });
+        return json(res, 201, store.append(research[1], { type: 'researched', actor: session.person, sources, at },
+          { idem: req.headers['idempotency-key'] || randomUUID() }));
+      }
       const send = url.pathname.match(/^\/api\/items\/([^/]+)\/send$/);
       if (req.method === 'POST' && send) {
-        if (!exactKeys(input, ['spec_hash']) || !hex(input.spec_hash)) return json(res, 409, { error: 'request refused' });
+        if (!exactKeys(input, ['spec_hash', 'estimate']) || !hex(input.spec_hash)
+          || (input.estimate !== undefined && !text(input.estimate, 2000))) return json(res, 409, { error: 'request refused' });
         const events = store.events(send[1]); const first = events[0];
         const spec = events.find(event => event.type === 'specced' && event.body_hash === input.spec_hash);
         const see = events.filter(event => event.type === 'revised').at(-1)?.text || first?.original;
@@ -422,7 +439,10 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         const userEvidence = events.filter(event => ['posted', 'revised', 'specced', 'commented'].includes(event.type))
           .flatMap(event => event.evidence || []).map(evidence => ({ ...evidence }));
         const packet = buildPacket({ original: first.original, see, spec: { ...spec, hash: input.spec_hash }, credits,
-          comments: events.filter(event => event.type === 'commented'), userEvidence, gatewayPolicy: {}, sandboxLimits: {} });
+          comments: events.filter(event => event.type === 'commented'), userEvidence, gatewayPolicy: {}, sandboxLimits: {},
+          estimate: input.estimate ? { label: 'OP estimate, not independently verified', author: session.person, text: input.estimate } : undefined,
+          researched: events.filter(event => event.type === 'researched').at(-1)?.sources,
+          lineage: first.type === 'forked' ? { ...first.parent, reason: first.reason || 'No reason recorded' } : null });
         const packet_hash = store.putArtifact(send[1], JSON.stringify(packet));
         const result = store.append(send[1], { type: 'sent', actor: session.person, spec_hash: input.spec_hash, packet_hash,
           at: new Date().toISOString() }, { idem: req.headers['idempotency-key'] || randomUUID() });
@@ -526,12 +546,18 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         const state = store.read(match[1]);
         input = { ...input, spec_hash: state.context.specHash, expected_seq: store.eventRows(match[1]).length };
       }
+      const eventAt = new Date(clock()).toISOString();
       if (input.type === 'approved' && input.spec_hash !== undefined) {
         const minutes = input.window_minutes ?? 7 * 24 * 60;
-        input = { ...input, expires_at: new Date(clock() + minutes * 60_000).toISOString() };
+        const expiry = new Date(Date.parse(eventAt) + minutes * 60_000);
+        if (!Number.isFinite(expiry.getTime())) return json(res, 409, { error: 'request refused' });
+        input = { ...input, window_minutes: minutes, expires_at: expiry.toISOString() };
       }
       if (['returned', 'not_built'].includes(input.type)) {
         const state = store.read(match[1]).context;
+        if ((input.spec_hash !== undefined && input.spec_hash !== state.sent?.specHash)
+          || (input.packet_hash !== undefined && input.packet_hash !== state.sent?.packetHash))
+          return json(res, 409, { error: 'request refused' });
         input = { ...input, spec_hash: state.sent?.specHash, packet_hash: state.sent?.packetHash };
       }
       if (input.type === 'commented') {
@@ -550,7 +576,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         201,
         store.append(
           match[1],
-          { ...input, actor: session.person, at: new Date().toISOString() },
+          { ...input, actor: session.person, at: eventAt },
           { expectedSeq: input.expected_seq, idem: req.headers['idempotency-key'] || randomUUID() },
         ),
       );

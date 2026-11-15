@@ -46,7 +46,8 @@ document.addEventListener('submit', async event => {
     if (form.dataset.approve) {
       await post('/api/stepup', { password: input.password });
       const approval = { type: 'approved', spec_hash: input.spec_hash,
-        cap_usd: Number(input.cap_usd), quorum: Number(input.quorum) };
+        cap_usd: Number(input.cap_usd), quorum: Number(input.quorum),
+        max_iterations: Number(input.max_iterations), window_minutes: Number(input.window_minutes) };
       if (input.packet_hash) Object.assign(approval, { packet_hash: input.packet_hash, reason: input.reason });
       else approval.expected_seq = Number(input.expected_seq);
       await post(`/api/items/${id}/events`, approval);

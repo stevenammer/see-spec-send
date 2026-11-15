@@ -50,7 +50,7 @@ function redactBody(type, body) {
   const structural = ['verdict', 'quorum', 'cap_usd', 'approval', 'spec_hash',
     'artifact_hash', 'usd', 'steward', 'body_hash', 'redacted_hash', 'delivered_by',
     'anchor_kind', 'anchor_hash', 'parent', 'kind', 'base_hash', 'rules', 'source_label', 'honesty_label',
-    'see_hash', 'spec_hash', 'base_spec_hash', 'packet_hash', 'approval', 'iteration', 'job', 'receipt', 'model', 'mode', 'credits', 'questMemo', 'consent', 'absent'];
+    'see_hash', 'spec_hash', 'base_spec_hash', 'packet_hash', 'approval', 'iteration', 'job', 'receipt', 'model', 'mode', 'credits', 'questMemo', 'consent', 'absent', 'ground', 'max_iterations', 'window_minutes', 'restricted_evidence', 'pivot_note'];
   const textFields = ['problem', 'looked', 'found', 'must', 'how_we_know', 'out_of_scope',
     'note', 'reason', 'comment', 'original', 'text', 'assumptions', 'open_questions', 'instruction'];
   // Preserve only known machine fields; unknown metadata may contain personal writing.
@@ -318,6 +318,26 @@ export class Store {
         if (!consented && !inactiveForFourteenDays) throw refused('steward consent or fourteen days of inactivity required');
       }
     }
+    if (event.type === 'erased') {
+      // Every path to an erasure (the product, a direct append, an import) meets the same rules.
+      const context = this.read(item).context;
+      const authority = this.actor(event.actor, item);
+      const privileged = authority?.leader === true || event.actor === context.steward;
+      if (!(context.rules >= 2)) {
+        if (!privileged) throw refused('event not allowed');
+      } else {
+        const target = this.db.prepare('SELECT type, actor FROM events WHERE item=? AND body_hash=?').get(item, event.body_hash);
+        if (!target) { if (!privileged) throw refused('event not allowed'); }
+        else {
+          if (['posted', 'approved', 'returned', 'not_built', 'sent'].includes(target.type)) throw refused('decision records and original SEEs cannot erase');
+          if (target.actor !== event.actor) {
+            if (!privileged) throw refused('event not allowed');
+            if (!['privacy', 'legal', 'safety', 'customer or employee personal data'].includes(event.ground)) throw refused('erase ground required');
+            if (typeof event.note !== 'string' || event.note.length < 1 || event.note.length > 2000) throw refused('erase note required');
+          }
+        }
+      }
+    }
     if (event.type === 'posted' && this.eventRows(item).length !== 0) throw refused('posted event requires a fresh item');
     if (event.type === 'forked') {
       if (this.eventRows(item).length !== 0) throw refused('forked event requires a fresh item');
@@ -532,19 +552,28 @@ export class Store {
     }
   }
 
-  erase(item, targetHash, actor, at) {
+  erase(item, targetHash, actor, at, { ground, note } = {}) {
     if (!targetHash || !actor || typeof at !== 'string' || !at) throw new Error('erase arguments required');
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const target = this.db.prepare('SELECT * FROM events WHERE item=? AND body_hash=?').get(item, targetHash);
       if (!target) throw new Error('body is not part of item');
+      const rules2 = this.read(item).context.rules >= 2;
+      if (rules2 && ['posted', 'approved', 'returned', 'not_built', 'sent'].includes(target.type)) throw refused('decision records and original SEEs cannot erase');
+      const authority = this.actor(actor, item);
+      if (!rules2 && !(authority?.leader || actor === this.read(item).context.steward)) throw refused('event not allowed');
+      if (rules2 && target.actor !== actor) {
+        if (!(authority?.leader || actor === this.read(item).context.steward)) throw refused('event not allowed');
+        if (!['privacy', 'legal', 'safety', 'customer or employee personal data'].includes(ground)) throw refused('erase ground required');
+        if (typeof note !== 'string' || note.length < 1 || note.length > 2000) throw refused('erase note required');
+      }
       const current = this.db.prepare('SELECT seq FROM items WHERE item=?').get(item);
       const body = this.db.prepare('SELECT bytes FROM bodies WHERE hash=?').get(targetHash);
       if (!body) throw new Error('body is already erased');
       const tombstone = stable(redactBody(target.type, JSON.parse(body.bytes)));
       const redacted_hash = scopedBodyHash(item, tombstone);
       this.appendInTransaction(item, { type: 'erased', actor, body_hash: targetHash,
-        redacted_hash, at }, {
+        redacted_hash, ...(target.actor !== actor ? { ground, note } : {}), at }, {
         expectedSeq: current?.seq || 0, idem: `erase:${targetHash}`,
       });
       // Keep machine fields so an erasure cannot corrupt item history.

@@ -239,8 +239,9 @@ async function run(argv, env, write) {
     const item = value('--item') || fail('missing --item');
     const bodyHash = value('--body-hash') || fail('missing --body-hash');
     const actor = value('--actor') || fail('missing --actor');
-    value('--reason') || fail('missing --reason');
-    store.erase(item, bodyHash, actor, new Date().toISOString());
+    const reason = value('--reason') || fail('missing --reason');
+    const ground = value('--ground');
+    store.erase(item, bodyHash, actor, new Date().toISOString(), ground ? { ground, note: reason } : {});
     write(`erased body ${bodyHash} in item ${item}`);
   } else if (command === 'provider') {
     const subcommand = args[0];

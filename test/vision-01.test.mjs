@@ -63,7 +63,7 @@ test('V1 erasure preserves anchors and comments have their own 1,000-event cap',
   const seeHash = store.read('see').context.seeHash;
   append(store, 'see', { type: 'commented', actor: 'member', comment: 'A comment', kind: 'comment', anchor_kind: 'see', anchor_hash: seeHash }, 2);
   const target = store.events('see').at(-1).body_hash;
-  store.erase('see', target, 'op', at(3));
+  store.erase('see', target, 'op', at(3), { ground: 'privacy', note: 'Remove a member comment containing personal details.' });
   append(store, 'see', { type: 'commented', actor: 'op', comment: 'After erase', kind: 'comment', anchor_kind: 'see', anchor_hash: seeHash }, 4);
   assert.deepEqual(store.verifyAll(), [{ item: 'see', ok: true }]);
   append(store, 'see', { type: 'revised', actor: 'op', text: 'A state event still works', base_hash: seeHash }, 5);
@@ -79,7 +79,7 @@ test('V1 erasure preserves a legacy SPEC anchor too', () => {
   append(store, 'legacy', { type: 'specced', actor: 'op', must: ['one thing'], how_we_know: ['people tell us'], out_of_scope: [] }, 2);
   const specHash = store.read('legacy').context.specHash;
   append(store, 'legacy', { type: 'commented', actor: 'member', comment: 'spec note', anchor_kind: 'spec', anchor_hash: specHash }, 3);
-  store.erase('legacy', store.events('legacy').at(-1).body_hash, 'op', at(4));
+  store.erase('legacy', store.events('legacy').at(-1).body_hash, 'op', at(4), { ground: 'privacy', note: 'Remove a member comment containing personal details.' });
   append(store, 'legacy', { type: 'commented', actor: 'member', comment: 'after erase', anchor_kind: 'spec', anchor_hash: specHash }, 5);
   assert.deepEqual(store.verifyAll(), [{ item: 'legacy', ok: true }]);
 });
@@ -116,7 +116,8 @@ test('F1 rules-2 allows Spec v2 after discussion and a return returns to the spe
   const spec1 = store.read('chain').context.specHash;
   const packetHash = store.putArtifact('chain', JSON.stringify({ specHash: spec1 }));
   append(store, 'chain', { type: 'sent', actor: 'op', spec_hash: spec1, packet_hash: packetHash }, 3);
-  append(store, 'chain', { type: 'returned', actor: 'leader', note: 'Please explain the affected employee workflow.' }, 4);
+  append(store, 'chain', { type: 'returned', actor: 'leader', spec_hash: spec1, packet_hash: packetHash,
+    reason: 'Please explain the affected employee workflow.' }, 4);
   assert.equal(store.read('chain').state, 'SPECCED');
   append(store, 'chain', { type: 'specced', actor: 'op', see_hash: seeHash, must: ['second'], how_we_know: ['test again'], out_of_scope: [] }, 5);
   assert.notEqual(store.read('chain').context.specHash, spec1);

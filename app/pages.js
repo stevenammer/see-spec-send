@@ -1,6 +1,7 @@
 import { postedQuestMemo } from '../public/vision-quest.js';
 import { renderThread } from './pages-thread.js';
 import { lineDiff } from '../core/diff.js';
+import { NOT_BUILT_LABEL } from '../core/machine.js';
 const escape = value =>
   String(value ?? '').replace(
     /[&<>"']/g,
@@ -81,16 +82,18 @@ function eventWords(event) {
     specced: 'wrote the spec',
     approved: 'approved a small try',
     returned: 'returned the spec',
+    not_built: `decided ${NOT_BUILT_LABEL}`,
     tried: 'delivered a try',
     helped: 'said the try helps',
     shelved: 'shelved this item',
     steward_changed: 'reassigned the steward',
     commented: 'left a comment',
     checked_in: 'posted a check-in',
+    erased: 'erased content',
   };
   // A try is written by a per-item token, so name the person who delivered it instead.
   if (event.type === 'seen') return `${escape(event.source_label)} reported this as ${escape(event.honesty_label)} evidence`;
-  return `${escape(event.type === 'tried' && event.delivered_by ? event.delivered_by : event.actor)} ${words[event.type] || 'updated this item'}${event.type === 'approved' && event.reason ? `. Reason: ${escape(event.reason)}` : ''}${event.type === 'steward_changed' ? ` to ${escape(event.steward)}${event.reason ? `. Note: ${escape(event.reason)}` : ''}` : ''}${event.type === 'tried' && event.model_output ? ' (model output)' : ''}`;
+  return `${escape(event.type === 'tried' && event.delivered_by ? event.delivered_by : event.actor)} ${words[event.type] || 'updated this item'}${['approved', 'returned', 'not_built'].includes(event.type) && event.reason ? `. Reason: ${escape(event.reason)}` : ''}${event.type === 'erased' ? `${event.ground ? `. Ground: ${escape(event.ground)}. ${escape(event.note)}` : ''}` : ''}${event.type === 'steward_changed' ? ` to ${escape(event.steward)}${event.reason ? `. Note: ${escape(event.reason)}` : ''}` : ''}${event.type === 'tried' && event.model_output ? ' (model output)' : ''}`;
 }
 
 export function itemPage(item, events, person, leader) {
@@ -105,7 +108,7 @@ export function itemPage(item, events, person, leader) {
   if (questEvent) {
     questDraft = postedQuestMemo(questEvent);
     if (questDraft && !questDraft.stopped) {
-      questMemo = `<section><h2>Vision Quest memo</h2><p>${escape(questDraft.recommendation)}: ` +
+      questMemo = `<section><h2>Vision Quest memo</h2><p>Vision Quest recommendation, not approval to build: <strong>${escape(questDraft.recommendation)}</strong>: ` +
         `${escape(questDraft.reason)}</p><p>Author-reported, not independently verified.</p>` +
         `<p>Decision owner: ${escape(questDraft.memo.decisionOwner)}</p>` +
         `<p>Stop if: ${escape(questDraft.memo.stopCondition)}</p>` +
@@ -138,7 +141,7 @@ export function itemPage(item, events, person, leader) {
   if (item.state === 'SUBMITTED') {
     const packetBody = item.packet ? `<pre>${escape(item.packet)}</pre>` : '';
     action = `<section><h2>Decision packet</h2><p>Research: no source connected, nothing checked.</p>${packetBody}</section>` +
-      (leader && context.steward !== person ? `<form data-approve="true"><h2>Decide</h2><input type="hidden" name="spec_hash" value="${escape(context.specHash)}"><input type="hidden" name="packet_hash" value="${escape(context.sent.packetHash)}"><label>Reason for your decision<textarea name="reason" required minlength="12"></textarea></label><label>Cap in dollars<input name="cap_usd" type="number" min="0" step="0.01" required></label><label>How many people need to say it helps?<input name="quorum" type="number" min="1" required></label><label>Re-enter your password<input name="password" type="password" required></label><button>Approve the try</button></form><form data-event="returned"><label>What needs to change?<input name="note" required minlength="12"></label><button>Return the spec</button></form>` : '');
+      (leader && context.steward !== person ? `<form data-approve="true"><h2>Decide</h2><input type="hidden" name="spec_hash" value="${escape(context.specHash)}"><input type="hidden" name="packet_hash" value="${escape(context.sent.packetHash)}"><label>Reason for your decision<textarea name="reason" required minlength="12"></textarea></label><label>Cap in dollars<input name="cap_usd" type="number" min="0" step="0.01" required></label><label>How many people need to say it helps?<input name="quorum" type="number" min="1" required></label><label>Maximum build turns (1 to 5)<input name="max_iterations" type="number" min="1" max="5" value="5" required></label><label>Time window in days<input name="window_minutes" type="hidden" value="10080">7 days</label><label>Re-enter your password<input name="password" type="password" required></label><button>Approve the try</button></form><form data-event="returned"><label>Reason to return<textarea name="reason" required minlength="12"></textarea></label><button>Return the spec</button></form><form data-event="not_built"><label>Reason not to build<textarea name="reason" required minlength="12"></textarea></label><label>Restricted evidence (optional)<input name="restricted_evidence" placeholder="a restricted source exists; ask a role"></label><label>What changed later (optional)<input name="pivot_note"></label><button>Not building</button></form>` : '');
   }
   if (item.state === 'SPECCED' && !rules2 && leader && context.steward !== person)
     action = `<form data-approve="true"><h2>Decide</h2><p>Approval freezes the cap. The configured provider and its worst-case micro-dollar estimate are shown by the gateway administrator before this screen is used.</p><input type="hidden" name="spec_hash" value="${escape(context.specHash)}"><input type="hidden" name="expected_seq" value="${events.length}"><label>Cap in dollars<input name="cap_usd" type="number" min="0" step="0.01" required></label><label>How many people need to say it helps?<input name="quorum" type="number" min="1" required></label><label>Re-enter your password<input name="password" type="password" required></label><button>Approve the try</button></form><form data-event="returned"><label>What needs to change?<input name="note" required></label><button>Return the spec</button></form>`;
@@ -206,11 +209,13 @@ export function itemPage(item, events, person, leader) {
   const effortAllowance = `<p>Effort replies left today: ${Math.max(0, 10 - usedMentions)} mentions. Startup replies use a separate small allowance: ${Math.max(0, 2 - usedAutomatic)} left. All replies still stop at the shared spend caps.</p>`;
   const instructions = events.filter(event => event.type === 'steered' && event.approval === context.approval)
     .map(event => `<li>${escape(event.instruction)}${event.source ? ` (from ${escape(event.source)})` : ''}</li>`).join('');
+  const decision = context.decided ? `<section><h2>Leader decision</h2><p><strong>${escape(context.decided.disposition === 'not_built' ? NOT_BUILT_LABEL : context.decided.disposition)}</strong>, by ${escape(context.decided.actor)} on ${escape(context.decided.at)}.</p><p>${escape(context.decided.reason)}</p>${context.decided.restrictedEvidence ? `<p>${escape(context.decided.restrictedEvidence)}</p>` : ''}${context.decided.pivotNote ? `<p>What changed: ${escape(context.decided.pivotNote)}</p>` : ''}<p>Reviewed packet: ${escape(context.decided.packetHash)}. Reviewed spec: ${escape(context.decided.specHash)}.</p></section>` : '';
+  const leash = context.leash ? `<section><h2>Approval leash</h2><p>Up to ${escape(context.leash.maxIterations)} build turns, until ${escape(context.leash.expiresAt)}. The approved dollar cap and helper count still apply.</p></section>` : '';
   return shell(
     problem,
     '<p><a href="/">Back to the work</a></p>' +
       `<p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1><p>Originator: ${escape(context.originator || context.steward)}. Current steward: ${escape(context.steward)}.</p>` +
-      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${context.superseded ? `<p>This old approval is superseded. Update the spec, SEND IT!, and get a new leader approval.${context.supersededArtifact ? ' The delivered try is superseded and cannot receive new Helps votes.' : ''}</p>` : ''}${forkedFrom}${effortStatus}${effortAllowance}${see}${questMemo}${specSummary}${revise}${action}${packetView}${tryThread}${oldTryHistory}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${shelve}${reassign}${checkin}${comment}` +
+      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${context.superseded ? `<p>This old approval is superseded. Update the spec, SEND IT!, and get a new leader approval.${context.supersededArtifact ? ' The delivered try is superseded and cannot receive new Helps votes.' : ''}</p>` : ''}${forkedFrom}${effortStatus}${effortAllowance}${see}${questMemo}${specSummary}${decision}${leash}${revise}${action}${packetView}${tryThread}${oldTryHistory}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${shelve}${reassign}${checkin}${comment}` +
       `<h2>${rules2 ? 'Thread' : 'Comments'}</h2>${rules2 ? (renderThread(events, { ...context, steward: context.steward === person ? context.steward : null }) || '<p>No comments yet.</p>') : `<ol>${anchoredComments || '<li>No comments yet.</li>'}</ol>`}<h2>What happened</h2><ol>${events.filter(event => event.type !== 'commented' && event.type !== 'revised').map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
   );
 }

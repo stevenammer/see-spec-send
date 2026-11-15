@@ -2,6 +2,9 @@ const open = new Set(['SEEN', 'CHECKED', 'SPECCED', 'SUBMITTED', 'SENDING', 'TRY
 const verdicts = new Set(['already_have', 'setting', 'free', 'pay', 'build_needed']);
 const MICROS_PER_USD = 1_000_000;
 export const CURRENT_RULES = 2;
+export const NOT_BUILT_LABEL = 'Not building';
+const DEFAULT_MAX_ITERATIONS = 5;
+const DEFAULT_WINDOW_MINUTES = 7 * 24 * 60;
 
 export const initial = () => ({
   phase: 'SEEN', steward: null, approver: null, specAuthor: null, specHash: null,
@@ -90,7 +93,7 @@ export function step(state, event, who) {
       && ({ see: context.seeHash, spec: context.specHash, artifact: context.artifact })[event.anchor_kind] === event.anchor_hash) return result(context);
   if (event.type === 'checked_in' && person(who) && nonempty(event.note) && event.note.length <= 2000)
     return result(context);
-  if (event.type === 'erased' && (leader(who) || steward(context, event, who))) return result(context);
+  if (event.type === 'erased' && person(who)) return result(context);
   // An integration may report a problem, but it has no person authority. It
   // cannot choose a steward or move the item beyond the feed's earliest stage.
   if (event.type === 'seen' && context.phase === 'SEEN' && sourceActor(who)
@@ -153,15 +156,22 @@ export function step(state, event, who) {
   }
   if (event.type === 'sent' && context.rules >= 2 && context.phase === 'SPECCED'
       && steward(context, event, who) && event.spec_hash === context.specHash
-      && context.specSeeHash === context.seeHash && nonempty(event.packet_hash)) {
+      && context.specSeeHash === context.seeHash && nonempty(event.packet_hash)
+      && !(context.decided?.specHash === event.spec_hash && context.decided?.packetHash === event.packet_hash)) {
     return result({ ...context, phase: 'SUBMITTED', sent: { specHash: event.spec_hash, packetHash: event.packet_hash } });
   }
   if (event.type === 'approved' && context.rules >= 2 && context.phase === 'SUBMITTED' && leader(who)
       && !context.authors.includes(event.actor) && event.spec_hash === context.sent?.specHash
       && event.packet_hash === context.sent?.packetHash && nonempty(event.reason) && event.reason.length >= 12
-      && usdToMicros(event.cap_usd) !== null && Number.isInteger(event.quorum) && event.quorum >= 1) {
+      && usdToMicros(event.cap_usd) !== null && Number.isInteger(event.quorum) && event.quorum >= 1
+      && (event.max_iterations === undefined || (Number.isInteger(event.max_iterations) && event.max_iterations >= 1 && event.max_iterations <= 5))
+      && (event.window_minutes === undefined || (Number.isInteger(event.window_minutes) && event.window_minutes >= 1))) {
+    const maxIterations = event.max_iterations ?? DEFAULT_MAX_ITERATIONS;
+    const windowMinutes = event.window_minutes ?? DEFAULT_WINDOW_MINUTES;
     const next = { ...context, phase: 'SENDING', approver: event.actor, capMicros: usdToMicros(event.cap_usd),
       quorum: event.quorum, spentMicros: 0, approval: context.approval + 1, iteration: 0,
+      leash: { maxIterations, expiresAt: event.expires_at || null, windowMinutes }, decided: { disposition: 'approved', actor: event.actor, at: event.at,
+        reason: event.reason, packetHash: event.packet_hash, specHash: event.spec_hash },
       ineligibleHelpers: addIneligible(context, event.actor) };
     return result(next, [{ kind: 'build.start', approval: next.approval, spec_hash: event.spec_hash, cap_usd: event.cap_usd }]);
   }
@@ -176,14 +186,21 @@ export function step(state, event, who) {
     return result(next, [{ kind: 'build.start', approval: next.approval,
       spec_hash: event.spec_hash, cap_usd: event.cap_usd }]);
   }
-  if (event.type === 'returned' && context.rules >= 2 && context.phase === 'SUBMITTED' && leader(who)
-      && !context.authors.includes(event.actor) && nonempty(event.note) && event.note.length >= 12)
-    return result({ ...context, phase: 'SPECCED', sent: null });
+  if (['returned', 'not_built'].includes(event.type) && context.rules >= 2 && context.phase === 'SUBMITTED' && leader(who)
+      && !context.authors.includes(event.actor) && event.spec_hash === context.sent?.specHash
+      && event.packet_hash === context.sent?.packetHash && nonempty(event.reason) && event.reason.length >= 12
+      && (event.restricted_evidence === undefined || (nonempty(event.restricted_evidence) && event.restricted_evidence.startsWith('a restricted source exists; ask ')))
+      && (event.pivot_note === undefined || nonempty(event.pivot_note)))
+    return result({ ...context, phase: 'SPECCED', sent: null, decided: { disposition: event.type, actor: event.actor,
+      at: event.at, reason: event.reason, packetHash: event.packet_hash, specHash: event.spec_hash,
+      ...(event.restricted_evidence ? { restrictedEvidence: event.restricted_evidence } : {}),
+      ...(event.pivot_note ? { pivotNote: event.pivot_note } : {}) } });
   if (event.type === 'returned' && !(context.rules >= 2) && context.phase === 'SPECCED' && leader(who)
       && nonempty(event.note)) return result({ ...context, phase: 'CHECKED' });
   if (event.type === 'steered' && context.rules >= 2 && ['SENDING', 'TRYING'].includes(context.phase)
       && steward(context, event, who) && event.approval === context.approval && event.spec_hash === context.specHash
-      && nonempty(event.instruction) && context.iteration + 1 <= 5) {
+      && nonempty(event.instruction) && context.iteration + 1 <= (context.leash?.maxIterations ?? DEFAULT_MAX_ITERATIONS)
+      && (!context.leash?.expiresAt || event.at < context.leash.expiresAt)) {
     return result({ ...context, phase: 'SENDING', iteration: context.iteration + 1, artifact: null, helpers: [] },
       stopsBuild(context, 'SENDING', event.type));
   }

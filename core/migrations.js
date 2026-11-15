@@ -12,6 +12,7 @@ export const MIGRATIONS = Object.freeze([
   { name: 'legacy gateway policy copy', up: store => copyLegacyPolicy(store.db) },
   { name: 'F1 rules 2 Effort actors, jobs, receipts, and run iterations', up: store => store.migrateF1() },
   { name: 'R stale-state run SEE hash fence', up: store => store.migrateR() },
+  { name: 'F3 accountable decisions and research packet', up: store => store.rebuild() },
 ]);
 export const SCHEMA_VERSION = MIGRATIONS.length;
 

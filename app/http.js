@@ -154,13 +154,20 @@ const validEvent = input => {
           && (input.base_spec_hash === undefined || hex(input.base_spec_hash))
           && (input.credits === undefined || (Array.isArray(input.credits) && input.credits.every(credit => credit && hex(credit.comment) && ['quoted', 'paraphrased'].includes(credit.mode))))))
       && stringList(input.must) && stringList(input.how_we_know) && input.how_we_know.length > 0 && stringList(input.out_of_scope);
-    case 'approved': return (exactKeys(input, ['type', 'cap_usd', 'quorum'])
+    case 'approved': return (exactKeys(input, ['type', 'cap_usd', 'quorum', 'max_iterations', 'window_minutes'])
         || (exactKeys(input, ['type', 'spec_hash', 'expected_seq', 'cap_usd', 'quorum'])
           && hex(input.spec_hash) && Number.isSafeInteger(input.expected_seq) && input.expected_seq >= 0)
         || (exactKeys(input, ['type', 'spec_hash', 'packet_hash', 'reason', 'cap_usd', 'quorum'])
+          && hex(input.spec_hash) && hex(input.packet_hash) && text(input.reason, 2000))
+        || (exactKeys(input, ['type', 'spec_hash', 'packet_hash', 'reason', 'cap_usd', 'quorum', 'max_iterations', 'window_minutes'])
           && hex(input.spec_hash) && hex(input.packet_hash) && text(input.reason, 2000)))
-      && typeof input.cap_usd === 'number' && Number.isInteger(input.quorum) && input.quorum >= 1;
-    case 'returned': case 'shelved': case 'checked_in':
+      && typeof input.cap_usd === 'number' && Number.isInteger(input.quorum) && input.quorum >= 1
+      && (input.max_iterations === undefined || (Number.isInteger(input.max_iterations) && input.max_iterations >= 1 && input.max_iterations <= 5))
+      && (input.window_minutes === undefined || (Number.isInteger(input.window_minutes) && input.window_minutes >= 1));
+    case 'returned': case 'not_built': return exactKeys(input, ['type', 'reason', 'restricted_evidence', 'pivot_note'])
+      && text(input.reason, 2000) && (input.restricted_evidence === undefined || text(input.restricted_evidence, 2000))
+      && (input.pivot_note === undefined || text(input.pivot_note, 2000));
+    case 'shelved': case 'checked_in':
       return exactKeys(input, input.type === 'checked_in' ? ['type', 'note', 'consent'] : ['type', input.type === 'shelved' ? 'reason' : 'note'])
         && text(input[input.type === 'shelved' ? 'reason' : 'note'], 2000)
         && (input.type !== 'checked_in' || input.consent === undefined || input.consent === true);
@@ -412,8 +419,10 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         if (!first || !spec) throw refused('current spec required');
         const credits = events.filter(event => ['revised', 'specced'].includes(event.type))
           .flatMap(event => event.credits || []);
+        const userEvidence = events.filter(event => ['posted', 'revised', 'specced', 'commented'].includes(event.type))
+          .flatMap(event => event.evidence || []).map(evidence => ({ ...evidence }));
         const packet = buildPacket({ original: first.original, see, spec: { ...spec, hash: input.spec_hash }, credits,
-          comments: events.filter(event => event.type === 'commented'), gatewayPolicy: {}, sandboxLimits: {} });
+          comments: events.filter(event => event.type === 'commented'), userEvidence, gatewayPolicy: {}, sandboxLimits: {} });
         const packet_hash = store.putArtifact(send[1], JSON.stringify(packet));
         const result = store.append(send[1], { type: 'sent', actor: session.person, spec_hash: input.spec_hash, packet_hash,
           at: new Date().toISOString() }, { idem: req.headers['idempotency-key'] || randomUUID() });
@@ -441,6 +450,15 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           ...(input.source ? { source: input.source, mode: input.mode || 'paraphrased' } : {}), approval: context.approval,
           spec_hash: context.specHash, at: new Date().toISOString() }, { idem: req.headers['idempotency-key'] || randomUUID() });
         return json(res, 201, result);
+      }
+      const erase = url.pathname.match(/^\/api\/items\/([^/]+)\/erase$/);
+      if (req.method === 'POST' && erase) {
+        if (!exactKeys(input, ['body_hash', 'ground', 'note']) || !hex(input.body_hash)
+          || (input.ground !== undefined && !['privacy', 'legal', 'safety', 'customer or employee personal data'].includes(input.ground))
+          || (input.note !== undefined && !text(input.note, 2000))) return json(res, 409, { error: 'request refused' });
+        store.erase(erase[1], input.body_hash, session.person, new Date(clock()).toISOString(),
+          input.ground ? { ground: input.ground, note: input.note } : {});
+        return json(res, 201, { erased: input.body_hash });
       }
       const artifact = url.pathname.match(/^\/api\/items\/([^/]+)\/artifact\/([a-f0-9]{64})$/);
       if (req.method === 'GET' && artifact) {
@@ -507,6 +525,14 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           return json(res, 409, { error: 'request refused' });
         const state = store.read(match[1]);
         input = { ...input, spec_hash: state.context.specHash, expected_seq: store.eventRows(match[1]).length };
+      }
+      if (input.type === 'approved' && input.spec_hash !== undefined) {
+        const minutes = input.window_minutes ?? 7 * 24 * 60;
+        input = { ...input, expires_at: new Date(clock() + minutes * 60_000).toISOString() };
+      }
+      if (['returned', 'not_built'].includes(input.type)) {
+        const state = store.read(match[1]).context;
+        input = { ...input, spec_hash: state.sent?.specHash, packet_hash: state.sent?.packetHash };
       }
       if (input.type === 'commented') {
         const state = store.read(match[1]).context;

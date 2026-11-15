@@ -33,6 +33,7 @@ const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
 const mutants = [
   ['trusted builder system reservation', 'rateWithSystemText(ledger.rate, system)', 'ledger.rate'],
+  ['trusted Quest system reservation', 'rateWithSystemText(selected.rate, QUEST_SYSTEM)', 'selected.rate'],
   ['trusted Effort system reservation', 'rateWithSystemText(selected.rate, EFFORT_SYSTEM, SPEC_INSTRUCTIONS)', 'selected.rate'],
   ['F9 Include keeps prior requirements', '[...((spec?.must) || []), comment.comment]', '[comment.comment]'],
   ['F9 Include keeps checks and exclusions', "const joined = key => (spec?.[key] || []).join('\\n');", "const joined = key => '';"],

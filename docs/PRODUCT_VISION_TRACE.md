@@ -7,7 +7,7 @@ The conversation is visible within this workspace. It is not an instruction to p
 | Post a SEE in the person's own words; Vision Quest is skippable | `posted`, immutable original identity, OP revisions, separate Quest entry | Vision browser journey and rules-2 stories; no leader gate before SEND |
 | Effort replies first and stays labeled AI | Durable first-reply job/status slot on SEE and first SPEC | Fixture browser proof; real provider requires operator configuration; failed/off status stays honest |
 | People discuss, OP alone curates | Version-bound comments, Include/Paraphrase, author credits and diffs | Non-OP state/HTTP refusals and real browser inclusion |
-| SPEC is a living post | Separate SPEC page, version history, assumptions, open questions, revisions and thread | OP-published text and optional AI starting comment; AI is advisory and never publishes a spec as a person |
+| SPEC is a living post | Separate SPEC page, version history, assumptions, open questions, revisions and thread | Steward-requested structured draft from the full current SEE, edited and published by the steward; AI never publishes a spec as a person |
 | SEND is the first independent approval gate | Frozen packet bound to one current SEE/spec, independent leader reason | OP/past-author refusal, single-use password step-up, visible decision history |
 | Accountable dispositions | Approve, return, Not building, required reason and reviewed snapshot | All members can read reasons and packets; no mandatory appeals or automatic escalation |
 | Bounded build authority | Shared dollar cap across turns, iteration ceiling, fixed expiry | Worker and gateway independently reject stale or expired authority; model builder verified only with local mock |

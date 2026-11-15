@@ -17,7 +17,8 @@ export class EffortGateway {
     return transaction(this.store, () => {
       demand(!killed(this.store), 'stopped run'); const policy = this.ledger.policy(); demand(policy.enabled, 'gateway disabled');
       const { inputBound, worst } = this.ledger.validateInput(input, policy);
-      demand(input.max_output_tokens <= EFFORT_LIMITS.output_tokens, 'output token limit');
+      const draftJob = this.db.prepare("SELECT 1 FROM effort_jobs WHERE id=? AND item=? AND requester=? AND kind='spec_prepare'").get(job, item, person);
+      demand(input.max_output_tokens <= (draftJob ? 1024 : EFFORT_LIMITS.output_tokens), 'output token limit');
       const hash = digest(canonical(input)); const all = this.receipts(); const existing = all.find(row => row.person === person && row.idem === idem);
       if (existing) { demand(existing.payload_hash === hash, 'idempotency payload conflict'); return { row: existing, fresh: false }; }
       const day = new Date(this.clock()).toISOString().slice(0, 10); const mine = all.filter(row => row.person === person && row.day === day);

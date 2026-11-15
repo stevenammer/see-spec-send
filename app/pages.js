@@ -2,6 +2,7 @@ import { postedQuestMemo } from '../public/vision-quest.js';
 import { renderThread } from './pages-thread.js';
 import { lineDiff } from '../core/diff.js';
 import { EFFORT_LIMITS } from '../gateway/effort.js';
+import { parseSpecDraft, SPEC_DRAFT_PREFIX } from '../effort/spec.js';
 import { NOT_BUILT_LABEL } from '../core/machine.js';
 const escape = value =>
   String(value ?? '').replace(
@@ -158,7 +159,19 @@ export function itemPage(item, events, person, leader) {
     `<label>How we'll know<textarea name="how_we_know" required>${fill('how_we_know')}</textarea></label>` +
     `<label>Out of scope<textarea name="out_of_scope">${fill('out_of_scope')}</textarea></label>` +
     `${rules2 ? `<label>Assumptions, one per line<textarea name="assumptions">${fill('assumptions')}</textarea></label><label>Open questions, one per line<textarea name="open_questions">${fill('open_questions')}</textarea></label>${scopeFields(draftSpec.scope)}` : ''}<button>SPEC IT!</button></form>`;
-  if ((item.state === 'CHECKED' || (rules2 && item.state === 'SEEN')) && context.steward === person) action = specForm;
+  if ((item.state === 'CHECKED' || (rules2 && item.state === 'SEEN')) && context.steward === person) {
+    const draftComment = events.filter(event => event.actor === 'effort' && event.kind === 'agent'
+      && event.anchor_hash === context.seeHash && event.comment?.startsWith(SPEC_DRAFT_PREFIX)).at(-1);
+    let review = '';
+    if (draftComment) {
+      try {
+        const draft = parseSpecDraft(draftComment.comment.slice(SPEC_DRAFT_PREFIX.length));
+        review = `<button type="button" data-spec-draft="${escape(JSON.stringify(draft))}" data-source="${escape(draftComment.body_hash)}">Review AI draft in the spec form</button><p>The draft is a suggestion. Edit it before publishing. Research and costs may still be unknown.</p>`;
+      } catch { /* malformed provider output is not an actionable draft */ }
+    }
+    const request = rules2 ? `<form data-spec-prepare="true"><input type="hidden" name="see_hash" value="${escape(context.seeHash)}"><p>Ask Effort to draft from this current SEE and the available discussion. Draft requests share the mention allowance and shared spend caps. If no provider is running, the request stays queued. Refresh to read its status.</p><button>Draft SPEC for review</button></form>${review}` : '';
+    action = request + specForm;
+  }
   if (item.state === 'SUBMITTED') {
     const packetBody = item.packet ? `<pre>${escape(item.packet)}</pre>` : '';
     action = `<section><h2>Decision packet</h2><p>Research: no source connected, nothing checked.</p>${packetBody}</section>` +

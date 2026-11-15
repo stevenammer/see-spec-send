@@ -16,6 +16,7 @@ import { buildPacket } from '../core/packet.js';
 import { specPage } from './pages-spec.js';
 import { researchRecord } from '../research/connectors.js';
 import { workspaceConnectors } from '../research/workspace.js';
+import { requestSpecDraft } from '../effort/spec.js';
 import { Mentoring } from '../core/mentoring.js';
 import { mentoringHome, mentoringRequest, mentoringEvidence } from './pages-mentoring.js';
 import { emptyScope, validScope } from '../core/scope.js';
@@ -497,6 +498,11 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         const sources = await researchRecord({ at, connectors: workspaceConnectors(store, session.person), input: { item: research[1], text: current } });
         return json(res, 201, store.append(research[1], { type: 'researched', actor: session.person, sources, at },
           { idem: req.headers['idempotency-key'] || randomUUID() }));
+      }
+      const prepareSpec = url.pathname.match(/^\/api\/items\/([^/]+)\/spec-draft$/);
+      if (req.method === 'POST' && prepareSpec) {
+        if (!exactKeys(input, ['see_hash']) || !hex(input.see_hash)) throw refused('current SEE required');
+        return json(res, 202, requestSpecDraft(store, session.person, prepareSpec[1], input.see_hash, clock));
       }
       const send = url.pathname.match(/^\/api\/items\/([^/]+)\/send$/);
       if (req.method === 'POST' && send) {

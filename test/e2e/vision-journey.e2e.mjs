@@ -213,7 +213,14 @@ async function main() {
     assert.equal(await olive.locator('li:has(> p:has-text("Effort, AI")) form[data-include]').count(), 0, "Effort's own comments cannot be included as credit");
     step('SEE history shows credit: paraphrased and What changed');
 
-    // 5. SPEC IT! makes the spec post, where Effort comments first too.
+    // 5. Draft from the current curated SEE, then deliberately edit and publish.
+    assert.ok(await rawPost(maya, `/api/items/${itemId}/spec-draft`, { see_hash: await olive.locator('form[data-spec-prepare] [name=see_hash]').inputValue() }) >= 400);
+    await olive.getByRole('button', { name: 'Draft SPEC for review' }).click();
+    await eventually(olive, '[data-spec-draft]', 'reviewable structured SPEC draft');
+    await olive.getByRole('button', { name: 'Review AI draft in the spec form' }).click();
+    assert.match(await olive.locator('form[data-event=specced] [name=must]').inputValue(), /Fixture draft/);
+    assert.match(await olive.locator('form[data-event=specced] [name=assumptions]').inputValue(), /no model has investigated/);
+    assert.equal(await olive.getByRole('link', { name: 'Open the spec', exact: true }).count(), 0, 'reviewing the draft has not published a SPEC');
     await olive.locator('form[data-event=specced] [name=must]').fill('Pass the account number on transfer.\nShow it to the next agent.');
     await olive.locator('form[data-event=specced] [name=how_we_know]').fill('Callers stop repeating it.');
     await olive.locator('form[data-event=specced] [name=assumptions]').fill('The transfer system can display a note.');

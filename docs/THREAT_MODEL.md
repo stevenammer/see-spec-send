@@ -1,5 +1,15 @@
 # Threat model, slice 2
 
+## F7 and F8 drafting and organizational evidence (2026-11-15)
+
+The current steward may request a structured SPEC draft bound to the current SEE. The complete curated text is supplied; an oversized governing post fails visibly. Discussion and research stay labeled evidence. Drafting uses the existing gateway and spend caps, and only a matching draft job gets the larger output allowance. A changed SEE or steward prevents late draft publication. The model can append only a validated advisory comment; a person edits and publishes the SPEC separately.
+
+Organizational investigation uses an explicitly selected question, objectives, constraints, work items and UTC period. Every package and pasted-answer review rechecks the signed-in person's existing workspace read access. No per-item visibility tiers are claimed: all enabled workspace people can currently read work posts. Private mentoring and private evidence never enter the packet, including sponsor-shared evidence. Frozen report bodies and artifact binaries are excluded and disclosed as missing coverage. No model vendor is called by this flow; copying a packet into another AI is a separate human action.
+
+Answer review checks source snapshot, exact criteria and citation membership and requires alternatives, uncertainty and missingness. This cannot prove that a citation supports a claim or that a model's interpretation is accurate. Model text remains unverified, cannot create workflow events, and is rendered with text-only DOM operations. An English motive/personnel tripwire is a conservative additional check, not a semantic safety guarantee. There is no personnel scoring or action route. Corrections use new attributed work discussion and a fresh packet. Packages and answers are not persisted in a new analysis database.
+
+Proof: `test/sliceF7-spec.test.mjs`, `test/sliceF8-evidence.test.mjs`, `test/sliceF8-http.test.mjs`, and the real browser journey. No real hosted-model output or deployment is claimed.
+
 ## F3 decision and erasure boundaries (2026-11-14)
 
 Approve, return, and Not building bind the frozen spec and decision packet and require a written reason from an independent leader. Approval still requires a single-use password step-up. A browser cannot supply its own approval expiry: the server stamps the time window, and replay checks its duration. The worker checks the expiry before dispatch, during reconciliation, and before delivery. Historical decisions and their reviewed packets stay visible after a later revision or disposition. Decisions and original SEE records cannot be erased through product routes. Erasing another person's content requires a listed privacy/legal ground and a note, with an attributable tombstone.

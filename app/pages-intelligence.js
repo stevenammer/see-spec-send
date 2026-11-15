@@ -1,0 +1,12 @@
+export function intelligencePage() {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Investigate work patterns</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See / Spec / Send</a> <a href="/search">Search</a> <a href="/mentoring">Mentoring</a></header><main>
+  <h1>Investigate work patterns</h1><p>Choose the question, objectives, constraints and evidence. This prepares a packet you can review and copy into an AI you are authorized to use. The app makes no model call and sends nothing to a vendor.</p>
+  <p>Ask about observable workflows, documented decisions and missing evidence. Motives, people rankings and personnel recommendations are outside this tool. A model answer remains unverified text for human review.</p>
+  <form data-analysis-package><label>Question<textarea name="question" required maxlength="1000"></textarea></label>
+  <label>Objectives, one per line<textarea name="objectives" required></textarea></label><label>Constraints that must be preserved, one per line<textarea name="constraints" required></textarea></label>
+  <label>Work item IDs, one per line (up to 10)<textarea name="items" required></textarea></label><p>Copy IDs from the addresses of work posts. Include counterexamples and valid no-build decisions; a hand-picked selection cannot represent the company.</p>
+  <label>From (UTC)<input name="from" type="datetime-local" step="1" required></label><label>Through (UTC)<input name="to" type="datetime-local" step="1" required></label><button>Prepare evidence packet</button></form>
+  <section data-analysis-export hidden><h2>Review before copying</h2><p>Only copy data you are authorized to share with your chosen AI. Private mentoring is excluded. Coverage limits and the answer format travel with the sources.</p><label>Evidence packet<textarea data-analysis-prompt readonly rows="14"></textarea></label><button type="button" data-analysis-copy>Copy evidence packet</button><p data-analysis-copy-status role="status"></p>
+  <form data-analysis-review><label>Paste the AI's JSON answer<textarea name="answer" rows="12" required></textarea></label><button>Check citations and review answer</button></form></section><section data-analysis-answer hidden aria-live="polite"></section>
+  </main><script src="/assets/intelligence.js" defer></script></body></html>`;
+}

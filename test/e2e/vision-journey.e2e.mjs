@@ -659,6 +659,34 @@ async function main() {
     assert.equal((await leader.goto(evidenceUrl)).status(),404,'revoked sponsor evidence is unavailable');
     step('two people opted in; leader could not read private notes; explicit evidence share was revoked');
 
+    // A person selects evidence and human criteria; the app makes no model call.
+    await ben.goto(`${origin}/intelligence`);
+    await ben.locator('[name=question]').fill('What handoff friction should we investigate?');
+    await ben.locator('[name=objectives]').fill('Improve customer handoffs.');
+    await ben.locator('[name=constraints]').fill('Preserve employee privacy.\nUse synthetic data for experiments.');
+    await ben.locator('[name=items]').fill(`${itemId}\n${memoryId}`);
+    const timeValue = time => new Date(time).toISOString().slice(0,19);
+    await ben.locator('[name=from]').fill(timeValue(Date.now()-3600000));
+    await ben.locator('[name=to]').fill(timeValue(Date.now()-1000));
+    await ben.getByRole('button',{name:'Prepare evidence packet',exact:true}).click();
+    await ben.locator('[data-analysis-export]:not([hidden])').waitFor();
+    const analysisPacket = JSON.parse(await ben.locator('[data-analysis-prompt]').inputValue());
+    assert.equal(analysisPacket.coverage.items.length,2);
+    assert.doesNotMatch(JSON.stringify(analysisPacket),/hazelnut|quartz memory marker/);
+    const answerFixture = structuredClone(analysisPacket.answer_contract);
+    answerFixture.findings[0].claim='Synthetic answer fixture <img src=x onerror=alert(1)>.';
+    await ben.locator('[name=answer]').fill(JSON.stringify(answerFixture));
+    await ben.getByRole('button',{name:'Check citations and review answer',exact:true}).click();
+    await ben.locator('[data-analysis-answer]:not([hidden])').waitFor();
+    assert.match(await ben.locator('[data-analysis-answer]').innerText(),/Unverified model text/);
+    assert.equal(await ben.locator('[data-analysis-answer] img').count(),0);
+    assert.ok(await ben.locator('[data-analysis-answer] a[href*="/record/"]').count()>0);
+    answerFixture.findings[0].citations[0].hash='f'.repeat(64);
+    await ben.locator('[name=answer]').fill(JSON.stringify(answerFixture));
+    await ben.getByRole('button',{name:'Check citations and review answer',exact:true}).click();
+    await ben.locator('[data-analysis-review] [role=alert]').waitFor();
+    step('phone member prepared cross-workstream evidence, private/erased content stayed out, cited model fixture rendered inert, fake citation refused');
+
     assert.deepEqual(problems, [], `browser problems:\n${problems.join('\n')}`);
     console.log('PASS: Vision journey in a real browser: SEE, Effort, mention, include and credit, SPEC IT!, SEND IT!, decision, fork, adopted steer, reassign, mention cap, Vision Quest.');
   } finally {

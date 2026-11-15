@@ -26,10 +26,18 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
 fullSuite.push('test/sliceF5-memory.test.mjs', 'test/sliceF5-pages.test.mjs');
 fullSuite.push('test/sliceF6-mentoring.test.mjs', 'test/sliceF6-pages.test.mjs', 'test/sliceF6-demo.test.mjs');
 fullSuite.push('test/sliceF7-spec.test.mjs');
+fullSuite.push('test/sliceF8-evidence.test.mjs', 'test/sliceF8-http.test.mjs');
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
 const mutants = [
+  ['F8 selected work scope', 'WHERE e.item=? AND COALESCE(ps.disabled,0)=0 ORDER BY e.seq', 'WHERE ? IS NOT NULL AND COALESCE(ps.disabled,0)=0 ORDER BY e.seq'],
+  ['F8 objectives and constraints preserved', 'canonical(answer.constraints) !== canonical(packet.request.constraints)', 'false'],
+  ['F8 exact included citations', 'ids.has(`${ref.item}:${ref.hash}`)', 'true'],
+  ['F8 AI cannot claim verified status', "['reported', 'documented', 'inferred', 'unresolved'].includes(finding.status)", "['reported', 'documented', 'inferred', 'unresolved', 'verified'].includes(finding.status)"],
+  ['F8 complete missingness contract', '!words(answer.missingness)', 'false'],
+  ['F8 motive requests refused', "if (personalVerdict.test([request.question, ...request.objectives].join('\\n')))", 'if (false)'],
+  ['F8 model motive verdict refused', 'if (personalVerdict.test(JSON.stringify(answer)))', 'if (false)'],
   ['F7 draft steward boundary', 'state.context.steward !== person', 'false'],
   ['F7 draft preserves curated SEE', 'current.text ?? current.original ?? current.problem', 'events[0].original'],
   ['F7 draft rejects silent truncation', "throw refused('full curated SEE exceeds configured draft input limit');", 'payload.current_see = payload.current_see.slice(0, 1);'],
@@ -444,7 +452,7 @@ const mutants = [
   ['slice27 gateway socket directory is private', "if (statSync(parent).mode & 0o022) fail(", "if (false) fail("],
 ];
 
-const files = ['effort/spec.js', 'core/mentoring.js', 'app/pages-mentoring.js', 'demo/lib/vision.js', 'public/mentoring.js', 'core/memory.js', 'research/workspace.js', 'app/pages-memory.js', 'compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'core/scope.js', 'research/connectors.js', 'cli.js',
+const files = ['intelligence/evidence.js', 'app/pages-intelligence.js', 'public/intelligence.js', 'effort/spec.js', 'core/mentoring.js', 'app/pages-mentoring.js', 'demo/lib/vision.js', 'public/mentoring.js', 'core/memory.js', 'research/workspace.js', 'app/pages-memory.js', 'compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'core/scope.js', 'research/connectors.js', 'cli.js',
   'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js', 'core/diff.js',
   'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'app/effort.js', 'app/pages-spec.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/effort.js', 'gateway/http.js', 'effort/prompt.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js', 'public/app.js', 'effort/prompt.js'];
 

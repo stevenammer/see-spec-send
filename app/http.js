@@ -17,6 +17,8 @@ import { specPage } from './pages-spec.js';
 import { researchRecord } from '../research/connectors.js';
 import { workspaceConnectors } from '../research/workspace.js';
 import { requestSpecDraft } from '../effort/spec.js';
+import { evidencePackage, readAnalysisAnswer } from '../intelligence/evidence.js';
+import { intelligencePage } from './pages-intelligence.js';
 import { Mentoring } from '../core/mentoring.js';
 import { mentoringHome, mentoringRequest, mentoringEvidence } from './pages-mentoring.js';
 import { emptyScope, validScope } from '../core/scope.js';
@@ -248,6 +250,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (req.method === 'GET' && url.pathname === '/assets/app.js')
         return staticFile(res, 'app.js', 'application/javascript; charset=utf-8');
       if (req.method === 'GET' && url.pathname === '/assets/mentoring.js') return staticFile(res, 'mentoring.js', 'application/javascript; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/assets/intelligence.js') return staticFile(res, 'intelligence.js', 'application/javascript; charset=utf-8');
       if (req.method === 'GET' && url.pathname === '/assets/app.css')
         return staticFile(res, 'app.css', 'text/css; charset=utf-8');
       if (req.method === 'GET' &&
@@ -350,6 +353,15 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (req.method === 'GET' && url.pathname === '/items/new') return page(res, newItemPage());
       if (req.method === 'GET' && url.pathname === '/quest') {
         return page(res, questPage(session.person));
+      }
+      if (req.method === 'GET' && url.pathname === '/intelligence') return page(res, intelligencePage());
+      if (req.method === 'POST' && url.pathname === '/api/intelligence/package')
+        return json(res, 200, evidencePackage(store, session.person, input, { clock }));
+      if (req.method === 'POST' && url.pathname === '/api/intelligence/review') {
+        if (!exactKeys(input, ['request', 'package_hash', 'answer']) || !hex(input.package_hash)) throw refused('analysis request required');
+        const packet = evidencePackage(store, session.person, input.request, { clock });
+        if (packet.hash !== input.package_hash) throw refused('sources changed; prepare a fresh package');
+        return json(res, 200, readAnalysisAnswer(packet, input.answer));
       }
       if (req.method === 'GET' && url.pathname === '/mentoring')
         return page(res, mentoringHome(session.person, mentoring.opted(session.person), mentoring.directory(session.person), mentoring.list(session.person)));

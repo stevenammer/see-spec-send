@@ -216,3 +216,66 @@ test('the gateway token is not in the host docker command line', () => {
   assert.equal(args.join(' ').includes('SECRET-TOKEN-VALUE'), false); assert.ok(args.includes('SSS_GATEWAY_TOKEN'));
   store.close(); rmSync(dir, { recursive: true, force: true });
 });
+
+test('F4 real container applies only OP-adopted instructions and keeps structured scope on the model request', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'sss-container-f4-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const store = new Store(join(dir, 'db')); let adapter;
+  t.after(() => {
+    if (adapter) for (const row of store.db.prepare('SELECT id FROM container_jobs').all()) adapter.stop(row.id);
+    store.close();
+  });
+  for (const actor of ['op', 'member', 'leader']) store.registerPerson(actor, { leader: actor === 'leader' });
+  let sequence = 0;
+  const append = data => store.append('f4-container', { ...data, at: new Date().toISOString() }, { idem: `f4-container:${sequence++}` });
+  append({ type: 'posted', actor: 'op', rules: 2, original: 'Keep the synthetic transfer note in view.' });
+  const scope = { data_sources: ['synthetic transfer note'], audiences: ['sandbox reviewers'] };
+  append({ type: 'specced', actor: 'op', see_hash: store.read('f4-container').context.seeHash,
+    must: ['Show the synthetic note'], how_we_know: ['Reviewers can see it'], out_of_scope: ['No external data'], scope });
+  const spec_hash = store.read('f4-container').context.specHash;
+  const packet_hash = store.putArtifact('f4-container', JSON.stringify({ specHash: spec_hash }));
+  append({ type: 'sent', actor: 'op', spec_hash, packet_hash });
+  append({ type: 'approved', actor: 'leader', spec_hash, packet_hash, cap_usd: 1, quorum: 1,
+    reason: 'A small sandbox using synthetic notes is worth testing.', max_iterations: 2, window_minutes: 5 });
+  const modelInputs = [];
+  const ledger = new Ledger(store); ledger.configure(fixturePolicy());
+  const server = createGatewayServer(new Gateway(ledger, input => {
+    const decoded = JSON.parse(input.input); modelInputs.push(decoded);
+    const heading = decoded.instructions?.length ? 'Adopted blue heading' : 'Initial synthetic note';
+    return { output: `<!doctype html><title>F4 local mock</title><h1>${heading}</h1>`,
+      usage: { input_tokens: Buffer.byteLength(input.input) + 8, output_tokens: 1 } };
+  }));
+  const socket = join(dir, 'gateway.sock');
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve); });
+  chmodSync(socket, 0o666); t.after(() => server.close());
+  adapter = new ContainerAdapter(store, { root: join(dir, 'jobs'), gatewaySocket: socket, wallMs: 20_000 });
+  const worker = new Worker(store, adapter);
+  const waitForTry = async () => {
+    worker.reconcile();
+    for (let attempt = 0; attempt < 80 && store.read('f4-container').state !== 'TRYING'; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 250)); worker.reconcile();
+    }
+    assert.equal(store.read('f4-container').state, 'TRYING', 'the local mock model did not deliver a container-built try');
+  };
+  await waitForTry();
+  assert.match(store.artifact('f4-container', store.read('f4-container').context.artifact), /Initial synthetic note/);
+  assert.deepEqual(modelInputs, [{ must: ['Show the synthetic note'], how_we_know: ['Reviewers can see it'], out_of_scope: ['No external data'], scope }]);
+  append({ type: 'commented', actor: 'member', kind: 'comment', anchor_kind: 'spec', anchor_hash: spec_hash,
+    comment: 'UNADOPTED_DISCUSSION should never reach the model.' });
+  worker.reconcile(); assert.equal(modelInputs.length, 1);
+  const instruction = 'Use the adopted blue heading for the synthetic note.';
+  append({ type: 'commented', actor: 'member', kind: 'comment', anchor_kind: 'spec', anchor_hash: spec_hash, comment: instruction });
+  const source = store.events('f4-container').at(-1).body_hash;
+  append({ type: 'steered', actor: 'op', approval: 1, spec_hash, instruction, source, mode: 'quoted' });
+  await waitForTry();
+  assert.equal(modelInputs.length, 2);
+  assert.deepEqual(modelInputs[1].instructions, [instruction]);
+  assert.deepEqual(modelInputs[1].scope, scope);
+  assert.doesNotMatch(JSON.stringify(modelInputs), /UNADOPTED_DISCUSSION|"actor"|"source"|"mode"/);
+  assert.match(store.artifact('f4-container', store.read('f4-container').context.artifact), /Adopted blue heading/);
+  assert.equal(store.events('f4-container').filter(event => event.type === 'tried' && event.model_output).length, 2);
+  assert.equal(store.read('f4-container').context.approval, 1);
+  assert.equal(store.read('f4-container').context.iteration, 1);
+  assert.equal(ledger.receipts().length, 2);
+  assert.deepEqual(store.verifyAll(), [{ item: 'f4-container', ok: true }]);
+});

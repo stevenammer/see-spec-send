@@ -56,12 +56,15 @@ export class Worker {
       }
       const spec = this.store.events(run.item).find(event => event.type === 'specced' && event.body_hash === run.spec_hash);
       if (!spec) throw new Error('approved spec missing');
-      const instructions = this.store.events(run.item).filter(event => event.type === 'steered'
-        && event.approval === run.approval && event.spec_hash === run.spec_hash)
+      const steering = this.store.events(run.item).filter(event => event.type === 'steered'
+        && event.approval === run.approval && event.spec_hash === run.spec_hash);
+      const instructions = steering
         .map(event => ({ instruction: event.instruction, actor: event.actor, source: event.source || null, mode: event.mode || null }));
+      const scope = steering.findLast(event => event.scope !== undefined)?.scope ?? spec.scope;
       const request = { id, item: run.item, approval: run.approval, iteration: run.iteration, spec_hash: run.spec_hash, instructions,
         cap_micros: context.capMicros, spec: {
           must: spec.must, how_we_know: spec.how_we_know, out_of_scope: spec.out_of_scope,
+          ...(scope !== undefined ? { scope } : {}),
         } };
       // External adapters must mint capabilities and start a process after the worker
       // lock is released. The fake stays transactional for its crash-proof contract.

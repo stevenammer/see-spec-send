@@ -3,7 +3,7 @@ import { chmodSync, closeSync, constants, existsSync, fstatSync, mkdirSync, open
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Ledger, digest as capabilityDigest } from '../gateway/ledger.js';
-import { HTML_CAP, validateHtml } from './builder/index.js';
+import { HTML_CAP, validateHtml, approvedBuildInput } from './builder/index.js';
 import { readProviders } from '../provider/config.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -135,7 +135,11 @@ export class ContainerAdapter {
     // The sticky bit keeps the builder from replacing or deleting files the worker placed here.
     mkdirSync(paths.out, { recursive: true, mode: 0o1733 }); chmodSync(paths.out, 0o1733);
     if (!existsSync(paths.spec)) {
-      writeFileSync(paths.spec, JSON.stringify(request.spec), { mode: 0o444, flag: 'wx' }); chmodSync(paths.spec, 0o444);
+      if (request.instructions !== undefined && (!Array.isArray(request.instructions)
+          || request.instructions.some(row => !row || typeof row.instruction !== 'string'))) throw Error('adopted instruction text required');
+      const input = approvedBuildInput({ ...request.spec,
+        ...(request.instructions?.length ? { instructions: request.instructions.map(row => row.instruction) } : {}) });
+      writeFileSync(paths.spec, JSON.stringify(input), { mode: 0o444, flag: 'wx' }); chmodSync(paths.spec, 0o444);
     }
     if (!this.gatewaySocket) throw Error('container gateway Unix socket is required');
     const token = this.ledger.mint(request.id, Math.min(this.wallMs, 15 * 60_000), digest => {

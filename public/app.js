@@ -1,9 +1,11 @@
 const value = form => Object.fromEntries(new FormData(form));
+const scopeValue = input => ({ data_sources: String(input.scope_data_sources || '').split('\n').map(value => value.trim()).filter(Boolean), audiences: String(input.scope_audiences || '').split('\n').map(value => value.trim()).filter(Boolean) });
 const sessionless = new Set(['/api/login', '/api/invite/redeem']);
 
 // Every other POST needs the session's CSRF token, so fetch it first.
-async function post(path, input) {
+async function post(path, input, idempotencyKey) {
   const headers = { 'content-type': 'application/json' };
+  if (idempotencyKey) headers['idempotency-key'] = idempotencyKey;
   if (!sessionless.has(path)) {
     const me = await (await fetch('/api/me')).json();
     headers['x-csrf-token'] = me.csrf;
@@ -57,7 +59,14 @@ document.addEventListener('submit', async event => {
     } else if (form.dataset.send) {
       await post(`/api/items/${id}/send`, { spec_hash: input.spec_hash, ...(input.estimate?.trim() ? { estimate: input.estimate.trim() } : {}) });
     } else if (form.dataset.fork) {
-      const out = await post(`/api/items/${id}/fork`, { reason: input.reason });
+      const from = input.from ? { kind: input.from.split(':')[0], hash: input.from.split(':')[1] } : undefined;
+      const request = { reason: input.reason, ...(from ? { from } : {}) };
+      const requestBody = JSON.stringify(request);
+      if (form.dataset.requestBody !== requestBody) {
+        form.dataset.requestBody = requestBody;
+        form.dataset.requestKey = crypto.randomUUID();
+      }
+      const out = await post(`/api/items/${id}/fork`, request, form.dataset.requestKey);
       location.href = `/items/${out.id}`;
       return;
     } else if (form.dataset.steer) {
@@ -67,9 +76,12 @@ document.addEventListener('submit', async event => {
     } else if (form.dataset.include) {
       const mode = event.submitter?.value === 'quoted' ? 'quoted' : 'paraphrased';
       if (form.dataset.include === 'spec') {
+        const scopeForm = form.closest('main').querySelector('form[data-event="specced"]');
+        const scopeInput = scopeForm ? value(scopeForm) : null;
         await post(`/api/items/${id}/events`, { type: 'specced', see_hash: input.see_hash, base_spec_hash: input.base_spec_hash,
           must: String(input.must).split('\n').filter(Boolean), how_we_know: String(input.how_we_know).split('\n').filter(Boolean),
-          out_of_scope: String(input.out_of_scope).split('\n').filter(Boolean), credits: [{ comment: input.comment, mode }] });
+          out_of_scope: String(input.out_of_scope).split('\n').filter(Boolean),
+          ...(scopeInput && Object.hasOwn(scopeInput, 'scope_data_sources') ? { scope: scopeValue(scopeInput) } : {}), credits: [{ comment: input.comment, mode }] });
       } else await post(`/api/items/${id}/events`, { type: 'revised', text: input.text,
         base_hash: form.closest('main').querySelector('form[data-event="revised"] input[name="base_hash"]').value,
         credits: [{ comment: input.comment, mode }] });
@@ -82,6 +94,8 @@ document.addEventListener('submit', async event => {
       }
       if (data.type === 'checked_in' && Object.hasOwn(data, 'consent')) data.consent = data.consent === 'true';
       if (data.type === 'specced') {
+        if (Object.hasOwn(input, 'scope_data_sources') || Object.hasOwn(input, 'scope_audiences')) data.scope = scopeValue(input);
+        delete data.scope_data_sources; delete data.scope_audiences;
         for (const key of ['must', 'how_we_know', 'out_of_scope']) {
           data[key] = String(data[key] ?? '').split('\n').filter(Boolean);
         }

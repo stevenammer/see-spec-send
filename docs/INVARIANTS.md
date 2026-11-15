@@ -5,3 +5,9 @@ Rules 2 keeps one current authorization chain: the SEE hash binds the SPEC's `se
 Every submitted send receives one attributable leader disposition: approve, return, or **Not building**. Each records a concrete reason, the exact frozen packet and spec reviewed, and may name a restricted-evidence contact without exposing the restricted material. A Not building decision is permanent visible history, not an appeal queue or a block on another SEE. An approval is leashed to its recorded dollar cap, helper quorum, maximum iterations, and expiry window. Decisions and original SEEs cannot be erased. Authors can erase their own comments; leaders and stewards need a privacy, legal, safety, or customer or employee personal-data ground plus a note to erase another person's content, leaving an attributed tombstone.
 
 Effort is always given a reserved, honest first-slot status when a SEE or SPEC is posted. It can be thinking, unavailable/retrying, or answered, but never has authority to approve, include, steer, spend outside its gateway limits, or rewrite a human comment.
+
+## Historical forks and bounded builder refinements (F4)
+
+A fork binds one parent event, never the current future state of its parent. Selected historical SEE/SPEC/try text is a starting point only. Approval, budget, votes, runs and capabilities are independent. Retry keys cannot create duplicate branches or silently change the selected source. Lineage is derived and verified; restore orders parents before descendants and retains referenced packets/artifacts. Later parent erasure does not prevent restoring an already independent child.
+
+Structured source/audience identifiers are frozen with the spec. A steer can narrow them but cannot add an identifier. Text alone grants no connection, mount, network or audience access. The real static builder receives only approved spec lists, adopted instruction text, and that scope in user JSON. The sandbox remains the runtime resource boundary.

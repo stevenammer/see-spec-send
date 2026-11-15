@@ -6,6 +6,7 @@ import { attach, guard } from '../worker/control.js';
 import { migrate } from './migrations.js';
 import { invalid, refused } from './errors.js';
 import { appendAudit } from './audit.js';
+import { emptyScope, validScope, withinScope } from './scope.js';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 // Fixed page size for the feed and the item API. There is no setting for it.
@@ -50,7 +51,7 @@ function redactBody(type, body) {
   const structural = ['verdict', 'quorum', 'cap_usd', 'approval', 'spec_hash',
     'artifact_hash', 'usd', 'steward', 'body_hash', 'redacted_hash', 'delivered_by',
     'anchor_kind', 'anchor_hash', 'parent', 'kind', 'base_hash', 'rules', 'source_label', 'honesty_label',
-    'see_hash', 'spec_hash', 'base_spec_hash', 'packet_hash', 'approval', 'iteration', 'job', 'receipt', 'model', 'mode', 'credits', 'questMemo', 'consent', 'absent', 'ground', 'max_iterations', 'window_minutes', 'restricted_evidence', 'pivot_note'];
+    'see_hash', 'spec_hash', 'base_spec_hash', 'packet_hash', 'approval', 'iteration', 'job', 'receipt', 'model', 'mode', 'credits', 'questMemo', 'consent', 'absent', 'ground', 'max_iterations', 'window_minutes', 'restricted_evidence', 'pivot_note', 'from', 'scope'];
   const textFields = ['problem', 'looked', 'found', 'must', 'how_we_know', 'out_of_scope',
     'note', 'reason', 'comment', 'original', 'text', 'assumptions', 'open_questions', 'instruction'];
   // Preserve only known machine fields; unknown metadata may contain personal writing.
@@ -64,10 +65,50 @@ function redactBody(type, body) {
   if (type === 'steward_changed' && Object.hasOwn(body, 'reason')) tombstone.reason = '[erased note]';
   if (type === 'researched') tombstone.sources = Object.fromEntries(Object.entries(body.sources).map(([source, entry]) =>
     [source, { ...entry, finding: entry.status === 'not connected' ? 'nothing checked' : '[erased]' }]));
+  if (body.seed_spec) tombstone.seed_spec = { ...body.seed_spec,
+    must: erasedText(body.seed_spec.must), how_we_know: erasedText(body.seed_spec.how_we_know), out_of_scope: erasedText(body.seed_spec.out_of_scope) };
   return tombstone;
 }
 
 export class Store {
+  migrateF4() {
+    this.db.exec(`CREATE TABLE lineage(child TEXT PRIMARY KEY, parent_item TEXT NOT NULL,
+      parent_seq INTEGER NOT NULL, parent_hash TEXT NOT NULL, source_kind TEXT, source_body_hash TEXT);
+      CREATE INDEX lineage_parent ON lineage(parent_item);`);
+    this.rebuildLineage();
+  }
+
+  forkPoint(item, selection, sequence) {
+    const events = this.events(item), rows = this.eventRows(item);
+    const index = selection ? events.findIndex(event => event.body_hash === selection.hash) : (sequence ?? events.length) - 1;
+    const selected = events[index], row = rows[index];
+    const kinds = { see: ['posted', 'forked', 'revised', 'checked', 'seen'], spec: ['specced'], artifact: ['tried'] };
+    if (!row || (selection && !kinds[selection.kind]?.includes(selected.type))) throw refused('fork selection does not match its parent event');
+    const history = events.slice(0, index + 1);
+    const first = history[0];
+    const original = history.filter(event => event.type === 'revised').at(-1)?.text ?? first?.original ?? first?.problem;
+    const spec = history.filter(event => event.type === 'specced').at(-1);
+    const seed_spec = spec ? { must: spec.must, how_we_know: spec.how_we_know, out_of_scope: spec.out_of_scope,
+      ...(spec.scope ? { scope: spec.scope } : {}) } : undefined;
+    return { original, ...(seed_spec ? { seed_spec } : {}), parent: { item, seq: row.seq, hash: row.hash } };
+  }
+
+  lineageOf(item) {
+    const first = this.events(item)[0];
+    if (first?.type !== 'forked') return null;
+    return { child: item, parent_item: first.parent.item, parent_seq: first.parent.seq, parent_hash: first.parent.hash,
+      source_kind: first.from?.kind || null, source_body_hash: first.from?.hash || null };
+  }
+
+  recordLineage(item) {
+    const row = this.lineageOf(item);
+    if (row) this.db.prepare('INSERT INTO lineage VALUES(?,?,?,?,?,?)').run(...Object.values(row));
+  }
+
+  rebuildLineage() {
+    this.db.exec('DELETE FROM lineage');
+    for (const { item } of this.db.prepare("SELECT item FROM events WHERE seq=1 AND type='forked'").all()) this.recordLineage(item);
+  }
   // `database` is deliberately a small synchronous compatibility surface
   // (`exec`, `prepare`, and `close`).  It keeps the event-store contract
   // independent of SQLite without making an unreviewed network client the
@@ -300,7 +341,7 @@ export class Store {
     return row?.context ? JSON.parse(row.context) : initial();
   }
 
-  ensureEvent(item, event) {
+  ensureEvent(item, event, { importing = false } = {}) {
     if (!item || !event?.type || !event.actor) throw refused('item, event, and actor required');
     if (Object.hasOwn(event, 'role')) throw refused('event role is forbidden');
     if (typeof event.at !== 'string' || !event.at) throw refused('event.at required');
@@ -350,6 +391,27 @@ export class Store {
         ? this.db.prepare('SELECT hash FROM events WHERE item=? AND seq=?').get(parent.item, parent.seq)
         : null;
       if (!row || row.hash !== parent.hash) throw refused('fork parent does not match');
+      if (event.from !== undefined) {
+        const selected = this.events(parent.item)[parent.seq - 1];
+        const kinds = { see: ['posted', 'forked', 'revised', 'checked', 'seen'], spec: ['specced'], artifact: ['tried'] };
+        if (!selected || !kinds[event.from?.kind]?.includes(selected.type) || selected.body_hash !== event.from.hash)
+          throw refused('fork selection does not match its parent event');
+      }
+      if (event.from !== undefined || event.seed_spec !== undefined) {
+        const point = this.forkPoint(parent.item, event.from, parent.seq);
+        // Imported fork copies are historical records in their own chains. A
+        // later parent erasure cannot recover or re-hash the original source.
+        const redactedParent = importing && this.eventRows(parent.item).slice(0, parent.seq)
+          .some(entry => this.db.prepare('SELECT erased FROM bodies WHERE hash=?').get(entry.body_hash)?.erased === 1);
+        if (!redactedParent && (event.original !== point.original || stable(event.seed_spec) !== stable(point.seed_spec)))
+          throw refused('fork content must match the selected historical point');
+      }
+    }
+    if (event.type === 'specced' && event.scope !== undefined && !validScope(event.scope)) throw refused('invalid approved scope');
+    if (event.type === 'steered' && event.scope !== undefined) {
+      const specHash = this.read(item).context.specHash;
+      const approved = this.events(item).find(entry => entry.type === 'specced' && entry.body_hash === specHash);
+      if (!withinScope(approved?.scope || emptyScope(), event.scope)) throw refused('scope expansion requires a new spec and approval');
     }
     if (event.type === 'commented' && event.parent !== undefined) {
       const parent = this.db.prepare(`SELECT b.bytes FROM events e JOIN bodies b ON b.hash=e.body_hash
@@ -410,7 +472,7 @@ export class Store {
       }
       return { idempotent: true, seq: existing.seq, ...this.read(item) };
     }
-    this.ensureEvent(item, event);
+    this.ensureEvent(item, event, options);
     if (this.eventCapReached(item, event.type)) throw refused('item is full');
     guard(this, item, event);
     const cached = this.db.prepare('SELECT * FROM items WHERE item=?').get(item);
@@ -437,6 +499,7 @@ export class Store {
       seq=excluded.seq,context=excluded.context`)
       .run(item, outcome.state, hash, seq, stable(outcome.context));
     this.enqueueIntegrationOutbox(item, event, outcome.state, seq);
+    if (event.type === 'forked') this.recordLineage(item);
     if (event.type === 'posted' || event.type === 'forked' || (event.type === 'specced' && prior.context.specHash === null)) {
       const kind = event.type === 'specced' ? 'spec_draft' : 'see_first';
       const now = new Date(event.at).getTime();
@@ -529,6 +592,7 @@ export class Store {
     const names = new Set([
       ...this.db.prepare('SELECT DISTINCT item FROM events').all().map(row => row.item),
       ...this.db.prepare('SELECT item FROM items').all().map(row => row.item),
+      ...this.db.prepare('SELECT child FROM lineage').all().map(row => row.child),
     ]);
     return [...names].sort().map(item => {
       const chain = this.verify(item);
@@ -540,7 +604,15 @@ export class Store {
       const last = this.eventRows(item).at(-1);
       const same = cache.head === (last?.hash || '') && cache.seq === (last?.seq || 0)
         && cache.state === replay.state && cache.context === stable(replay.context);
-      return same ? { item, ok: true } : { item, ok: false, reason: 'cache' };
+      if (!same) return { item, ok: false, reason: 'cache' };
+      const lineage = this.db.prepare('SELECT * FROM lineage WHERE child=?').get(item);
+      const expectedLineage = this.lineageOf(item);
+      if (stable(lineage || null) !== stable(expectedLineage)) return { item, ok: false, reason: 'lineage' };
+      if (expectedLineage) {
+        const parent = this.db.prepare('SELECT hash FROM events WHERE item=? AND seq=?').get(expectedLineage.parent_item, expectedLineage.parent_seq);
+        if (parent?.hash !== expectedLineage.parent_hash) return { item, ok: false, reason: 'lineage-parent' };
+      }
+      return { item, ok: true };
     });
   }
 
@@ -554,6 +626,7 @@ export class Store {
         item, outcome.state, last?.hash || '', last?.seq || 0, stable(outcome.context),
       );
     }
+    if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='lineage'").get()) this.rebuildLineage();
   }
 
   erase(item, targetHash, actor, at, { ground, note } = {}) {
@@ -594,8 +667,17 @@ export class Store {
       ORDER BY e.item,e.seq`).all();
     const actors = this.db.prepare('SELECT id,kind,leader,item FROM actors ORDER BY id').all();
     const lines = actors.map(row => JSON.stringify({ registry: row }));
+    const artifacts = new Map();
+    for (const row of rows) {
+      if (!['sent', 'tried'].includes(row.type)) continue;
+      const body = JSON.parse(row.bytes);
+      const hash = row.type === 'sent' ? body.packet_hash : body.artifact_hash;
+      const bytes = this.artifact(row.item, hash);
+      if (bytes !== null) artifacts.set(`${row.item}:${hash}`, { item: row.item, hash, bytes });
+    }
+    lines.push(...[...artifacts.values()].sort((a, b) => `${a.item}:${a.hash}`.localeCompare(`${b.item}:${b.hash}`)).map(artifact => JSON.stringify({ artifact })));
     lines.push(...rows.map(row => JSON.stringify(row)));
-    lines.push(JSON.stringify({ complete: true, events: rows.length, actors: actors.length }));
+    lines.push(JSON.stringify({ complete: true, events: rows.length, actors: actors.length, artifacts: artifacts.size }));
     return `${lines.join('\n')}\n`;
   }
 
@@ -603,14 +685,37 @@ export class Store {
     const lines = text.trim() ? text.trim().split('\n').map(JSON.parse) : [];
     const footer = lines.pop();
     const actors = lines.filter(row => row.registry).map(row => row.registry);
-    const events = lines.filter(row => !row.registry);
+    const artifacts = lines.filter(row => row.artifact).map(row => row.artifact);
+    const events = lines.filter(row => !row.registry && !row.artifact);
     if (!footer?.complete || footer.events !== events.length || footer.actors !== actors.length) {
       throw new Error('incomplete import');
     }
+    if ((footer.artifacts ?? 0) !== artifacts.length) throw new Error('incomplete artifact import');
     this.db.exec('BEGIN IMMEDIATE');
     try {
       for (const actor of actors) this.importActor(actor);
-      for (const row of events) this.importRow(row, events);
+      for (const artifact of artifacts) {
+        if (typeof artifact.item !== 'string' || typeof artifact.hash !== 'string'
+          || this.putArtifact(artifact.item, artifact.bytes) !== artifact.hash) throw new Error('bad import artifact');
+      }
+      const groups = new Map();
+      for (const row of events) {
+        if (!groups.has(row.item)) groups.set(row.item, []);
+        groups.get(row.item).push(row);
+      }
+      const visiting = new Set(), imported = new Set();
+      const importItem = item => {
+        if (imported.has(item)) return;
+        if (visiting.has(item)) throw new Error('cyclic fork lineage');
+        const rows = groups.get(item);
+        if (!rows) return; // ensureEvent still checks parents already in this store.
+        visiting.add(item);
+        const first = rows.find(row => row.seq === 1);
+        if (first?.type === 'forked') importItem(JSON.parse(first.bytes).parent.item);
+        for (const row of rows.sort((a, b) => a.seq - b.seq)) this.importRow(row, events);
+        visiting.delete(item); imported.add(item);
+      };
+      for (const item of groups.keys()) importItem(item);
       this.db.exec('COMMIT');
     } catch (error) {
       try { this.db.exec('ROLLBACK'); } catch {}
@@ -669,6 +774,7 @@ export class Store {
       authoritySnapshot: snapshot,
       authorityVersion: row.authority_version || 0,
       bodyHash: erased ? row.body_hash : undefined,
+      importing: true,
     });
     if (answer.hash !== row.hash) throw new Error('import hash differs');
     if (erased) this.db.prepare('UPDATE bodies SET erased=1 WHERE hash=?').run(row.body_hash);

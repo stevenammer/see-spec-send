@@ -15,6 +15,7 @@ import { CURRENT_RULES } from '../core/machine.js';
 import { buildPacket } from '../core/packet.js';
 import { specPage } from './pages-spec.js';
 import { researchRecord } from '../research/connectors.js';
+import { emptyScope, validScope } from '../core/scope.js';
 
 // Object key order does not change a retry identity. Array order is meaningful.
 const canonical = value => JSON.stringify(value, (_key, entry) =>
@@ -149,12 +150,13 @@ const validEvent = input => {
       && stringList(input.found) && ['already_have', 'setting', 'free', 'pay', 'build_needed'].includes(input.verdict)
       && (input.evidence === undefined || Array.isArray(input.evidence));
     case 'specced': return (exactKeys(input, ['type', 'must', 'how_we_know', 'out_of_scope']) ||
-        (exactKeys(input, ['type', 'see_hash', 'base_spec_hash', 'must', 'how_we_know', 'out_of_scope', 'assumptions', 'open_questions', 'credits'])
+        (exactKeys(input, ['type', 'see_hash', 'base_spec_hash', 'must', 'how_we_know', 'out_of_scope', 'assumptions', 'open_questions', 'credits', 'scope'])
           && hex(input.see_hash) && (input.assumptions === undefined || stringList(input.assumptions))
           && (input.open_questions === undefined || stringList(input.open_questions))
           && (input.base_spec_hash === undefined || hex(input.base_spec_hash))
           && (input.credits === undefined || (Array.isArray(input.credits) && input.credits.every(credit => credit && hex(credit.comment) && ['quoted', 'paraphrased'].includes(credit.mode))))))
-      && stringList(input.must) && stringList(input.how_we_know) && input.how_we_know.length > 0 && stringList(input.out_of_scope);
+      && stringList(input.must) && stringList(input.how_we_know) && input.how_we_know.length > 0 && stringList(input.out_of_scope)
+      && (input.scope === undefined || validScope(input.scope));
     case 'approved': return (exactKeys(input, ['type', 'cap_usd', 'quorum', 'max_iterations', 'window_minutes'])
         || (exactKeys(input, ['type', 'spec_hash', 'expected_seq', 'cap_usd', 'quorum'])
           && hex(input.spec_hash) && Number.isSafeInteger(input.expected_seq) && input.expected_seq >= 0)
@@ -442,7 +444,8 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           comments: events.filter(event => event.type === 'commented'), userEvidence, gatewayPolicy: {}, sandboxLimits: {},
           estimate: input.estimate ? { label: 'OP estimate, not independently verified', author: session.person, text: input.estimate } : undefined,
           researched: events.filter(event => event.type === 'researched').at(-1)?.sources,
-          lineage: first.type === 'forked' ? { ...first.parent, reason: first.reason || 'No reason recorded' } : null });
+          lineage: first.type === 'forked' ? { ...first.parent, from: first.from || null, reason: first.reason || 'No reason recorded',
+            parentDecision: store.events(first.parent.item).slice(0, first.parent.seq).filter(event => ['approved', 'returned', 'not_built'].includes(event.type)).at(-1) || null } : null });
         const packet_hash = store.putArtifact(send[1], JSON.stringify(packet));
         const result = store.append(send[1], { type: 'sent', actor: session.person, spec_hash: input.spec_hash, packet_hash,
           at: new Date().toISOString() }, { idem: req.headers['idempotency-key'] || randomUUID() });
@@ -450,25 +453,31 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       }
       const fork = url.pathname.match(/^\/api\/items\/([^/]+)\/fork$/);
       if (req.method === 'POST' && fork) {
-        if (!exactKeys(input, ['reason']) || !text(input.reason, 2000)) return json(res, 409, { error: 'request refused' });
-        const events = store.events(fork[1]); const parent = store.eventRows(fork[1]).at(-1); const first = events[0];
-        const current = events.filter(event => event.type === 'revised').at(-1)?.text || first?.original;
-        if (!parent || !first) throw refused('parent required');
-        const id = randomUUID();
-        const result = store.append(id, { type: 'forked', actor: session.person, original: current, rules: CURRENT_RULES, reason: input.reason,
-          parent: { item: fork[1], seq: parent.seq, hash: parent.hash }, at: new Date().toISOString() },
-        { idem: req.headers['idempotency-key'] || `fork:${fork[1]}:${parent.hash}:${session.person}` });
+        if (!exactKeys(input, ['reason', 'from']) || !text(input.reason, 2000)
+          || (input.from !== undefined && (!input.from || !exactKeys(input.from, ['kind', 'hash'])
+            || !['see', 'spec', 'artifact'].includes(input.from.kind) || !hex(input.from.hash)))) return json(res, 409, { error: 'request refused' });
+        const key = req.headers['idempotency-key'] || randomUUID();
+        const id = createHash('sha256').update(canonical(['fork-request', session.person, fork[1], key])).digest('hex');
+        const existing = store.events(id)[0];
+        if (existing) {
+          if (existing.reason !== input.reason || canonical(existing.from) !== canonical(input.from)) throw refused('fork request conflict');
+          return json(res, 200, { id, ...store.read(id), idempotent: true });
+        }
+        const point = store.forkPoint(fork[1], input.from);
+        const result = store.append(id, { type: 'forked', actor: session.person, ...point, rules: CURRENT_RULES, reason: input.reason,
+          ...(input.from ? { from: input.from } : {}), at: new Date(clock()).toISOString() }, { idem: key });
         return json(res, 201, { id, ...result });
       }
       const steer = url.pathname.match(/^\/api\/items\/([^/]+)\/steer$/);
       if (req.method === 'POST' && steer) {
-        if (!exactKeys(input, ['instruction', 'source', 'mode']) || !text(input.instruction, 4000)
+        if (!exactKeys(input, ['instruction', 'source', 'mode', 'scope']) || !text(input.instruction, 4000)
           || (input.source !== undefined && !hex(input.source))
-          || (input.mode !== undefined && !['quoted', 'paraphrased'].includes(input.mode))) return json(res, 409, { error: 'request refused' });
+          || (input.mode !== undefined && !['quoted', 'paraphrased'].includes(input.mode))
+          || (input.scope !== undefined && !validScope(input.scope))) return json(res, 409, { error: 'request refused' });
         const context = store.read(steer[1]).context;
         const result = store.append(steer[1], { type: 'steered', actor: session.person, instruction: input.instruction,
           ...(input.source ? { source: input.source, mode: input.mode || 'paraphrased' } : {}), approval: context.approval,
-          spec_hash: context.specHash, at: new Date().toISOString() }, { idem: req.headers['idempotency-key'] || randomUUID() });
+          spec_hash: context.specHash, ...(input.scope ? { scope: input.scope } : {}), at: new Date().toISOString() }, { idem: req.headers['idempotency-key'] || randomUUID() });
         return json(res, 201, result);
       }
       const erase = url.pathname.match(/^\/api\/items\/([^/]+)\/erase$/);
@@ -538,6 +547,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (input.type === 'approved' && !auth.hasStepup(sessionToken))
         return json(res, 403, { error: 'request refused' });
       if (!validEvent(input)) return json(res, 409, { error: 'request refused' });
+      if (input.type === 'specced' && store.read(match[1]).context.rules >= 2) input = { ...input, scope: input.scope || emptyScope() };
       if (input.type === 'approved' && input.spec_hash === undefined) {
         // Older API clients did not carry the rendered binding. Bind them to the
         // current record here; a browser that has seen Decide must echo its view.

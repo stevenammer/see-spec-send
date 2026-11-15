@@ -37,20 +37,49 @@ function insertDead(store, item, now) {
 }
 
 // Real items: each writer appends a checked item and the events hash-chain per item.
+// Both writers rendezvous halfway, so a verified mid-stream snapshot never depends
+// on the scheduler letting the parent win a race against two fast child processes.
 const writerCode = `import {Store} from '${storeModule}';
 const s = new Store(process.argv[1]); const id = process.argv[2];
 for (let n = 0; n < 150; n += 1) {
   s.append('w' + id + '-' + n, { type: 'checked', actor: 's', at: '2026-11-12', problem: 'x', looked: ['x'], found: [], verdict: 'build_needed' }, { idem: 'c' + n });
-}
-s.close();`;
-function writer(path, id) {
-  const child = spawn(process.execPath, ['--input-type=module', '-e', writerCode, path, String(id)], { stdio: ['ignore', 'pipe', 'pipe'] });
-  let errors = '';
-  child.stderr.on('data', bytes => { errors += bytes; });
-  return new Promise((resolve, reject) => {
-    child.on('error', reject);
-    child.on('close', code => resolve({ code, errors }));
+  if (n === 74) await new Promise((resolve, reject) => {
+    process.once('message', message => message?.type === 'resume' ? resolve() : reject(Error('unexpected writer message')));
+    process.once('disconnect', () => reject(Error('parent disconnected before resuming writer')));
+    process.send({ type: 'halfway' });
   });
+}
+s.close(); process.disconnect();`;
+function writer(path, id) {
+  const child = spawn(process.execPath, ['--input-type=module', '-e', writerCode, path, String(id)], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+  let errors = ''; let paused = false;
+  let readyResolve, readyReject, finishResolve, finishReject;
+  const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
+  const finished = new Promise((resolve, reject) => { finishResolve = resolve; finishReject = reject; });
+  // Keep a failed child observable while the parent is busy verifying a snapshot.
+  ready.catch(() => {}); finished.catch(() => {});
+  const timer = setTimeout(() => {
+    readyReject(Error(`writer ${id} did not reach its halfway rendezvous`));
+    child.kill('SIGKILL');
+  }, 60_000);
+  timer.unref();
+  child.stderr.on('data', bytes => { errors += bytes; });
+  child.on('message', message => {
+    if (message?.type === 'halfway') { paused = true; clearTimeout(timer); readyResolve(); }
+  });
+  child.on('error', error => { clearTimeout(timer); readyReject(error); finishReject(error); });
+  child.on('close', (code, signal) => {
+    clearTimeout(timer);
+    if (!paused) readyReject(Error(`writer ${id} exited before halfway: ${code ?? signal}. ${errors}`));
+    finishResolve({ code, errors });
+  });
+  return { ready, finished,
+    resume: () => new Promise((resolve, reject) => {
+      if (!child.connected) return reject(Error(`writer ${id} disconnected before resume`));
+      child.send({ type: 'resume' }, error => error ? reject(error) : resolve());
+    }),
+    stop: () => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); },
+  };
 }
 
 // B16: a mistyped or missing path must not become a new, empty, "stopped" database.
@@ -186,37 +215,53 @@ test('backups taken while writers run each verify, and the final backup holds ev
   const store = new Store(source); store.registerPerson('s'); store.close();
   const writers = [1, 2].map(id => writer(source, id));
   let writing = true;
-  const finished = Promise.all(writers).then(results => { writing = false; return results; });
+  const finished = Promise.all(writers.map(writer => writer.finished)).then(results => { writing = false; return results; });
+  finished.catch(() => {});
   const copies = []; const counts = [];
-  // Backups keep running until the writers finish, so most of them land mid-stream.
-  for (let index = 0; index < 20 || (writing && index < 200); index += 1) {
+  const snapshot = async index => {
     const target = join(root, `backup-${index}.db`);
     await cli(['backup', '--to', target], { SSS_DB: source }, quiet);
     copies.push(target);
     const manifest = JSON.parse(readFileSync(`${target}.manifest.json`, 'utf8'));
     assert.equal(manifest.sha256, sha(readFileSync(target)), 'manifest hash matches the copy');
     counts.push(manifest.events);
-    await new Promise(resolve => setTimeout(resolve, 25));
-  }
-  for (const { code, errors } of await finished) assert.equal(code, 0, errors);
-  assert.ok(counts.some(events => events > 0 && events < 300), `a backup must land mid-stream, saw ${counts.join(',')}`);
-  assert.deepEqual([...counts].sort((a, b) => a - b), counts, 'each backup sees a prefix of the stream');
-  for (const copy of copies) {
+  };
+  const verifyCopy = copy => {
     const check = new Store(copy);
-    assert.equal(check.db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
-    const rows = check.verifyAll();
-    assert.ok(rows.every(row => row.ok), JSON.stringify(rows.filter(row => !row.ok)));
-    assert.equal(rows.length, JSON.parse(readFileSync(`${copy}.manifest.json`, 'utf8')).items, 'the copy holds exactly the items its manifest names');
-    check.close();
+    try {
+      assert.equal(check.db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
+      const rows = check.verifyAll();
+      assert.ok(rows.every(row => row.ok), JSON.stringify(rows.filter(row => !row.ok)));
+      assert.equal(rows.length, JSON.parse(readFileSync(`${copy}.manifest.json`, 'utf8')).items, 'the copy holds exactly the items its manifest names');
+    } finally { check.close(); }
+  };
+  try {
+    await Promise.all(writers.map(writer => writer.ready));
+    await snapshot(0);
+    assert.equal(counts[0], 150, 'both writers paused after exactly 75 committed events');
+    verifyCopy(copies[0]); // Verify the guaranteed mid-stream copy before releasing either writer.
+    await Promise.all(writers.map(writer => writer.resume()));
+    // Keep taking real backups while both independent writers finish their remaining events.
+    for (let index = 1; index < 20 || (writing && index < 200); index += 1) {
+      await snapshot(index);
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    for (const { code, errors } of await finished) assert.equal(code, 0, errors);
+    assert.ok(counts.some(events => events > 0 && events < 300), `a backup must land mid-stream, saw ${counts.join(',')}`);
+    assert.deepEqual([...counts].sort((a, b) => a - b), counts, 'each backup sees a prefix of the stream');
+    for (const copy of copies) verifyCopy(copy);
+    // A quiet snapshot after the writers finish must hold every event, not a prefix.
+    const finalCopy = join(root, 'final.db');
+    await cli(['backup', '--to', finalCopy], { SSS_DB: source }, quiet);
+    const final = JSON.parse(readFileSync(`${finalCopy}.manifest.json`, 'utf8'));
+    const last = new Store(source); const sourceEvents = last.db.prepare('SELECT count(*) AS n FROM events').get().n; last.close();
+    assert.equal(sourceEvents, 300);
+    assert.equal(final.events, 300, 'the final backup drops no events');
+    assert.equal(final.items, 300);
+  } finally {
+    for (const writer of writers) writer.stop();
+    await Promise.allSettled(writers.map(writer => writer.finished));
   }
-  // A quiet snapshot after the writers finish must hold every event, not a prefix.
-  const finalCopy = join(root, 'final.db');
-  await cli(['backup', '--to', finalCopy], { SSS_DB: source }, quiet);
-  const final = JSON.parse(readFileSync(`${finalCopy}.manifest.json`, 'utf8'));
-  const last = new Store(source); const sourceEvents = last.db.prepare('SELECT count(*) AS n FROM events').get().n; last.close();
-  assert.equal(sourceEvents, 300);
-  assert.equal(final.events, 300, 'the final backup drops no events');
-  assert.equal(final.items, 300);
 });
 
 test('backup refuses a damaged source and leaves no copy behind', async () => {

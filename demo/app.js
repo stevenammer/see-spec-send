@@ -1,4 +1,5 @@
 // Page wiring only. The rules live in lib/machine.js (a generated copy of core/machine.js).
+import { initializeVisionDemo } from './lib/vision.js';
 import { createLog, restoreLog } from './lib/log.js';
 import { createSession, perform, summary, checkKinds, restoreArtifacts } from './lib/flow.js';
 import { item, makeRoster } from './lib/roster.js';
@@ -157,4 +158,5 @@ async function start() {
   paint();
 }
 
+initializeVisionDemo(document);
 start();

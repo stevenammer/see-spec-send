@@ -16,6 +16,8 @@ import { buildPacket } from '../core/packet.js';
 import { specPage } from './pages-spec.js';
 import { researchRecord } from '../research/connectors.js';
 import { workspaceConnectors } from '../research/workspace.js';
+import { Mentoring } from '../core/mentoring.js';
+import { mentoringHome, mentoringRequest, mentoringEvidence } from './pages-mentoring.js';
 import { emptyScope, validScope } from '../core/scope.js';
 import { searchPage, contributionsPage, recordPage } from './pages-memory.js';
 
@@ -197,6 +199,7 @@ const validEvent = input => {
 
 export function createHandler({ auth, store, integrations, questModel = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, trustedProxy = false }) {
   integrations ||= new Integrations(store, { origin });
+  const mentoring = new Mentoring(store, { clock });
   // Fixed one-minute windows per signed-in member. Memory holds one entry per member.
   const writes = new Map();
   const spend = (person, now) => {
@@ -243,6 +246,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       }
       if (req.method === 'GET' && url.pathname === '/assets/app.js')
         return staticFile(res, 'app.js', 'application/javascript; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/assets/mentoring.js') return staticFile(res, 'mentoring.js', 'application/javascript; charset=utf-8');
       if (req.method === 'GET' && url.pathname === '/assets/app.css')
         return staticFile(res, 'app.css', 'text/css; charset=utf-8');
       if (req.method === 'GET' &&
@@ -345,6 +349,40 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (req.method === 'GET' && url.pathname === '/items/new') return page(res, newItemPage());
       if (req.method === 'GET' && url.pathname === '/quest') {
         return page(res, questPage(session.person));
+      }
+      if (req.method === 'GET' && url.pathname === '/mentoring')
+        return page(res, mentoringHome(session.person, mentoring.opted(session.person), mentoring.directory(session.person), mentoring.list(session.person)));
+      const evidenceView = url.pathname.match(/^\/mentoring\/evidence\/([^/]+)$/);
+      if (req.method === 'GET' && evidenceView) {
+        const evidence = mentoring.evidence(session.person, evidenceView[1]);
+        return evidence ? page(res, mentoringEvidence(session.person, evidence)) : json(res, 404, { error: 'not found' });
+      }
+      const mentorView = url.pathname.match(/^\/mentoring\/([^/]+)$/);
+      if (req.method === 'GET' && mentorView) {
+        const request = mentoring.read(session.person, mentorView[1]);
+        return request ? page(res, mentoringRequest(session.person, request, mentoring.checkins(session.person, request.id), mentoring.evidenceList(session.person, request.id))) : json(res, 404, { error: 'not found' });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/mentoring/optin') {
+        if (!exactKeys(input, ['enabled']) || typeof input.enabled !== 'boolean') throw refused('explicit consent required');
+        mentoring.optIn(session.person, input.enabled); return json(res, 201, { enabled: input.enabled });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/mentoring/requests') {
+        if (!exactKeys(input, ['mentor', 'objective'])) throw refused('mentor and objective required');
+        return json(res, 201, { id: mentoring.request(session.person, input.mentor, input.objective) });
+      }
+      const mentorAction = url.pathname.match(/^\/api\/mentoring\/([^/]+)\/(decision|checkin|evidence)$/);
+      if (req.method === 'POST' && mentorAction) {
+        const [, id, action] = mentorAction;
+        if (action === 'decision' && exactKeys(input, ['action'])) { mentoring.decide(session.person, id, input.action); return json(res, 201, { updated: true }); }
+        if (action === 'checkin' && exactKeys(input, ['text'])) return json(res, 201, { id: mentoring.checkin(session.person, id, input.text) });
+        if (action === 'evidence' && exactKeys(input, ['text', 'scope', 'shared_with']))
+          return json(res, 201, { id: mentoring.addEvidence(session.person, id, input.text, { scope: input.scope, shared_with: input.shared_with ?? null }) });
+        throw refused('request refused');
+      }
+      const revokeEvidence = url.pathname.match(/^\/api\/mentoring\/evidence\/([^/]+)\/revoke$/);
+      if (req.method === 'POST' && revokeEvidence) {
+        if (!exactKeys(input, [])) throw refused('request refused');
+        mentoring.revoke(session.person, revokeEvidence[1]); return json(res, 201, { revoked: true });
       }
       if (req.method === 'GET' && url.pathname === '/search') {
         const query = url.searchParams.get('q') || '';
@@ -495,8 +533,8 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           if (existing.reason !== input.reason || canonical(existing.from) !== canonical(input.from)) throw refused('fork request conflict');
           return json(res, 200, { id, ...store.read(id), idempotent: true });
         }
-        const point = store.forkPoint(fork[1], input.from);
-        const result = store.append(id, { type: 'forked', actor: session.person, ...point, rules: CURRENT_RULES, reason: input.reason,
+        const point = store.forkPoint(fork[1], input.from, undefined, { extended: true });
+        const result = store.append(id, { type: 'forked', actor: session.person, ...point, seed_policy: 2, rules: CURRENT_RULES, reason: input.reason,
           ...(input.from ? { from: input.from } : {}), at: new Date(clock()).toISOString() }, { idem: key });
         return json(res, 201, { id, ...result });
       }

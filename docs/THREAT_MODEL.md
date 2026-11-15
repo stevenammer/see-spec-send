@@ -53,7 +53,10 @@ peer is loopback. Any other peer's forwarded header is ignored. A process on the
 so the host itself is trusted. Not built: cutting off an oversized request body mid-stream (it is refused,
 but the connection is not dropped early).
 
-## Known gaps
+## Historical audit findings
+
+The B-list below records earlier audits, not a current claim that every listed gap remains open. Current behavior is described by the dated invariant sections and named tests. Rules-1 histories retain their original semantics; new conversation posts use rules 2. Identity-provider sign-in and PostgreSQL remain unshipped.
+
 
 - **B1:** The approval screen doesn't bind the displayed spec hash or sequence, so a spec can change immediately before approval.
 - **B2:** Generic event input accepts unbounded unknown fields and can make history display a member as another actor.
@@ -232,3 +235,9 @@ limits, recovery behavior and remaining external-provider work.
 `npm run test:artifact-origin` (set `PLAYWRIGHT_DIR`) delivers a hostile page through the real server and opens it in Chrome as a signed-in person. The page tries to read the parent DOM, the top DOM, the session cookie, local storage, the app API with credentials, a second origin by fetch and by image, top-level navigation, a popup, and a form post to the top page. All are blocked, the top page URL does not change, and a second local listener sees zero requests. Weakening the sandbox (adding `allow-same-origin`, dropping the CSP `sandbox`) makes the test fail on the parent-DOM read. The artifact is still served from the app origin, protected by the opaque sandbox origin rather than a separate host. A separate artifact host remains advisable before real deployment, and this test is not a substitute for one.
 
 - **B22 (partly closed):** Artifacts are served only to a sandboxed iframe (`Sec-Fetch-Dest: iframe`). The optional second-hostname mode (`--artifact-origin`) is not built: a second host can't carry the session cookie, so it needs a per-view capability token, which isn't designed yet. Browser proof (`test:artifact-origin` in real Chrome) is still owed.
+
+## F6 private mentoring boundary
+
+Mentoring tables are separate from work events and derived search/contribution tables. Both participants explicitly opt in; only the invited mentor accepts. Reads bind the participant identities, with no leader override. PRIVATE evidence is owner-only. Mentor sharing binds the specific mentor, and sponsor sharing binds one explicitly named person. Revocation removes that person's future application access. Opting out closes relationships and revokes owned shares. Neither revocation nor source erasure promises to undo copies already read or older backups. A host administrator who can read the SQLite database remains trusted.
+
+The local preview is a separate fixture database, bound to loopback. Its account access file and data directory are private. It never enables a hosted provider. Current public-demo labels distinguish real machine rules from fixture AI/build output.

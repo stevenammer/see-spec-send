@@ -27,7 +27,7 @@ const stages = {
   SHELVED: 'Shelved',
 };
 const shell = (title, content) =>
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See / Spec / Send</a> <a href="/search">Search</a></header><main>${content}</main><script src="/assets/app.js" defer></script></body></html>`;
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See / Spec / Send</a> <a href="/search">Search</a> <a href="/mentoring">Mentoring</a></header><main>${content}</main><script src="/assets/app.js" defer></script></body></html>`;
 const progress = item => `${item.helpers} of ${item.quorum} people have said it helps`;
 
 export function signInPage({ oidc = false } = {}) {
@@ -152,12 +152,12 @@ export function itemPage(item, events, person, leader) {
   let action = '';
   // A Vision Quest build proposal is only a first draft: the steward edits it and saves it by hand.
   const draftSpec = firstEvent?.seed_spec || (questDraft && !questDraft.stopped ? questDraft.spec : { must: [], how_we_know: [], out_of_scope: [] });
-  const fill = key => escape(draftSpec[key].join('\n'));
+  const fill = key => escape((draftSpec[key] || []).join('\n'));
   const specForm = `<form data-event="specced"><h2>Write the spec</h2>${rules2 ? `<input type="hidden" name="see_hash" value="${escape(context.seeHash)}">` : ''}` +
     `<label>Must do<textarea name="must" required>${fill('must')}</textarea></label>` +
     `<label>How we'll know<textarea name="how_we_know" required>${fill('how_we_know')}</textarea></label>` +
     `<label>Out of scope<textarea name="out_of_scope">${fill('out_of_scope')}</textarea></label>` +
-    `${rules2 ? scopeFields(draftSpec.scope) : ''}<button>SPEC IT!</button></form>`;
+    `${rules2 ? `<label>Assumptions, one per line<textarea name="assumptions">${fill('assumptions')}</textarea></label><label>Open questions, one per line<textarea name="open_questions">${fill('open_questions')}</textarea></label>${scopeFields(draftSpec.scope)}` : ''}<button>SPEC IT!</button></form>`;
   if ((item.state === 'CHECKED' || (rules2 && item.state === 'SEEN')) && context.steward === person) action = specForm;
   if (item.state === 'SUBMITTED') {
     const packetBody = item.packet ? `<pre>${escape(item.packet)}</pre>` : '';

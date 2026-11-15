@@ -216,6 +216,8 @@ async function main() {
     // 5. SPEC IT! makes the spec post, where Effort comments first too.
     await olive.locator('form[data-event=specced] [name=must]').fill('Pass the account number on transfer.\nShow it to the next agent.');
     await olive.locator('form[data-event=specced] [name=how_we_know]').fill('Callers stop repeating it.');
+    await olive.locator('form[data-event=specced] [name=assumptions]').fill('The transfer system can display a note.');
+    await olive.locator('form[data-event=specced] [name=open_questions]').fill('Who maintains the note after a transfer?');
     await olive.getByRole('button', { name: 'SPEC IT!' }).click();
     await olive.getByRole('link', { name: 'Open the spec' }).waitFor();
     await olive.goto(`${itemUrl}/spec`);
@@ -236,7 +238,9 @@ async function main() {
     const specInclude = olive.locator('li:has-text("Keep the caller name") form[data-include="spec"]');
     await specInclude.getByRole('button', { name: 'Include' }).click();
     await olive.getByRole('heading', { name: 'Spec v2' }).waitFor();
-    step('SPEC Include clicked and created a version-bound spec update');
+    assert.equal(await olive.locator('form[data-event=specced] [name=assumptions]').inputValue(), 'The transfer system can display a note.');
+    assert.equal(await olive.locator('form[data-event=specced] [name=open_questions]').inputValue(), 'Who maintains the note after a transfer?');
+    step('SPEC Include clicked and created a version-bound spec update, preserving assumptions and open questions');
 
     // 6. SEND IT!
     await olive.getByRole('button', { name: 'SEND IT!' }).click();
@@ -606,6 +610,47 @@ async function main() {
     await ben.goto(`${origin}/search?q=quartz`);
     await ben.getByText('No matching records.', { exact: true }).waitFor();
     step('phone member found a source record, acknowledged its author, and erased text disappeared from search');
+
+    // Optional mentoring remains separate from work records, even for a leader.
+    for (const person of [olive, maya]) {
+      await person.goto(`${origin}/mentoring`);
+      await person.getByRole('button', { name: 'Opt in to mentoring', exact: true }).click();
+      await person.getByRole('button', { name: 'Opt out and close active mentoring' }).waitFor();
+    }
+    await olive.goto(`${origin}/mentoring`);
+    await olive.locator('[name=mentor]').selectOption('maya');
+    await olive.locator('[name=objective]').fill('Practice a clearer private handoff.');
+    await olive.getByRole('button', { name: 'Send mentoring request' }).click();
+    await olive.waitForURL(/\/mentoring\/[^/]+$/);
+    const mentoringUrl=olive.url();
+    await maya.goto(mentoringUrl);
+    await maya.getByRole('button', { name: 'Accept mentoring' }).click();
+    await maya.getByLabel('Private check-in').waitFor();
+    await olive.goto(mentoringUrl);
+    await olive.getByLabel('Private check-in').fill('hazelnut private mentoring reflection.');
+    await olive.getByRole('button', { name: 'Add private check-in' }).click();
+    await olive.getByText('hazelnut private mentoring reflection.', { exact: false }).waitFor();
+    assert.equal((await leader.goto(mentoringUrl)).status(),404,'leadership grants no private mentoring access');
+    await leader.goto(`${origin}/search?q=hazelnut`);
+    await leader.getByText('No matching records.', { exact: true }).waitFor();
+    await olive.goto(mentoringUrl);
+    await olive.locator('[name=text]').last().fill('One explicitly shared sponsor receipt.');
+    await olive.locator('[name=scope]').selectOption('SPONSOR_SHARED');
+    await olive.locator('[name=shared_with]').fill('leader');
+    const receipt=olive.waitForResponse(response=>response.url().endsWith('/evidence')&&response.request().method()==='POST');
+    await olive.getByRole('button', { name: 'Save evidence' }).click();
+    assert.equal((await receipt).status(),201);
+    const sharedLink=olive.getByRole('link',{name:'SPONSOR_SHARED evidence by olive',exact:true});
+    await sharedLink.waitFor();
+    const sharedId=(await sharedLink.getAttribute('href')).split('/').at(-1);
+    const evidenceUrl=`${origin}/mentoring/evidence/${sharedId}`;
+    assert.equal((await leader.goto(evidenceUrl)).status(),200);
+    await leader.getByText('One explicitly shared sponsor receipt.',{exact:true}).waitFor();
+    await olive.goto(evidenceUrl);
+    await olive.getByRole('button',{name:'Revoke sharing'}).click();
+    await olive.getByText(/Sharing revoked on/).waitFor();
+    assert.equal((await leader.goto(evidenceUrl)).status(),404,'revoked sponsor evidence is unavailable');
+    step('two people opted in; leader could not read private notes; explicit evidence share was revoked');
 
     assert.deepEqual(problems, [], `browser problems:\n${problems.join('\n')}`);
     console.log('PASS: Vision journey in a real browser: SEE, Effort, mention, include and credit, SPEC IT!, SEND IT!, decision, fork, adopted steer, reassign, mention cap, Vision Quest.');

@@ -24,10 +24,24 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs', 'test/slice27.test.mjs', 'test/password-screen.test.mjs',
   'test/vision-01.test.mjs', 'test/vision-02.test.mjs', 'test/vision-03.test.mjs', 'test/vision-04.test.mjs', 'test/sliceR.test.mjs', 'test/sliceR2.test.mjs', 'test/sliceF3.test.mjs', 'test/sliceF3-worker.test.mjs', 'test/pagesF3.test.mjs', 'test/sliceF3-http.test.mjs', 'test/sliceF3-gateway.test.mjs', 'test/sliceF4-builder.test.mjs', 'test/sliceF4-forks.test.mjs', 'test/sliceF4-http.test.mjs', 'test/sliceF4-pages.test.mjs'];
 fullSuite.push('test/sliceF5-memory.test.mjs', 'test/sliceF5-pages.test.mjs');
+fullSuite.push('test/sliceF6-mentoring.test.mjs', 'test/sliceF6-pages.test.mjs', 'test/sliceF6-demo.test.mjs');
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
 const mutants = [
+  ['F6 SPEC metadata stays typed', "...['assumptions', 'open_questions'].filter(key => Object.hasOwn(input, key))", '...[]'],
+  ['F6 fork carries SPEC metadata', "...(extended ? Object.fromEntries(['assumptions', 'open_questions'].filter(key => spec[key] !== undefined).map(key => [key, spec[key]])) : {})", '...{}'],
+
+  ['F6 mentoring requires both opt-ins', "!this.opted(person) || !this.opted(mentor)", 'false'],
+  ['F6 participant read boundary', "WHERE id=? AND (requester=? OR mentor=?)", "WHERE id=? AND (? IS NOT NULL OR ? IS NOT NULL)"],
+  ['F6 check-ins participant boundary', "if (!this.read(viewer, id)) return [];", ''],
+  ['F6 mentor decides invitation', "row.mentor !== person || row.status !== 'pending'", "row.status !== 'pending'"],
+  ['F6 evidence is private by default', "{ scope = 'PRIVATE', shared_with = null }", "{ scope = 'MENTOR_ONLY', shared_with = null }"],
+  ['F6 named mentor evidence visibility', "e.scope='MENTOR_ONLY' AND r.mentor=?", "e.scope='MENTOR_ONLY' AND ? IS NOT NULL"],
+  ['F6 revoked evidence access', 'e.revoked_at IS NULL AND', '1=1 AND'],
+  ['F6 evidence owner revocation', "if (!row || row.owner !== person) throw refused('evidence owner required');", "if (!row) throw refused('evidence owner required');"],
+  ['F6 opt-out withdraws owned shares', "WHERE owner=? AND revoked_at IS NULL", "WHERE owner=? AND revoked_at IS NOT NULL"],
+
   ['F5 enabled person search predicate', "JOIN actors viewer ON viewer.id=? AND viewer.kind='person'", "JOIN actors viewer ON viewer.id=?"],
   ['F5 disabled viewer search predicate', "WHERE search_docs MATCH ? AND COALESCE(ps.disabled,0)=0", "WHERE search_docs MATCH ?"],
   ['F5 literal search tokens', ".join(' AND ');", ".join(' OR ');"],
@@ -233,7 +247,7 @@ const mutants = [
   ['quest draft is keyed by person', 'const keyFor = person => `sss-quest:${encodeURIComponent(person)}`;',
     "const keyFor = () => 'sss-quest:shared';"],
   ['quest restore checks the person', 'validateQuest(envelope.data, person);', 'validateQuest(envelope.data);'],
-  ['quest spec draft is escaped', "escape(draftSpec[key].join('\\n'))", "String(draftSpec[key].join('\\n'))"],
+  ['quest spec draft is escaped', "escape((draftSpec[key] || []).join('\\n'))", "String((draftSpec[key] || []).join('\\n'))"],
   ['quest memo is escaped', 'Decision owner: ${escape(questDraft.memo.decisionOwner)}', 'Decision owner: ${questDraft.memo.decisionOwner}'],
   ['quest page makes no outside request', "await fetch('/api/me')", "await fetch('https://example.invalid/api/me')"],
   ['comment version anchor', "if (event.anchor_kind === 'artifact') return event.anchor_hash === state.artifact;", 'return true;'],
@@ -423,7 +437,7 @@ const mutants = [
   ['slice27 gateway socket directory is private', "if (statSync(parent).mode & 0o022) fail(", "if (false) fail("],
 ];
 
-const files = ['core/memory.js', 'research/workspace.js', 'app/pages-memory.js', 'compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'core/scope.js', 'research/connectors.js', 'cli.js',
+const files = ['core/mentoring.js', 'app/pages-mentoring.js', 'demo/lib/vision.js', 'public/mentoring.js', 'core/memory.js', 'research/workspace.js', 'app/pages-memory.js', 'compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'core/scope.js', 'research/connectors.js', 'cli.js',
   'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js', 'core/diff.js',
   'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'app/effort.js', 'app/pages-spec.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/effort.js', 'gateway/http.js', 'effort/prompt.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js', 'public/app.js', 'effort/prompt.js'];
 

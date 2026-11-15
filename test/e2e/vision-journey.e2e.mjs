@@ -106,6 +106,43 @@ async function main() {
     }
   }
 
+  async function submitDecisionAndCapture(page, form, button, itemId, type) {
+    const url = `${origin}/api/items/${itemId}/events`;
+    const responsePromise = page.waitForResponse(
+      response => response.url() === url && response.request().method() === 'POST',
+      { timeout: 10000 },
+    );
+    await button.click();
+
+    let response;
+    try {
+      response = await responsePromise;
+    } catch (error) {
+      const alerts = await form.locator('[role="alert"]').allTextContents().catch(() => []);
+      assert.fail(`${type} event POST was not observed: ${error.message}; form alerts: ${alerts.join(' | ') || '(none)'}`);
+    }
+
+    let body;
+    try {
+      body = await response.text();
+    } catch (error) {
+      // The page reload can close the response protocol before Playwright reads its body.
+      body = `<response body unavailable: ${error.message}>`;
+    }
+    const alerts = await form.locator('[role="alert"]').allTextContents().catch(() => []);
+    const diagnostic = `${type} event POST status ${response.status()}, body: ${body || '(empty)'}; form alerts: ${alerts.join(' | ') || '(none)'}`;
+    assert.equal(response.status(), 201, diagnostic);
+    return diagnostic;
+  }
+
+  async function waitForDecisionText(page, text, diagnostic) {
+    try {
+      await page.getByText(text).first().waitFor({ timeout: 10000 });
+    } catch (error) {
+      throw new Error(`${error.message}\n${diagnostic}`);
+    }
+  }
+
   // A direct POST, the way a script would send it, with the page's own session.
   const rawPost = (page, path, body) =>
     page.evaluate(
@@ -540,7 +577,7 @@ async function main() {
     assert.equal(await leader.locator('.stage', { hasText: 'Decide' }).count(), 1);
     assert.ok(await rawPost(leader, `/api/items/${decisionId}/events`, { type: 'returned', reason: 'short' }) >= 400);
     await returnForm.locator('[name=reason]').fill(returnReason);
-    await returnForm.getByRole('button', { name: 'Return the spec' }).click();
+    await submitDecisionAndCapture(leader, returnForm, returnForm.getByRole('button', { name: 'Return the spec' }), decisionId, 'returned');
     await leader.getByRole('heading', { name: 'Decision history' }).waitFor();
     await ben.goto(decisionUrl);
     await ben.getByText(returnReason).first().waitFor();
@@ -566,10 +603,12 @@ async function main() {
     await notBuilt.locator('[name=reason]').fill(noBuildReason);
     await notBuilt.locator('[name=restricted_evidence]').fill('a restricted source exists; ask Privacy');
     await notBuilt.locator('[name=pivot_note]').fill('The existing view was verified after the return.');
-    await notBuilt.getByRole('button', { name: 'Not building' }).click();
+    const notBuiltDiagnostic = await submitDecisionAndCapture(
+      leader, notBuilt, notBuilt.getByRole('button', { name: 'Not building' }), decisionId, 'not_built',
+    );
     await leader.getByRole('heading', { name: 'Decision history' }).waitFor();
     await ben.goto(decisionUrl);
-    await ben.getByText(noBuildReason).first().waitFor();
+    await waitForDecisionText(ben, noBuildReason, notBuiltDiagnostic);
     assert.equal(ben.viewportSize().width, 390, 'member reads decision history at phone width');
     assert.match(await ben.locator('main').innerText(), /a restricted source exists; ask Privacy/);
     assert.match(await ben.locator('main').innerText(), /What changed: The existing view was verified after the return\./);

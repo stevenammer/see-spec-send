@@ -24,10 +24,47 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs', 'test/slice27.test.mjs', 'test/password-screen.test.mjs',
   'test/vision-01.test.mjs', 'test/vision-02.test.mjs', 'test/vision-03.test.mjs', 'test/vision-04.test.mjs', 'test/sliceR.test.mjs', 'test/sliceR2.test.mjs', 'test/sliceF3.test.mjs', 'test/sliceF3-worker.test.mjs', 'test/pagesF3.test.mjs', 'test/sliceF3-http.test.mjs', 'test/sliceF3-gateway.test.mjs', 'test/sliceF4-builder.test.mjs', 'test/sliceF4-forks.test.mjs', 'test/sliceF4-http.test.mjs', 'test/sliceF4-pages.test.mjs'];
 fullSuite.push('test/sliceF5-memory.test.mjs', 'test/sliceF5-pages.test.mjs');
+fullSuite.push('test/sliceF6-mentoring.test.mjs', 'test/sliceF6-pages.test.mjs', 'test/sliceF6-demo.test.mjs');
+fullSuite.push('test/sliceF7-spec.test.mjs');
+fullSuite.push('test/sliceF8-evidence.test.mjs', 'test/sliceF8-http.test.mjs');
+fullSuite.push('test/sliceF9.test.mjs');
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
 const mutants = [
+  ['F9 Include keeps prior requirements', '[...((spec?.must) || []), comment.comment]', '[comment.comment]'],
+  ['F9 Include keeps checks and exclusions', "const joined = key => (spec?.[key] || []).join('\\n');", "const joined = key => '';"],
+  ['F9 current intent in Effort context', '...(currentEvent ? { current:', '...(false ? { current:'],
+  ['F9 trigger survives recent-thread trimming', '...(trigger ? { triggering_comment:', '...(false ? { triggering_comment:'],
+  ['F9 worker passes trigger to prompt', "anchorKind: anchor_kind, anchorHash: anchor_hash, trigger: job.kind === 'tag' ? triggerBody : undefined", 'anchorKind: anchor_kind, anchorHash: anchor_hash, trigger: undefined'],
+  ['F9 budget headroom counts holds', 'const sum = rows => rows.reduce((total, row) => total + row.charged_micros, 0);\n  const mine = receipts.filter', "const sum = rows => rows.filter(row => row.state === 'settled').reduce((total, row) => total + row.charged_micros, 0);\n  const mine = receipts.filter"],
+  ['F9 remaining calls reset by UTC day', 'all.filter(row => row.day === day && row.job !== undefined)', 'all.filter(row => row.job !== undefined)'],
+  ['F8 selected work scope', 'WHERE e.item=? AND COALESCE(ps.disabled,0)=0 ORDER BY e.seq', 'WHERE ? IS NOT NULL AND COALESCE(ps.disabled,0)=0 ORDER BY e.seq'],
+  ['F8 objectives and constraints preserved', 'canonical(answer.constraints) !== canonical(packet.request.constraints)', 'false'],
+  ['F8 exact included citations', 'ids.has(`${ref.item}:${ref.hash}`)', 'true'],
+  ['F8 AI cannot claim verified status', "['reported', 'documented', 'inferred', 'unresolved'].includes(finding.status)", "['reported', 'documented', 'inferred', 'unresolved', 'verified'].includes(finding.status)"],
+  ['F8 complete missingness contract', '!words(answer.missingness)', 'false'],
+  ['F8 motive requests refused', "if (personalVerdict.test([request.question, ...request.objectives].join('\\n')))", 'if (false)'],
+  ['F8 model motive verdict refused', 'if (personalVerdict.test(JSON.stringify(answer)))', 'if (false)'],
+  ['F7 draft steward boundary', 'state.context.steward !== person', 'false'],
+  ['F7 draft preserves curated SEE', 'current.text ?? current.original ?? current.problem', 'events[0].original'],
+  ['F7 draft rejects silent truncation', "throw refused('full curated SEE exceeds configured draft input limit');", 'payload.current_see = payload.current_see.slice(0, 1);'],
+  ['F7 draft rechecks current intent after call', "if (preparing && (this.store.read(job.item).context.seeHash !== prompt.seeHash || this.store.read(job.item).context.steward !== job.requester)) throw Error('outdated SPEC request');", ''],
+  ['F7 structured draft validates fields', "throw refused('SPEC draft has invalid fields');", 'return value;'],
+  ['F7 missing build price is unknown', '? gatewayPolicy.worstCaseSpendMicros : null', '? gatewayPolicy.worstCaseSpendMicros : 0'],
+  ['F6 SPEC metadata stays typed', "...['assumptions', 'open_questions'].filter(key => Object.hasOwn(input, key))", '...[]'],
+  ['F6 fork carries SPEC metadata', "...(extended ? Object.fromEntries(['assumptions', 'open_questions'].filter(key => spec[key] !== undefined).map(key => [key, spec[key]])) : {})", '...{}'],
+
+  ['F6 mentoring requires both opt-ins', "!this.opted(person) || !this.opted(mentor)", 'false'],
+  ['F6 participant read boundary', "WHERE id=? AND (requester=? OR mentor=?)", "WHERE id=? AND (? IS NOT NULL OR ? IS NOT NULL)"],
+  ['F6 check-ins participant boundary', "if (!this.read(viewer, id)) return [];", ''],
+  ['F6 mentor decides invitation', "row.mentor !== person || row.status !== 'pending'", "row.status !== 'pending'"],
+  ['F6 evidence is private by default', "{ scope = 'PRIVATE', shared_with = null }", "{ scope = 'MENTOR_ONLY', shared_with = null }"],
+  ['F6 named mentor evidence visibility', "e.scope='MENTOR_ONLY' AND r.mentor=?", "e.scope='MENTOR_ONLY' AND ? IS NOT NULL"],
+  ['F6 revoked evidence access', 'e.revoked_at IS NULL AND', '1=1 AND'],
+  ['F6 evidence owner revocation', "if (!row || row.owner !== person) throw refused('evidence owner required');", "if (!row) throw refused('evidence owner required');"],
+  ['F6 opt-out withdraws owned shares', "WHERE owner=? AND revoked_at IS NULL", "WHERE owner=? AND revoked_at IS NOT NULL"],
+
   ['F5 enabled person search predicate', "JOIN actors viewer ON viewer.id=? AND viewer.kind='person'", "JOIN actors viewer ON viewer.id=?"],
   ['F5 disabled viewer search predicate', "WHERE search_docs MATCH ? AND COALESCE(ps.disabled,0)=0", "WHERE search_docs MATCH ?"],
   ['F5 literal search tokens', ".join(' AND ');", ".join(' OR ');"],
@@ -85,7 +122,7 @@ const mutants = [
   ['F2 tag cap keeps eleventh comment unqueued', 'if (tagsByPerson < 10 && tagsByItem < 30)', 'if (tagsByPerson < 11 && tagsByItem < 30)'],
   ['F2 tag item cap reaches thirty', 'if (tagsByPerson < 10 && tagsByItem < 30) this.db', 'if (tagsByPerson < 10) this.db'],
   ['F2 agent mention never loops', "event.type === 'commented' && authority.kind === 'person' && /@effort\\b/i.test(event.comment)", "event.type === 'commented' && /@effort\\b/i.test(event.comment)"],
-  ['F2 draft remains a comment', "type: 'commented', actor: 'effort', comment: `${job.kind === 'spec_draft' ? 'Use as starting point: ' : ''}${result.body.output}`", "type: 'specced', actor: 'effort', comment: `${job.kind === 'spec_draft' ? 'Use as starting point: ' : ''}${result.body.output}`"],
+  ['F2 draft remains a comment', "type: 'commented', actor: 'effort', comment, kind: 'agent'", "type: 'specced', actor: 'effort', comment, kind: 'agent'"],
   ['F1 builder excludes comments', "event.type === 'steered'\n        && event.approval === run.approval", "event.type === 'commented'\n        && event.approval === run.approval"],
   ['F1 server builds send event', "case 'sent': case 'forked': case 'steered': return false;", "case 'sent': case 'forked': case 'steered': return true;"],
   ['R stale SEE stops active work', "const invalidates = ['SUBMITTED', 'SENDING', 'TRYING'].includes(context.phase);", 'const invalidates = false;'],
@@ -233,7 +270,7 @@ const mutants = [
   ['quest draft is keyed by person', 'const keyFor = person => `sss-quest:${encodeURIComponent(person)}`;',
     "const keyFor = () => 'sss-quest:shared';"],
   ['quest restore checks the person', 'validateQuest(envelope.data, person);', 'validateQuest(envelope.data);'],
-  ['quest spec draft is escaped', "escape(draftSpec[key].join('\\n'))", "String(draftSpec[key].join('\\n'))"],
+  ['quest spec draft is escaped', "escape((draftSpec[key] || []).join('\\n'))", "String((draftSpec[key] || []).join('\\n'))"],
   ['quest memo is escaped', 'Decision owner: ${escape(questDraft.memo.decisionOwner)}', 'Decision owner: ${questDraft.memo.decisionOwner}'],
   ['quest page makes no outside request', "await fetch('/api/me')", "await fetch('https://example.invalid/api/me')"],
   ['comment version anchor', "if (event.anchor_kind === 'artifact') return event.anchor_hash === state.artifact;", 'return true;'],
@@ -423,7 +460,7 @@ const mutants = [
   ['slice27 gateway socket directory is private', "if (statSync(parent).mode & 0o022) fail(", "if (false) fail("],
 ];
 
-const files = ['core/memory.js', 'research/workspace.js', 'app/pages-memory.js', 'compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'core/scope.js', 'research/connectors.js', 'cli.js',
+const files = ['intelligence/evidence.js', 'app/pages-intelligence.js', 'public/intelligence.js', 'effort/spec.js', 'core/mentoring.js', 'app/pages-mentoring.js', 'demo/lib/vision.js', 'public/mentoring.js', 'core/memory.js', 'research/workspace.js', 'app/pages-memory.js', 'compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'core/scope.js', 'research/connectors.js', 'cli.js',
   'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js', 'core/diff.js',
   'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'app/effort.js', 'app/pages-spec.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/effort.js', 'gateway/http.js', 'effort/prompt.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js', 'public/app.js', 'effort/prompt.js'];
 

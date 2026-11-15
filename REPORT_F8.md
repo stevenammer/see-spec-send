@@ -1,0 +1,13 @@
+# F8: source-linked organizational investigation
+
+The Investigate screen lets an enabled workspace person select work items, a UTC range, a question, objectives and constraints. It prepares a bounded evidence packet for a human to review and copy into an AI they are authorized to use. There is no vendor call, automatic brief, hidden optimization objective or new employment authority. Choosing a built-in model flow remains an owner preference, not an implicit policy decision.
+
+Each source carries its original work item, exact body/version identity, event-chain identity, author, time, claim caveat and work-record link. Source selection is explicit and access is checked again for every request. The packet explains unknown department coverage, silent workers, missing metrics, selection bias, repeated reports and other missingness. Private mentoring and private evidence are excluded even when a particular evidence receipt was shared with the viewer. Erased source text stays excluded. Frozen report bodies, artifact binaries and external systems are explicitly outside this packet, with source pointers retained for authorized human review.
+
+The human can paste an AI's structured answer back. The app checks the original criteria, source snapshot and citation membership, requires alternatives, uncertainty, missingness, tradeoffs and next investigation, and rejects a model claiming verified status. Findings remain unverified model text. This checks neither their truth nor whether citations actually support an interpretation. An English tripwire refuses explicit motive/personnel requests and model verdicts; it is not a semantic guarantee about arbitrary prose. Human review remains necessary, and no downstream decision or personnel action exists in this flow.
+
+Corrections are new attributed discussion on the cited work posts, followed by a fresh package. Original versions and prior decisions remain intact. Prepared packets and pasted answers are held in the browser flow, not a new private analysis database or automatic reporting service. A changed source snapshot requires a fresh packet before answer review.
+
+## Verification
+
+Five targeted source/contract/HTTP cases passed, including session/CSRF enforcement, private-data exclusion, disabled-person refusal, stale-snapshot refusal, fake citations and motive requests. The full real Chrome journey passed at phone width, including two-workstream packaging, private and erased data exclusion, inert hostile answer text and fake-citation refusal. Seven focused mutations failed on intended behavioral assertions. Final full-suite and standard mutation release gates remain pending.

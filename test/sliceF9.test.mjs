@@ -1,0 +1,84 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { Store } from '../core/store.js';
+import { specPage } from '../app/pages-spec.js';
+import { effortPrompt } from '../effort/prompt.js';
+import { EffortWorker } from '../app/effort.js';
+import { EffortGateway, effortAllowance } from '../gateway/effort.js';
+import { Ledger, fixturePolicy } from '../gateway/ledger.js';
+import { fixtureProvider } from '../gateway/fixture.js';
+import { requestSpecDraft } from '../effort/spec.js';
+const now = Date.parse('2026-11-15T10:00:00.000Z'), clock = () => now;
+function setup(t) {
+ const store = new Store(); t.after(() => store.close()); store.registerPerson('op'); store.registerPerson('peer');
+ let seq = 0;
+ const put = event => store.append('i', { ...event, at: new Date(now).toISOString() }, { idem: `f9-${++seq}` });
+ put({ type: 'posted', actor: 'op', original: 'The original handoff issue.', rules: 2 });
+ const ledger = new Ledger(store, { clock }); ledger.configure(fixturePolicy());
+ return { store, ledger, put };
+}
+test('F9 SPEC Include appends to requirements and preserves the existing checks and exclusions', t => {
+ const { store, put } = setup(t), see = store.read('i').context.seeHash;
+ put({ type: 'specced', actor: 'op', see_hash: see, must: ['Keep the account note.', 'Show the transfer history.'],
+   how_we_know: ['The next agent can find both.'], out_of_scope: ['No production changes.'] });
+ const hash = store.read('i').context.specHash;
+ put({ type: 'commented', actor: 'peer', kind: 'comment', anchor_kind: 'spec', anchor_hash: hash, comment: 'Also preserve the callback number.' });
+ const html = specPage({ id: 'i', ...store.read('i') }, store.events('i'), 'op');
+ const form = html.match(/<form data-include="spec">[\s\S]*?<\/form>/)[0];
+ assert.match(form, /name="must"[^>]*>Keep the account note\.\nShow the transfer history\.\nAlso preserve the callback number\./);
+ assert.match(form, /name="how_we_know"[^>]*>The next agent can find both\./);
+ assert.match(form, /name="out_of_scope"[^>]*>No production changes\./);
+ assert.doesNotMatch(specPage({ id: 'i', ...store.read('i') }, store.events('i'), 'peer'), /data-include="spec"/);
+});
+test('F9 Effort keeps the current version and exact triggering comment outside the bounded recent thread', () => {
+ const events = [{ type: 'posted', body_hash: 'first', original: 'Old idea.' }, { type: 'revised', body_hash: 'current', text: 'Current curated intent: synthetic notes only.' }];
+ const trigger = { type: 'commented', actor: 'peer', body_hash: 'trigger', comment: '@effort Please explain this particular uncertainty.' };
+ events.push(trigger, ...Array.from({ length: 60 }, (_, n) => ({ type: 'commented', actor: 'peer', body_hash: `later${n}`, comment: `${n} ${'Later discussion '.repeat(80)}` })));
+ const packet = effortPrompt('Old idea.', events, { anchorKind: 'see', anchorHash: 'current', trigger });
+ const input = JSON.parse(packet.input);
+ assert.equal(input.current.text, 'Current curated intent: synthetic notes only.');
+ assert.equal(input.current.hash, 'current'); assert.equal(input.triggering_comment.hash, 'trigger');
+ assert.equal(input.triggering_comment.text, trigger.comment); assert.ok(input.omitted_comments > 0);
+ assert.ok(Buffer.byteLength(packet.input) <= 6000);
+ const spec = { type: 'specced', body_hash: 'spec', must: ['Keep a synthetic note.'], how_we_know: ['A user finds it.'], out_of_scope: [] };
+ const specInput = JSON.parse(effortPrompt('Old idea.', [...events, spec], { anchorKind: 'spec', anchorHash: 'spec', trigger }).input);
+ assert.equal(specInput.current.kind, 'spec'); assert.match(specInput.current.text, /Keep a synthetic note/);
+ const huge = effortPrompt('😀'.repeat(2000), [{ type: 'posted', original: '😀'.repeat(4000), body_hash: 'large' }], { trigger: { ...trigger, comment: '😀'.repeat(4000) } });
+ assert.ok(Buffer.byteLength(huge.input) <= 6000); assert.ok(JSON.parse(huge.input).current.omitted_characters > 0);
+ assert.ok(JSON.parse(huge.input).triggering_comment.omitted_characters > 0);
+});
+test('F9 actual Effort worker supplies the tagged current SPEC and its triggering comment to the provider', async t => {
+ const { store, ledger, put } = setup(t), see = store.read('i').context.seeHash;
+ const requests = []; const gateway = new EffortGateway(ledger, async input => { requests.push(JSON.parse(input.input)); return fixtureProvider(input); }, { clock });
+ const worker = new EffortWorker(store, gateway, { clock }); await worker.tick();
+ put({ type: 'specced', actor: 'op', see_hash: see, must: ['Keep the new callback note.'], how_we_know: ['It survives a transfer.'], out_of_scope: [] });
+ const hash = store.read('i').context.specHash; await worker.tick();
+ assert.match(requests.at(-1).current.text, /new callback note/);
+ put({ type: 'commented', actor: 'peer', kind: 'comment', anchor_kind: 'spec', anchor_hash: hash, comment: '@effort What evidence is still missing?' });
+ const trigger = store.events('i').at(-1).body_hash;
+ assert.equal(await worker.tick(), true);
+ assert.equal(requests.at(-1).triggering_comment.hash, trigger); assert.equal(requests.at(-1).current.hash, hash);
+ assert.equal(store.events('i').at(-1).parent, trigger);
+});
+test('F9 remaining allowances distinguish queued mention requests, draft calls and automatic calls, with held budget included', async t => {
+ const { store, ledger, put } = setup(t), see = store.read('i').context.seeHash;
+ const worker = new EffortWorker(store, new EffortGateway(ledger, fixtureProvider, { clock }), { clock });
+ let allowance = effortAllowance(store, 'op', 'i', clock);
+ assert.equal(allowance.mention_requests_person, 10); assert.equal(allowance.automatic_person, 50);
+ await worker.tick(); requestSpecDraft(store, 'op', 'i', see, clock); await worker.tick();
+ allowance = effortAllowance(store, 'op', 'i', clock);
+ assert.equal(allowance.automatic_person, 49); assert.equal(allowance.automatic_item, 1);
+ assert.equal(allowance.on_demand_person, 9); assert.equal(allowance.on_demand_item, 29);
+ assert.equal(allowance.mention_requests_person, 10, 'a draft consumes a model call, not a mention request');
+ put({ type: 'commented', actor: 'op', kind: 'comment', anchor_kind: 'see', anchor_hash: see, comment: '@effort Please clarify the missing baseline.' });
+ allowance = effortAllowance(store, 'op', 'i', clock);
+ assert.equal(allowance.mention_requests_person, 9); assert.equal(allowance.on_demand_person, 9, 'queued work has not reserved a call yet');
+ const failed = new EffortWorker(store, new EffortGateway(ledger, async () => { throw Error('provider unavailable'); }, { clock }), { clock });
+ await failed.tick(); allowance = effortAllowance(store, 'op', 'i', clock);
+ assert.equal(allowance.on_demand_person, 8); assert.ok(allowance.person_micros < 100000);
+ const charged = ledger.effortReceipts().reduce((sum, row) => sum + row.charged_micros, 0);
+ assert.equal(allowance.person_micros, 100000 - charged);
+ assert.equal(allowance.global_micros, ledger.policy().global_micros - charged);
+ assert.equal(effortAllowance(store, 'op', 'i', () => now + 86400000).on_demand_person, 10);
+ ledger.setPolicy({ ...ledger.policy(), enabled: false }); assert.equal(effortAllowance(store, 'op', 'i', clock).enabled, false);
+});

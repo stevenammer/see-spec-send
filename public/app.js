@@ -27,6 +27,22 @@ function showError(form, message) {
   box.textContent = message;
 }
 
+document.addEventListener('click', event => {
+  const button = event.target.closest?.('[data-spec-draft]');
+  if (!button) return;
+  const form = document.querySelector('form[data-event="specced"]');
+  if (!form) return;
+  try {
+    const draft = JSON.parse(button.dataset.specDraft);
+    for (const key of ['must', 'how_we_know', 'out_of_scope', 'assumptions', 'open_questions']) {
+      if (!Array.isArray(draft[key]) || !draft[key].every(line => typeof line === 'string')) throw Error('Invalid draft');
+      form.elements[key].value = draft[key].join('\n');
+    }
+    form.dataset.draftSource = button.dataset.source;
+    form.scrollIntoView({ block: 'center' }); form.elements.must.focus();
+  } catch { showError(form, 'This draft could not be read. You can write the spec yourself.'); }
+});
+
 document.addEventListener('submit', async event => {
   const form = event.target;
   if (!form.matches('form') || form.hasAttribute('data-quest-form')) return;
@@ -54,6 +70,8 @@ document.addEventListener('submit', async event => {
       if (input.packet_hash) Object.assign(approval, { packet_hash: input.packet_hash, reason: input.reason });
       else approval.expected_seq = Number(input.expected_seq);
       await post(`/api/items/${id}/events`, approval);
+    } else if (form.dataset.specPrepare) {
+      await post(`/api/items/${id}/spec-draft`, { see_hash: input.see_hash });
     } else if (form.dataset.research) {
       await post(`/api/items/${id}/research`, {});
     } else if (form.dataset.send) {
@@ -81,7 +99,8 @@ document.addEventListener('submit', async event => {
         await post(`/api/items/${id}/events`, { type: 'specced', see_hash: input.see_hash, base_spec_hash: input.base_spec_hash,
           must: String(input.must).split('\n').filter(Boolean), how_we_know: String(input.how_we_know).split('\n').filter(Boolean),
           out_of_scope: String(input.out_of_scope).split('\n').filter(Boolean),
-          ...(scopeInput && Object.hasOwn(scopeInput, 'scope_data_sources') ? { scope: scopeValue(scopeInput) } : {}), credits: [{ comment: input.comment, mode }] });
+          ...(scopeInput && Object.hasOwn(scopeInput, 'scope_data_sources') ? { scope: scopeValue(scopeInput) } : {}),
+          ...Object.fromEntries(['assumptions', 'open_questions'].filter(key => scopeInput && Object.hasOwn(scopeInput, key)).map(key => [key, String(scopeInput[key]).split('\n').filter(Boolean)])), credits: [{ comment: input.comment, mode }] });
       } else await post(`/api/items/${id}/events`, { type: 'revised', text: input.text,
         base_hash: form.closest('main').querySelector('form[data-event="revised"] input[name="base_hash"]').value,
         credits: [{ comment: input.comment, mode }] });
@@ -94,9 +113,10 @@ document.addEventListener('submit', async event => {
       }
       if (data.type === 'checked_in' && Object.hasOwn(data, 'consent')) data.consent = data.consent === 'true';
       if (data.type === 'specced') {
+        if (form.dataset.draftSource) data.credits = [{ comment: form.dataset.draftSource, mode: 'paraphrased' }];
         if (Object.hasOwn(input, 'scope_data_sources') || Object.hasOwn(input, 'scope_audiences')) data.scope = scopeValue(input);
         delete data.scope_data_sources; delete data.scope_audiences;
-        for (const key of ['must', 'how_we_know', 'out_of_scope']) {
+        for (const key of ['must', 'how_we_know', 'out_of_scope', ...['assumptions', 'open_questions'].filter(key => Object.hasOwn(input, key))]) {
           data[key] = String(data[key] ?? '').split('\n').filter(Boolean);
         }
       }

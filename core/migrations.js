@@ -15,6 +15,7 @@ export const MIGRATIONS = Object.freeze([
   { name: 'F3 accountable decisions and research packet', up: store => store.rebuild() },
   { name: 'F4 historical fork lineage', up: store => store.migrateF4() },
   { name: 'F5 workspace search and contribution memory', up: store => store.migrateF5() },
+  { name: 'F6 participant-only opt-in mentoring', up: store => store.migrateF6() },
 ]);
 export const SCHEMA_VERSION = MIGRATIONS.length;
 

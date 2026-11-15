@@ -8,6 +8,7 @@ import { invalid, refused } from './errors.js';
 import { appendAudit } from './audit.js';
 import { emptyScope, validScope, withinScope } from './scope.js';
 import { initializeMemory, syncMemory, rebuildMemory, verifyMemory, searchMemory, contributionMemory } from './memory.js';
+import { initializeMentoring } from './mentoring.js';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 // Fixed page size for the feed and the item API. There is no setting for it.
@@ -52,7 +53,7 @@ function redactBody(type, body) {
   const structural = ['verdict', 'quorum', 'cap_usd', 'approval', 'spec_hash',
     'artifact_hash', 'usd', 'steward', 'body_hash', 'redacted_hash', 'delivered_by',
     'anchor_kind', 'anchor_hash', 'parent', 'kind', 'base_hash', 'rules', 'source_label', 'honesty_label',
-    'see_hash', 'spec_hash', 'base_spec_hash', 'packet_hash', 'approval', 'iteration', 'job', 'receipt', 'model', 'mode', 'credits', 'questMemo', 'consent', 'absent', 'ground', 'max_iterations', 'window_minutes', 'restricted_evidence', 'pivot_note', 'from', 'scope', 'person', 'source'];
+    'see_hash', 'spec_hash', 'base_spec_hash', 'packet_hash', 'approval', 'iteration', 'job', 'receipt', 'model', 'mode', 'credits', 'questMemo', 'consent', 'absent', 'ground', 'max_iterations', 'window_minutes', 'restricted_evidence', 'pivot_note', 'from', 'scope', 'person', 'source', 'seed_policy'];
   const textFields = ['problem', 'looked', 'found', 'must', 'how_we_know', 'out_of_scope',
     'note', 'reason', 'comment', 'original', 'text', 'assumptions', 'open_questions', 'instruction'];
   // Preserve only known machine fields; unknown metadata may contain personal writing.
@@ -72,6 +73,7 @@ function redactBody(type, body) {
 }
 
 export class Store {
+  migrateF6() { initializeMentoring(this); }
   migrateF5() { initializeMemory(this); }
   search(person, text, options) { return searchMemory(this, person, text, options); }
   contributions(viewer, subject) { return contributionMemory(this, viewer, subject); }
@@ -82,7 +84,7 @@ export class Store {
     this.rebuildLineage();
   }
 
-  forkPoint(item, selection, sequence) {
+  forkPoint(item, selection, sequence, { extended = false } = {}) {
     const events = this.events(item), rows = this.eventRows(item);
     const index = selection ? events.findIndex(event => event.body_hash === selection.hash) : (sequence ?? events.length) - 1;
     const selected = events[index], row = rows[index];
@@ -93,7 +95,8 @@ export class Store {
     const original = history.filter(event => event.type === 'revised').at(-1)?.text ?? first?.original ?? first?.problem;
     const spec = history.filter(event => event.type === 'specced').at(-1);
     const seed_spec = spec ? { must: spec.must, how_we_know: spec.how_we_know, out_of_scope: spec.out_of_scope,
-      ...(spec.scope ? { scope: spec.scope } : {}) } : undefined;
+      ...(spec.scope ? { scope: spec.scope } : {}),
+      ...(extended ? Object.fromEntries(['assumptions', 'open_questions'].filter(key => spec[key] !== undefined).map(key => [key, spec[key]])) : {}) } : undefined;
     return { original, ...(seed_spec ? { seed_spec } : {}), parent: { item, seq: row.seq, hash: row.hash } };
   }
 
@@ -410,8 +413,8 @@ export class Store {
         if (!selected || !kinds[event.from?.kind]?.includes(selected.type) || selected.body_hash !== event.from.hash)
           throw refused('fork selection does not match its parent event');
       }
-      if (event.from !== undefined || event.seed_spec !== undefined) {
-        const point = this.forkPoint(parent.item, event.from, parent.seq);
+      if (event.from !== undefined || event.seed_spec !== undefined || event.seed_policy === 2) {
+        const point = this.forkPoint(parent.item, event.from, parent.seq, { extended: event.seed_policy === 2 });
         // Imported fork copies are historical records in their own chains. A
         // later parent erasure cannot recover or re-hash the original source.
         const redactedParent = importing && this.eventRows(parent.item).slice(0, parent.seq)

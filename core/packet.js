@@ -23,7 +23,10 @@ export function buildPacket({ original, see, spec, credits = [], comments = [], 
     researched: researched || Object.fromEntries(RESEARCH_SOURCES.map(source => [source, { status: 'not connected', finding: 'nothing checked' }])),
     estimate: estimate || 'No estimate',
     lineage,
-    worstCaseSpendMicros: Number(gatewayPolicy.worstCaseSpendMicros || 0),
+    worstCaseSpendMicros: Number.isSafeInteger(gatewayPolicy.worstCaseSpendMicros) && gatewayPolicy.worstCaseSpendMicros >= 0
+      ? gatewayPolicy.worstCaseSpendMicros : null,
+    spendEstimateStatus: Number.isSafeInteger(gatewayPolicy.worstCaseSpendMicros) && gatewayPolicy.worstCaseSpendMicros >= 0
+      ? 'operator supplied; not independently verified' : 'unknown; no priced build plan supplied',
     sandboxLimits,
     doNothing: 'Do nothing / use what we have',
     specHash: spec.hash,

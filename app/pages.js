@@ -1,7 +1,9 @@
+import { renderEffortStatus } from './pages-effort.js';
 import { postedQuestMemo } from '../public/vision-quest.js';
 import { renderThread } from './pages-thread.js';
 import { lineDiff } from '../core/diff.js';
 import { EFFORT_LIMITS } from '../gateway/effort.js';
+import { parseSpecDraft, SPEC_DRAFT_PREFIX } from '../effort/spec.js';
 import { NOT_BUILT_LABEL } from '../core/machine.js';
 const escape = value =>
   String(value ?? '').replace(
@@ -27,8 +29,13 @@ const stages = {
   SHELVED: 'Shelved',
 };
 const shell = (title, content) =>
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See / Spec / Send</a> <a href="/search">Search</a></header><main>${content}</main><script src="/assets/app.js" defer></script></body></html>`;
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See / Spec / Send</a> <a href="/search">Search</a> <a href="/intelligence">Investigate</a> <a href="/mentoring">Mentoring</a></header><main>${content}</main><script src="/assets/app.js" defer></script></body></html>`;
 const progress = item => `${item.helpers} of ${item.quorum} people have said it helps`;
+
+export function renderEffortAllowance(allowance) {
+  const dollars = micros => `$${(micros / 1_000_000).toFixed(4)}`;
+  return allowance ? `<section><h2>Effort allowance remaining</h2><p>UTC day ${escape(allowance.day)}. ${allowance.enabled ? 'AI spending enabled.' : 'AI spending disabled or stopped.'}</p><p>You can request ${escape(allowance.mention_requests_person)} more mention replies; this item can accept ${escape(allowance.mention_requests_item)} more. Model calls for mentions and SPEC drafts: ${escape(allowance.on_demand_person)} remaining for you, ${escape(allowance.on_demand_item)} for this item. Automatic first replies: ${escape(allowance.automatic_person)} remaining for you, ${escape(allowance.automatic_item)} for this item.</p><p>Metered budget headroom, including charged holds: ${dollars(allowance.person_micros)} for your Effort calls today, ${dollars(allowance.day_micros)} shared today, ${dollars(allowance.global_micros)} shared overall. Queued work is not reserved yet. Request size, other queued calls, provider availability and money caps can still prevent a reply.</p></section>` : `<p>Effort daily limits: ${EFFORT_LIMITS.calls_per_person_day} mention replies per person, ${EFFORT_LIMITS.calls_per_item_day} per item. Startup replies have a separate limit of ${EFFORT_LIMITS.automatic_calls_per_person_day} per person, ${EFFORT_LIMITS.automatic_calls_per_item_day} per item. Remaining allowances are unavailable in this view. All replies still stop at the shared spend caps.</p>`;
+}
 
 export function signInPage({ oidc = false } = {}) {
   return shell(
@@ -62,8 +69,8 @@ export function feedPage(items, next = null) {
       .join('') || '<li>No problems posted yet.</li>';
   return shell(
     'The work',
-    '<div class="top"><h1>The work</h1><div><a class="button" href="/items/new">Post a problem</a> ' +
-      `<a href="/quest">Start a Vision Quest</a></div></div><ul class="feed">${cards}</ul>` +
+    '<div class="top"><h1>The work</h1><div><a class="button" href="/quest">Start a Vision Quest (recommended)</a> ' +
+      `<a class="button" href="/items/new">Post a problem directly</a></div></div><ul class="feed">${cards}</ul>` +
       (next ? `<p><a href="/?after=${encodeURIComponent(next)}">Next page</a></p>` : ''),
   );
 }
@@ -152,13 +159,25 @@ export function itemPage(item, events, person, leader) {
   let action = '';
   // A Vision Quest build proposal is only a first draft: the steward edits it and saves it by hand.
   const draftSpec = firstEvent?.seed_spec || (questDraft && !questDraft.stopped ? questDraft.spec : { must: [], how_we_know: [], out_of_scope: [] });
-  const fill = key => escape(draftSpec[key].join('\n'));
+  const fill = key => escape((draftSpec[key] || []).join('\n'));
   const specForm = `<form data-event="specced"><h2>Write the spec</h2>${rules2 ? `<input type="hidden" name="see_hash" value="${escape(context.seeHash)}">` : ''}` +
     `<label>Must do<textarea name="must" required>${fill('must')}</textarea></label>` +
     `<label>How we'll know<textarea name="how_we_know" required>${fill('how_we_know')}</textarea></label>` +
     `<label>Out of scope<textarea name="out_of_scope">${fill('out_of_scope')}</textarea></label>` +
-    `${rules2 ? scopeFields(draftSpec.scope) : ''}<button>SPEC IT!</button></form>`;
-  if ((item.state === 'CHECKED' || (rules2 && item.state === 'SEEN')) && context.steward === person) action = specForm;
+    `${rules2 ? `<label>Assumptions, one per line<textarea name="assumptions">${fill('assumptions')}</textarea></label><label>Open questions, one per line<textarea name="open_questions">${fill('open_questions')}</textarea></label>${scopeFields(draftSpec.scope)}` : ''}<button>SPEC IT!</button></form>`;
+  if ((item.state === 'CHECKED' || (rules2 && item.state === 'SEEN')) && context.steward === person) {
+    const draftComment = events.filter(event => event.actor === 'effort' && event.kind === 'agent'
+      && event.anchor_hash === context.seeHash && event.comment?.startsWith(SPEC_DRAFT_PREFIX)).at(-1);
+    let review = '';
+    if (draftComment) {
+      try {
+        const draft = parseSpecDraft(draftComment.comment.slice(SPEC_DRAFT_PREFIX.length));
+        review = `<button type="button" data-spec-draft="${escape(JSON.stringify(draft))}" data-source="${escape(draftComment.body_hash)}">Review AI draft in the spec form</button><p>The draft is a suggestion. Edit it before publishing. Research and costs may still be unknown.</p>`;
+      } catch { /* malformed provider output is not an actionable draft */ }
+    }
+    const request = rules2 ? `<form data-spec-prepare="true"><input type="hidden" name="see_hash" value="${escape(context.seeHash)}"><p>Ask Effort to draft from this current SEE and the available discussion. Draft requests share the mention allowance and shared spend caps. If no provider is running, the request stays queued. Refresh to read its status.</p><button>Draft SPEC for review</button></form>${review}` : '';
+    action = request + specForm;
+  }
   if (item.state === 'SUBMITTED') {
     const packetBody = item.packet ? `<pre>${escape(item.packet)}</pre>` : '';
     action = `<section><h2>Decision packet</h2><p>Research: no source connected, nothing checked.</p>${packetBody}</section>` +
@@ -219,13 +238,8 @@ export function itemPage(item, events, person, leader) {
   const reassign = rules2 && leader && !['HELPS', 'SHELVED'].includes(item.state)
     ? `<form data-event="steward_changed"><h2>Reassign steward</h2><p>Only after the current steward records consent, or has made no event anywhere for 14 days.</p><label>New steward (person ID)<input name="steward" required maxlength="64"></label><label>Note, at least 12 characters<input name="reason" required minlength="12" maxlength="2000"></label><button>Reassign steward</button></form>` : '';
   const checkin = `<form data-event="checked_in"><h2>Check-in</h2><label>What changed?<input name="note" required maxlength="2000"></label>${rules2 && context.steward === person ? '<label><input type="checkbox" name="consent" value="true"> I consent to a leader assigning a new steward.</label>' : ''}<button>Post check-in</button></form>`;
-  const effortStatus = (item.effort || []).map(job => {
-    const status = job.state === 'queued' || job.state === 'running' ? 'thinking'
-      : job.state === 'blocked' || job.state === 'failed' ? 'unavailable, retrying'
-        : job.state === 'done' ? 'answered' : job.state;
-    return `<p>Effort: ${escape(job.kind)} is ${escape(status)}${job.last_error ? ` (${escape(job.last_error)})` : ''}.</p>`;
-  }).join('') || '<p>Effort is not turned on on this server.</p>';
-  const effortAllowance = `<p>Effort daily limits: ${EFFORT_LIMITS.calls_per_person_day} mention replies per person, ${EFFORT_LIMITS.calls_per_item_day} per item. Startup replies have a separate limit of ${EFFORT_LIMITS.automatic_calls_per_person_day} per person, ${EFFORT_LIMITS.automatic_calls_per_item_day} per item. These are limits, not remaining balances. All replies still stop at the shared spend caps.</p>`;
+  const effortStatus = renderEffortStatus(item.effort);
+  const effortAllowance = renderEffortAllowance(item.effortAllowance);
   const instructions = events.filter(event => event.type === 'steered' && event.approval === context.approval)
     .map(event => `<li>${escape(event.instruction)}${event.source ? ` (from ${escape(event.source)})` : ''}</li>`).join('');
   const decision = context.decided ? `<section><h2>Leader decision</h2><p><strong>${escape(context.decided.disposition === 'not_built' ? NOT_BUILT_LABEL : context.decided.disposition)}</strong>, by ${escape(context.decided.actor)} on ${escape(context.decided.at)}.</p><p>${escape(context.decided.reason)}</p>${context.decided.restrictedEvidence ? `<p>${escape(context.decided.restrictedEvidence)}</p>` : ''}${context.decided.pivotNote ? `<p>What changed: ${escape(context.decided.pivotNote)}</p>` : ''}<p>Reviewed packet: ${escape(context.decided.packetHash)}. Reviewed spec: ${escape(context.decided.specHash)}.</p></section>` : '';

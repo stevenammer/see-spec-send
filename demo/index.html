@@ -17,8 +17,26 @@
   <noscript><p class="refused">This demo needs JavaScript and a static file server. It can't run from a file:// address.</p></noscript>
 </header>
 <main>
+  <section id="vision-conversation" aria-labelledby="h-conversation">
+    <h2 id="h-conversation">The current conversation journey</h2>
+    <p>Post a SEE, talk it through, include a comment as the original poster, write a SPEC, and SEND IT! A different leader decides. Forks need their own approval. Effort replies and the builder here are labeled fixtures, with no model, database, sign-in, or money movement.</p>
+    <label>Acting as<select name="vision-person"></select></label>
+    <p data-vision-status></p><p data-vision-result role="status" aria-live="polite"></p>
+    <form data-vision="post"><label>SEE in your own words<textarea name="original" required maxlength="500">Callers repeat the note after a transfer.</textarea></label><button>Post conversation SEE</button></form>
+    <form data-vision="comment"><label>Thread comment<textarea name="comment" required maxlength="500"></textarea></label><button>Comment on conversation</button></form>
+    <form data-vision="spec"><label>Draft SPEC, one must-do per line<textarea name="must" required maxlength="1000">Keep the note visible at transfer.</textarea></label><button>SPEC IT! (OP only)</button></form>
+    <button type="button" data-vision-send>SEND IT! (OP only)</button>
+    <form data-vision="approve"><label>Leader's reason<textarea name="reason" required minlength="12">A small independent trial is worth testing.</textarea></label><button>Approve conversation (independent leader)</button></form>
+    <button type="button" data-vision-deliver>Deliver fixture try</button>
+    <button type="button" data-vision-helps>Say this try helps</button>
+    <form data-vision="fork"><label>Why fork?<input name="reason" required value="Try a smaller version of this handoff."></label><button>Fork conversation</button></form>
+    <button type="button" data-vision-parent>Try reusing the parent's approval</button>
+    <button type="button" data-vision-reset>Reset conversation</button>
+    <h3>Conversation and version history</h3><ol data-vision-events></ol>
+    <h3>Frozen decision packet</h3><pre data-vision-packet></pre>
+  </section>
   <section aria-labelledby="h-tour">
-    <h2 id="h-tour">Show me the rule being enforced</h2>
+    <h2 id="h-tour">Earlier manual example: watch a refusal</h2>
     <p>One click plays the same sequence as the project's <a href="https://github.com/stevenammer/see-spec-send/blob/main/docs/WATCH_IT_REFUSE.md">watch it refuse</a> page. It starts a fresh item, so it clears what you've done.</p>
     <div class="row">
       <button type="button" id="tour-all">Show me the rule being enforced</button>

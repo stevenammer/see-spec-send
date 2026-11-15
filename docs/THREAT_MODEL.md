@@ -1,5 +1,15 @@
 # Threat model, slice 2
 
+## F7 and F8 drafting and organizational evidence (2026-11-15)
+
+The current steward may request a structured SPEC draft bound to the current SEE. The complete curated text is supplied; an oversized governing post fails visibly. Discussion and research stay labeled evidence. Drafting uses the existing gateway and spend caps, and only a matching draft job gets the larger output allowance. A changed SEE or steward prevents late draft publication. The model can append only a validated advisory comment; a person edits and publishes the SPEC separately.
+
+Organizational investigation uses an explicitly selected question, objectives, constraints, work items and UTC period. Every package and pasted-answer review rechecks the signed-in person's existing workspace read access. No per-item visibility tiers are claimed: all enabled workspace people can currently read work posts. Private mentoring and private evidence never enter the packet, including sponsor-shared evidence. Frozen report bodies and artifact binaries are excluded and disclosed as missing coverage. No model vendor is called by this flow; copying a packet into another AI is a separate human action.
+
+Answer review checks source snapshot, exact criteria and citation membership and requires alternatives, uncertainty and missingness. This cannot prove that a citation supports a claim or that a model's interpretation is accurate. Model text remains unverified, cannot create workflow events, and is rendered with text-only DOM operations. An English motive/personnel tripwire is a conservative additional check, not a semantic safety guarantee. There is no personnel scoring or action route. Corrections use new attributed work discussion and a fresh packet. Packages and answers are not persisted in a new analysis database.
+
+Proof: `test/sliceF7-spec.test.mjs`, `test/sliceF8-evidence.test.mjs`, `test/sliceF8-http.test.mjs`, and the real browser journey. No real hosted-model output or deployment is claimed.
+
 ## F3 decision and erasure boundaries (2026-11-14)
 
 Approve, return, and Not building bind the frozen spec and decision packet and require a written reason from an independent leader. Approval still requires a single-use password step-up. A browser cannot supply its own approval expiry: the server stamps the time window, and replay checks its duration. The worker checks the expiry before dispatch, during reconciliation, and before delivery. Historical decisions and their reviewed packets stay visible after a later revision or disposition. Decisions and original SEE records cannot be erased through product routes. Erasing another person's content requires a listed privacy/legal ground and a note, with an attributable tombstone.
@@ -53,7 +63,10 @@ peer is loopback. Any other peer's forwarded header is ignored. A process on the
 so the host itself is trusted. Not built: cutting off an oversized request body mid-stream (it is refused,
 but the connection is not dropped early).
 
-## Known gaps
+## Historical audit findings
+
+The B-list below records earlier audits, not a current claim that every listed gap remains open. Current behavior is described by the dated invariant sections and named tests. Rules-1 histories retain their original semantics; new conversation posts use rules 2. Identity-provider sign-in and PostgreSQL remain unshipped.
+
 
 - **B1:** The approval screen doesn't bind the displayed spec hash or sequence, so a spec can change immediately before approval.
 - **B2:** Generic event input accepts unbounded unknown fields and can make history display a member as another actor.
@@ -232,3 +245,9 @@ limits, recovery behavior and remaining external-provider work.
 `npm run test:artifact-origin` (set `PLAYWRIGHT_DIR`) delivers a hostile page through the real server and opens it in Chrome as a signed-in person. The page tries to read the parent DOM, the top DOM, the session cookie, local storage, the app API with credentials, a second origin by fetch and by image, top-level navigation, a popup, and a form post to the top page. All are blocked, the top page URL does not change, and a second local listener sees zero requests. Weakening the sandbox (adding `allow-same-origin`, dropping the CSP `sandbox`) makes the test fail on the parent-DOM read. The artifact is still served from the app origin, protected by the opaque sandbox origin rather than a separate host. A separate artifact host remains advisable before real deployment, and this test is not a substitute for one.
 
 - **B22 (partly closed):** Artifacts are served only to a sandboxed iframe (`Sec-Fetch-Dest: iframe`). The optional second-hostname mode (`--artifact-origin`) is not built: a second host can't carry the session cookie, so it needs a per-view capability token, which isn't designed yet. Browser proof (`test:artifact-origin` in real Chrome) is still owed.
+
+## F6 private mentoring boundary
+
+Mentoring tables are separate from work events and derived search/contribution tables. Both participants explicitly opt in; only the invited mentor accepts. Reads bind the participant identities, with no leader override. PRIVATE evidence is owner-only. Mentor sharing binds the specific mentor, and sponsor sharing binds one explicitly named person. Revocation removes that person's future application access. Opting out closes relationships and revokes owned shares. Neither revocation nor source erasure promises to undo copies already read or older backups. A host administrator who can read the SQLite database remains trusted.
+
+The local preview is a separate fixture database, bound to loopback. Its account access file and data directory are private. It never enables a hosted provider. Current public-demo labels distinguish real machine rules from fixture AI/build output.

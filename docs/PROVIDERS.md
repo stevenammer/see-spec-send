@@ -17,29 +17,31 @@ invalid, the reservation remains held. Prices are estimates, not invoices.
 ```json
 {
   "providers": [{
-    "name": "openai",
+    "name": "local",
     "kind": "openai",
     "enabled": true,
-    "url": "https://api.openai.com/v1/chat/completions",
-    "hosts": ["api.openai.com"],
-    "apiKeyEnv": "OPENAI_API_KEY",
-    "model": "your-reviewed-model",
+    "url": "http://127.0.0.1:18084/v1/chat/completions",
+    "hosts": ["127.0.0.1"],
+    "allowPrivate": true,
+    "model": "your-installed-local-model",
     "price": { "inputMicrosPerMillion": 0, "outputMicrosPerMillion": 0 }
   }],
-  "defaults": { "your-org-id": "openai" }
+  "defaults": { "your-org-id": "local" }
 }
 ```
 
-Create the JSON entry in a protected file, then add it. This deliberately keeps
+This example uses a local server and an explicitly zero-priced local model. Remote
+providers require reviewed prices; a free tier is not assumed. Create the JSON
+entry in a protected file, then add it. This deliberately keeps
 the secret out of shell history too.
 
 ```sh
-node cli.js provider add --file ./openai.provider.json --default-org your-org-id
-node cli.js provider default --org your-org-id --name openai
+node cli.js provider add --file ./local.provider.json --default-org your-org-id
+node cli.js provider default --org your-org-id --name local
 node cli.js provider list
-node cli.js provider test --name openai --max-output 1
-node cli.js provider disable --name openai
-node cli.js provider remove --name openai
+node cli.js provider test --name local --max-output 1
+node cli.js provider disable --name local
+node cli.js provider remove --name local
 node cli.js gateway serve-provider --org your-org-id --port 8081
 ```
 
@@ -55,23 +57,29 @@ same default. With no enabled default, the builder keeps using the local fixture
 so a new installation cannot spend by accident. The gateway host, not the
 container, resolves the provider URL and credential.
 
-`gateway serve-provider` is built but not usable as a production path. There is
-no CLI command to configure an operator policy: `fixture-enable` is the only
-policy-setting command. The worker ignores providers and always uses the fake
-adapter, so an administrator cannot start a provider-backed builder through the
-product. Slow or failed calls can also leave holds that permanently exhaust the
-fixed concurrency limit. Do not use this route for an organization provider.
+The container worker can use a configured provider through a private Unix-socket
+gateway. Initialize the persisted policy with `gateway fixture-enable`, then use
+`gateway policy set --file policy.json` for a reviewed operator policy. The word
+fixture in the initialization command does not choose a provider or authorize paid
+calls. The worker uses its fake builder until explicitly started with
+`--builder container --gateway-socket PATH`. See [ADMIN.md](ADMIN.md) for the
+complete process commands and Docker boundary. Slow or failed calls retain
+charged holds; `gateway holds list` and `holds release` support explicit operator
+reconciliation with a reason. They never automatically refund unknown work.
 
 ## Admin live-smoke checklist
 
-This is the only intentional live-provider path. It can charge the organization.
+Configured provider calls can charge the organization. Configuration itself makes no call; the commands below must use the reviewed provider, limits and data permissions.
 
 1. Put the key in its protected environment variable or owner-readable key file.
 2. Add the reviewed provider entry and set its organization default.
-3. Stop here. The required operator-policy command and provider-backed worker do not exist yet.
+3. Initialize the gateway policy, then set reviewed caps and timeouts with `gateway policy set --file policy.json`.
+4. A deliberate `provider test --name NAME --max-output 1` makes one direct diagnostic call. It prints a price estimate; it is not a production ledger reservation.
+5. Start the private-socket gateway and container worker as described in ADMIN.md. Start `serve --enable-effort --effort-provider NAME` only when that provider may receive the work discussion.
 
-The builder sends a fixed system instruction plus exactly `must`, `how_we_know`,
-and `out_of_scope`. It does not send comments, people, browser data, or secrets.
+The builder sends a fixed system instruction plus `must`, `how_we_know`,
+`out_of_scope`, OP-adopted instruction strings and the current approved source/audience
+scope. It does not send raw discussion, commenter identities, browser data or secrets.
 It accepts one HTML document only. Markdown fences and surrounding commentary
 are stripped deterministically. A failed validation gets one separately metered
 repair request, then the run fails without another retry.
@@ -115,18 +123,22 @@ query is Azure's single non-secret `api-version` parameter. Each
 request checks the configured host allowlist, resolves it, and refuses private,
 link-local, loopback, and metadata-style addresses unless `allowPrivate` is
 true. Redirects are refused. Requests and responses are capped and timed out.
-Errors attempt to redact credential-shaped text, but the current redactor leaves a
-token following `Bearer` visible. Do not treat command output or errors as secret-safe.
+Errors redact keyed credentials and Bearer/Basic token shapes. This is a bounded
+redactor, not permission to put arbitrary secrets into prompts or command output.
 
 Model output is untrusted text. It is labeled as model output and can never
 approve work, alter the ledger, change a spec, or act as instructions.
 
-Vision Quest's model routes do not use this provider boundary. They call a provider
-directly, skip the gateway and ledger, accept caller-supplied `approved: true`, and
-are not behind an explicit serve-time opt-in. They are built but not usable yet;
-use no-model Quest instead.
+Vision Quest model routes are off unless `serve` includes `--enable-quest-model`.
+The configured service uses `QuestGateway`, shared ledger caps, per-person limits
+and the kill latch. This metered service is the HTTP path; the lower-level
+`draftQuestModel` helper is not exposed as an unmetered route. Effort uses its own
+metered service with first-reply and mention allowances; structured SPEC drafts
+remain suggestions for the steward to edit and publish.
+
+Organizational investigation currently prepares a reviewed packet for a person's
+chosen AI and checks a pasted answer. It does not call a configured provider.
 
 The offline tests use only loopback mock servers and local commands. They prove
 wire parsing and the controls described here. They do not make live vendor calls,
-verify a vendor's current API behavior, prove DNS-rebinding resistance after the
-initial lookup, or certify a provider bill.
+verify a vendor's current API behavior, certify a production network deployment, or certify a provider bill.

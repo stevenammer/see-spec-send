@@ -16,6 +16,12 @@ import { buildPacket } from '../core/packet.js';
 import { specPage } from './pages-spec.js';
 import { researchRecord } from '../research/connectors.js';
 import { workspaceConnectors } from '../research/workspace.js';
+import { requestSpecDraft } from '../effort/spec.js';
+import { evidencePackage, readAnalysisAnswer } from '../intelligence/evidence.js';
+import { intelligencePage } from './pages-intelligence.js';
+import { effortAllowance } from '../gateway/effort.js';
+import { Mentoring } from '../core/mentoring.js';
+import { mentoringHome, mentoringRequest, mentoringEvidence } from './pages-mentoring.js';
 import { emptyScope, validScope } from '../core/scope.js';
 import { searchPage, contributionsPage, recordPage } from './pages-memory.js';
 
@@ -197,6 +203,7 @@ const validEvent = input => {
 
 export function createHandler({ auth, store, integrations, questModel = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, trustedProxy = false }) {
   integrations ||= new Integrations(store, { origin });
+  const mentoring = new Mentoring(store, { clock });
   // Fixed one-minute windows per signed-in member. Memory holds one entry per member.
   const writes = new Map();
   const spend = (person, now) => {
@@ -243,6 +250,8 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       }
       if (req.method === 'GET' && url.pathname === '/assets/app.js')
         return staticFile(res, 'app.js', 'application/javascript; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/assets/mentoring.js') return staticFile(res, 'mentoring.js', 'application/javascript; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/assets/intelligence.js') return staticFile(res, 'intelligence.js', 'application/javascript; charset=utf-8');
       if (req.method === 'GET' && url.pathname === '/assets/app.css')
         return staticFile(res, 'app.css', 'text/css; charset=utf-8');
       if (req.method === 'GET' &&
@@ -346,6 +355,49 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (req.method === 'GET' && url.pathname === '/quest') {
         return page(res, questPage(session.person));
       }
+      if (req.method === 'GET' && url.pathname === '/intelligence') return page(res, intelligencePage());
+      if (req.method === 'POST' && url.pathname === '/api/intelligence/package')
+        return json(res, 200, evidencePackage(store, session.person, input, { clock }));
+      if (req.method === 'POST' && url.pathname === '/api/intelligence/review') {
+        if (!exactKeys(input, ['request', 'package_hash', 'answer']) || !hex(input.package_hash)) throw refused('analysis request required');
+        const packet = evidencePackage(store, session.person, input.request, { clock });
+        if (packet.hash !== input.package_hash) throw refused('sources changed; prepare a fresh package');
+        return json(res, 200, readAnalysisAnswer(packet, input.answer));
+      }
+      if (req.method === 'GET' && url.pathname === '/mentoring')
+        return page(res, mentoringHome(session.person, mentoring.opted(session.person), mentoring.directory(session.person), mentoring.list(session.person)));
+      const evidenceView = url.pathname.match(/^\/mentoring\/evidence\/([^/]+)$/);
+      if (req.method === 'GET' && evidenceView) {
+        const evidence = mentoring.evidence(session.person, evidenceView[1]);
+        return evidence ? page(res, mentoringEvidence(session.person, evidence)) : json(res, 404, { error: 'not found' });
+      }
+      const mentorView = url.pathname.match(/^\/mentoring\/([^/]+)$/);
+      if (req.method === 'GET' && mentorView) {
+        const request = mentoring.read(session.person, mentorView[1]);
+        return request ? page(res, mentoringRequest(session.person, request, mentoring.checkins(session.person, request.id), mentoring.evidenceList(session.person, request.id))) : json(res, 404, { error: 'not found' });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/mentoring/optin') {
+        if (!exactKeys(input, ['enabled']) || typeof input.enabled !== 'boolean') throw refused('explicit consent required');
+        mentoring.optIn(session.person, input.enabled); return json(res, 201, { enabled: input.enabled });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/mentoring/requests') {
+        if (!exactKeys(input, ['mentor', 'objective'])) throw refused('mentor and objective required');
+        return json(res, 201, { id: mentoring.request(session.person, input.mentor, input.objective) });
+      }
+      const mentorAction = url.pathname.match(/^\/api\/mentoring\/([^/]+)\/(decision|checkin|evidence)$/);
+      if (req.method === 'POST' && mentorAction) {
+        const [, id, action] = mentorAction;
+        if (action === 'decision' && exactKeys(input, ['action'])) { mentoring.decide(session.person, id, input.action); return json(res, 201, { updated: true }); }
+        if (action === 'checkin' && exactKeys(input, ['text'])) return json(res, 201, { id: mentoring.checkin(session.person, id, input.text) });
+        if (action === 'evidence' && exactKeys(input, ['text', 'scope', 'shared_with']))
+          return json(res, 201, { id: mentoring.addEvidence(session.person, id, input.text, { scope: input.scope, shared_with: input.shared_with ?? null }) });
+        throw refused('request refused');
+      }
+      const revokeEvidence = url.pathname.match(/^\/api\/mentoring\/evidence\/([^/]+)\/revoke$/);
+      if (req.method === 'POST' && revokeEvidence) {
+        if (!exactKeys(input, [])) throw refused('request refused');
+        mentoring.revoke(session.person, revokeEvidence[1]); return json(res, 201, { revoked: true });
+      }
       if (req.method === 'GET' && url.pathname === '/search') {
         const query = url.searchParams.get('q') || '';
         return page(res, searchPage(query, store.search(session.person, query)));
@@ -375,8 +427,9 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       const specView = url.pathname.match(/^\/items\/([^/]+)\/spec$/);
       if (req.method === 'GET' && specView) {
         const state = store.read(specView[1]);
-        return page(res, specPage({ id: specView[1], ...state,
-          workspaceResearch: store.db.prepare("SELECT enabled FROM research_config WHERE source='this_workspace'").get()?.enabled === 1 }, store.events(specView[1]), session.person));
+        return page(res, specPage({ id: specView[1], ...state, effortAllowance: effortAllowance(store, session.person, specView[1], clock),
+          workspaceResearch: store.db.prepare("SELECT enabled FROM research_config WHERE source='this_workspace'").get()?.enabled === 1,
+          effort: store.db.prepare("SELECT kind,state,last_error FROM effort_jobs WHERE item=? AND kind='spec_draft' ORDER BY created").all(specView[1]) }, store.events(specView[1]), session.person));
       }
       const view = url.pathname.match(/^\/items\/([^/]+)$/);
       if (req.method === 'GET' && view) {
@@ -391,6 +444,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
               ? store.artifact(view[1], state.context.sent?.packetHash || state.context.decided.packetHash) : null,
             decisionPackets: Object.fromEntries(events.filter(event => ['approved', 'returned', 'not_built'].includes(event.type) && event.packet_hash)
               .map(event => [event.packet_hash, store.artifact(view[1], event.packet_hash)])),
+            effortAllowance: effortAllowance(store, session.person, view[1], clock),
             effort: store.db.prepare('SELECT kind,state,last_error,requester,created FROM effort_jobs WHERE item=? ORDER BY created').all(view[1]) }, events, session.person, leader),
         );
       }
@@ -460,6 +514,11 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         return json(res, 201, store.append(research[1], { type: 'researched', actor: session.person, sources, at },
           { idem: req.headers['idempotency-key'] || randomUUID() }));
       }
+      const prepareSpec = url.pathname.match(/^\/api\/items\/([^/]+)\/spec-draft$/);
+      if (req.method === 'POST' && prepareSpec) {
+        if (!exactKeys(input, ['see_hash']) || !hex(input.see_hash)) throw refused('current SEE required');
+        return json(res, 202, requestSpecDraft(store, session.person, prepareSpec[1], input.see_hash, clock));
+      }
       const send = url.pathname.match(/^\/api\/items\/([^/]+)\/send$/);
       if (req.method === 'POST' && send) {
         if (!exactKeys(input, ['spec_hash', 'estimate']) || !hex(input.spec_hash)
@@ -495,8 +554,8 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           if (existing.reason !== input.reason || canonical(existing.from) !== canonical(input.from)) throw refused('fork request conflict');
           return json(res, 200, { id, ...store.read(id), idempotent: true });
         }
-        const point = store.forkPoint(fork[1], input.from);
-        const result = store.append(id, { type: 'forked', actor: session.person, ...point, rules: CURRENT_RULES, reason: input.reason,
+        const point = store.forkPoint(fork[1], input.from, undefined, { extended: true });
+        const result = store.append(id, { type: 'forked', actor: session.person, ...point, seed_policy: 2, rules: CURRENT_RULES, reason: input.reason,
           ...(input.from ? { from: input.from } : {}), at: new Date(clock()).toISOString() }, { idem: key });
         return json(res, 201, { id, ...result });
       }

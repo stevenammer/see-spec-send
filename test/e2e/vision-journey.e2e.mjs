@@ -179,8 +179,9 @@ async function main() {
     assert.ok(order.findIndex(line => line.includes(mention)) < order.findLastIndex(line => line.includes('Effort, AI')), "Effort's reply comes after the mention");
     const mentionThread = maya.locator('li').filter({ has: maya.locator('p', { hasText: mention }) }).first();
     assert.equal(await mentionThread.locator('li:has-text("Effort, AI")').count(), 1, 'the mention reply remains in its exact nested thread');
-    assert.match(await maya.locator('main').textContent(), /Effort daily limits: 10 mention replies per person, 30 per item/);
-    step('@effort mention got a nested labeled AI reply and honest quota limits');
+    assert.match(await maya.locator('main').textContent(), /You can request 9 more mention replies; this item can accept 29 more/);
+    assert.match(await maya.locator('main').textContent(), /Model calls for mentions and SPEC drafts: 9 remaining for you, 29 for this item/);
+    step('@effort mention got a nested labeled AI reply and actual remaining allowances');
 
     // 4. Only OP can include it.
     assert.equal(await maya.locator('form[data-include]').count(), 0, 'a member sees no Include control');
@@ -213,9 +214,18 @@ async function main() {
     assert.equal(await olive.locator('li:has(> p:has-text("Effort, AI")) form[data-include]').count(), 0, "Effort's own comments cannot be included as credit");
     step('SEE history shows credit: paraphrased and What changed');
 
-    // 5. SPEC IT! makes the spec post, where Effort comments first too.
+    // 5. Draft from the current curated SEE, then deliberately edit and publish.
+    assert.ok(await rawPost(maya, `/api/items/${itemId}/spec-draft`, { see_hash: await olive.locator('form[data-spec-prepare] [name=see_hash]').inputValue() }) >= 400);
+    await olive.getByRole('button', { name: 'Draft SPEC for review' }).click();
+    await eventually(olive, '[data-spec-draft]', 'reviewable structured SPEC draft');
+    await olive.getByRole('button', { name: 'Review AI draft in the spec form' }).click();
+    assert.match(await olive.locator('form[data-event=specced] [name=must]').inputValue(), /Fixture draft/);
+    assert.match(await olive.locator('form[data-event=specced] [name=assumptions]').inputValue(), /no model has investigated/);
+    assert.equal(await olive.getByRole('link', { name: 'Open the spec', exact: true }).count(), 0, 'reviewing the draft has not published a SPEC');
     await olive.locator('form[data-event=specced] [name=must]').fill('Pass the account number on transfer.\nShow it to the next agent.');
     await olive.locator('form[data-event=specced] [name=how_we_know]').fill('Callers stop repeating it.');
+    await olive.locator('form[data-event=specced] [name=assumptions]').fill('The transfer system can display a note.');
+    await olive.locator('form[data-event=specced] [name=open_questions]').fill('Who maintains the note after a transfer?');
     await olive.getByRole('button', { name: 'SPEC IT!' }).click();
     await olive.getByRole('link', { name: 'Open the spec' }).waitFor();
     await olive.goto(`${itemUrl}/spec`);
@@ -236,7 +246,11 @@ async function main() {
     const specInclude = olive.locator('li:has-text("Keep the caller name") form[data-include="spec"]');
     await specInclude.getByRole('button', { name: 'Include' }).click();
     await olive.getByRole('heading', { name: 'Spec v2' }).waitFor();
-    step('SPEC Include clicked and created a version-bound spec update');
+    assert.equal(await olive.locator('form[data-event=specced] [name=must]').inputValue(), 'Pass the account number on transfer.\nShow it to the next agent.\nKeep the caller name with the transfer.');
+    assert.equal(await olive.locator('form[data-event=specced] [name=how_we_know]').inputValue(), 'Callers stop repeating it.');
+    assert.equal(await olive.locator('form[data-event=specced] [name=assumptions]').inputValue(), 'The transfer system can display a note.');
+    assert.equal(await olive.locator('form[data-event=specced] [name=open_questions]').inputValue(), 'Who maintains the note after a transfer?');
+    step('SPEC Include clicked and created a version-bound spec update, preserving assumptions and open questions');
 
     // 6. SEND IT!
     await olive.getByRole('button', { name: 'SEND IT!' }).click();
@@ -390,7 +404,7 @@ async function main() {
     const jobLines = () => olive.locator('main > p:has-text("Effort:")').allInnerTexts();
     for (let tries = 0; ; tries += 1) {
       const lines = await jobLines();
-      if (lines.length >= 11 && lines.every(line => /is (answered|unavailable, retrying|done|failed|blocked)/.test(line))) break;
+      if (lines.length >= 11 && lines.every(line => /is (answered|unavailable, retries exhausted|done|failed|blocked)/.test(line))) break;
       assert.ok(tries < 120, `Effort jobs never finished: ${lines.join(' / ')}`);
       await new Promise(resolve => setTimeout(resolve, 700));
       await olive.reload();
@@ -606,6 +620,75 @@ async function main() {
     await ben.goto(`${origin}/search?q=quartz`);
     await ben.getByText('No matching records.', { exact: true }).waitFor();
     step('phone member found a source record, acknowledged its author, and erased text disappeared from search');
+
+    // Optional mentoring remains separate from work records, even for a leader.
+    for (const person of [olive, maya]) {
+      await person.goto(`${origin}/mentoring`);
+      await person.getByRole('button', { name: 'Opt in to mentoring', exact: true }).click();
+      await person.getByRole('button', { name: 'Opt out and close active mentoring' }).waitFor();
+    }
+    await olive.goto(`${origin}/mentoring`);
+    await olive.locator('[name=mentor]').selectOption('maya');
+    await olive.locator('[name=objective]').fill('Practice a clearer private handoff.');
+    await olive.getByRole('button', { name: 'Send mentoring request' }).click();
+    await olive.waitForURL(/\/mentoring\/[^/]+$/);
+    const mentoringUrl=olive.url();
+    await maya.goto(mentoringUrl);
+    await maya.getByRole('button', { name: 'Accept mentoring' }).click();
+    await maya.getByLabel('Private check-in').waitFor();
+    await olive.goto(mentoringUrl);
+    await olive.getByLabel('Private check-in').fill('hazelnut private mentoring reflection.');
+    await olive.getByRole('button', { name: 'Add private check-in' }).click();
+    await olive.getByText('hazelnut private mentoring reflection.', { exact: false }).waitFor();
+    assert.equal((await leader.goto(mentoringUrl)).status(),404,'leadership grants no private mentoring access');
+    await leader.goto(`${origin}/search?q=hazelnut`);
+    await leader.getByText('No matching records.', { exact: true }).waitFor();
+    await olive.goto(mentoringUrl);
+    await olive.locator('[name=text]').last().fill('One explicitly shared sponsor receipt.');
+    await olive.locator('[name=scope]').selectOption('SPONSOR_SHARED');
+    await olive.locator('[name=shared_with]').fill('leader');
+    const receipt=olive.waitForResponse(response=>response.url().endsWith('/evidence')&&response.request().method()==='POST');
+    await olive.getByRole('button', { name: 'Save evidence' }).click();
+    assert.equal((await receipt).status(),201);
+    const sharedLink=olive.getByRole('link',{name:'SPONSOR_SHARED evidence by olive',exact:true});
+    await sharedLink.waitFor();
+    const sharedId=(await sharedLink.getAttribute('href')).split('/').at(-1);
+    const evidenceUrl=`${origin}/mentoring/evidence/${sharedId}`;
+    assert.equal((await leader.goto(evidenceUrl)).status(),200);
+    await leader.getByText('One explicitly shared sponsor receipt.',{exact:true}).waitFor();
+    await olive.goto(evidenceUrl);
+    await olive.getByRole('button',{name:'Revoke sharing'}).click();
+    await olive.getByText(/Sharing revoked on/).waitFor();
+    assert.equal((await leader.goto(evidenceUrl)).status(),404,'revoked sponsor evidence is unavailable');
+    step('two people opted in; leader could not read private notes; explicit evidence share was revoked');
+
+    // A person selects evidence and human criteria; the app makes no model call.
+    await ben.goto(`${origin}/intelligence`);
+    await ben.locator('[name=question]').fill('What handoff friction should we investigate?');
+    await ben.locator('[name=objectives]').fill('Improve customer handoffs.');
+    await ben.locator('[name=constraints]').fill('Preserve employee privacy.\nUse synthetic data for experiments.');
+    await ben.locator('[name=items]').fill(`${itemId}\n${memoryId}`);
+    const timeValue = time => new Date(time).toISOString().slice(0,19);
+    await ben.locator('[name=from]').fill(timeValue(Date.now()-3600000));
+    await ben.locator('[name=to]').fill(timeValue(Date.now()-1000));
+    await ben.getByRole('button',{name:'Prepare evidence packet',exact:true}).click();
+    await ben.locator('[data-analysis-export]:not([hidden])').waitFor();
+    const analysisPacket = JSON.parse(await ben.locator('[data-analysis-prompt]').inputValue());
+    assert.equal(analysisPacket.coverage.items.length,2);
+    assert.doesNotMatch(JSON.stringify(analysisPacket),/hazelnut|quartz memory marker/);
+    const answerFixture = structuredClone(analysisPacket.answer_contract);
+    answerFixture.findings[0].claim='Synthetic answer fixture <img src=x onerror=alert(1)>.';
+    await ben.locator('[name=answer]').fill(JSON.stringify(answerFixture));
+    await ben.getByRole('button',{name:'Check citations and review answer',exact:true}).click();
+    await ben.locator('[data-analysis-answer]:not([hidden])').waitFor();
+    assert.match(await ben.locator('[data-analysis-answer]').innerText(),/Unverified model text/);
+    assert.equal(await ben.locator('[data-analysis-answer] img').count(),0);
+    assert.ok(await ben.locator('[data-analysis-answer] a[href*="/record/"]').count()>0);
+    answerFixture.findings[0].citations[0].hash='f'.repeat(64);
+    await ben.locator('[name=answer]').fill(JSON.stringify(answerFixture));
+    await ben.getByRole('button',{name:'Check citations and review answer',exact:true}).click();
+    await ben.locator('[data-analysis-review] [role=alert]').waitFor();
+    step('phone member prepared cross-workstream evidence, private/erased content stayed out, cited model fixture rendered inert, fake citation refused');
 
     assert.deepEqual(problems, [], `browser problems:\n${problems.join('\n')}`);
     console.log('PASS: Vision journey in a real browser: SEE, Effort, mention, include and credit, SPEC IT!, SEND IT!, decision, fork, adopted steer, reassign, mention cap, Vision Quest.');

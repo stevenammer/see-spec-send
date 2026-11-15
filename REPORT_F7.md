@@ -8,4 +8,4 @@ The fixture returns an explicitly synthetic draft. A configured real Effort prov
 
 Decision packets now distinguish an unknown build price from an explicit operator-supplied zero. An unpriced plan no longer looks free.
 
-Verification is recorded after the full release checks. The organizational intelligence layer remains separate ongoing work.
+The full suite passed 427/427 with zero skips; the real browser, public/demo and listener checks passed. All six standard full-suite mutation controls completed with exit zero. The organizational intelligence layer remains separate ongoing work.

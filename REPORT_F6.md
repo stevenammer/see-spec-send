@@ -12,6 +12,6 @@ Schema 11 adds private tables. Golden schema-10 migration keeps workflow context
 
 ## Verification
 
-The full suite passed 423/423 with zero skips. The core mentoring/HTTP permission tests, golden migration, current demo security tests, pure demo journey and real phone-width demo passed. The full app browser journey passed three-account mentoring, leader refusal, explicit sponsor evidence access and revocation. The listener, earlier manual browser journey, public-file check, generated demo parity and all 392 mutation-source checks passed. Eleven focused mutations failed on the intended behavioral assertions. The standard full-suite mutation release campaign remains pending before publication.
+The full suite passed 423/423 with zero skips. The core mentoring/HTTP permission tests, golden migration, current demo security tests, pure demo journey and real phone-width demo passed. The full app browser journey passed three-account mentoring, leader refusal, explicit sponsor evidence access and revocation. The listener, earlier manual browser journey, public-file check, generated demo parity and all 392 mutation-source checks passed. Eleven focused mutations failed on the intended behavioral assertions. All 11 standard full-suite mutation controls subsequently completed with exit zero on the frozen checkpoint.
 
 The larger goal remains open until the documented release gates and remaining required intelligence scope are resolved. No paid API was called.

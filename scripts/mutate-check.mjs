@@ -22,11 +22,39 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
   'test/mutation-security.test.mjs', 'test/slice23.test.mjs', 'test/slice24.test.mjs',
   'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs', 'test/slice27.test.mjs', 'test/password-screen.test.mjs',
-  'test/vision-01.test.mjs', 'test/vision-02.test.mjs', 'test/vision-03.test.mjs', 'test/vision-04.test.mjs', 'test/sliceR.test.mjs', 'test/sliceR2.test.mjs', 'test/sliceF3.test.mjs', 'test/sliceF3-worker.test.mjs', 'test/pagesF3.test.mjs', 'test/sliceF3-http.test.mjs', 'test/sliceF3-gateway.test.mjs'];
+  'test/vision-01.test.mjs', 'test/vision-02.test.mjs', 'test/vision-03.test.mjs', 'test/vision-04.test.mjs', 'test/sliceR.test.mjs', 'test/sliceR2.test.mjs', 'test/sliceF3.test.mjs', 'test/sliceF3-worker.test.mjs', 'test/pagesF3.test.mjs', 'test/sliceF3-http.test.mjs', 'test/sliceF3-gateway.test.mjs', 'test/sliceF4-builder.test.mjs', 'test/sliceF4-forks.test.mjs', 'test/sliceF4-http.test.mjs', 'test/sliceF4-pages.test.mjs'];
+fullSuite.push('test/sliceF5-memory.test.mjs', 'test/sliceF5-pages.test.mjs');
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
 const mutants = [
+  ['F5 enabled person search predicate', "JOIN actors viewer ON viewer.id=? AND viewer.kind='person'", "JOIN actors viewer ON viewer.id=?"],
+  ['F5 disabled viewer search predicate', "WHERE search_docs MATCH ? AND COALESCE(ps.disabled,0)=0", "WHERE search_docs MATCH ?"],
+  ['F5 literal search tokens', ".join(' AND ');", ".join(' OR ');"],
+  ['F5 memory append is transactional', '    syncMemory(this, item);', ''],
+  ['F5 contribution cache verified', '&& canonical(ordered(contributions)) === canonical(ordered(expected.contributions))', '&& true'],
+  ['F5 search cache verified', 'canonical(ordered(docs)) === canonical(ordered(expected.docs))', 'true'],
+  ['F5 credit source author bound', 'source.actor !== event.person', 'false'],
+  ['F5 workspace source off by default', "if (store.db.prepare(\"SELECT enabled FROM research_config WHERE source='this_workspace'\").get()?.enabled !== 1) return [];", 'if (false) return [];'],
+  ['F5 contribution viewer predicate', "WHERE c.person=? AND COALESCE(ps.disabled,0)=0", "WHERE c.person=?"],
+  ['F5 retrieved evidence reaches Effort data', 'workspaceRecords: workspaceRecords(this.store, job.requester, job.item, original)', 'workspaceRecords: []'],
+  ["F4 fork selected kind matches event", "!row || (selection && !kinds[selection.kind]?.includes(selected.type))", "!row"],
+  ["F4 fork selected hash matches parent body", "selected.body_hash !== event.from.hash", "false"],
+  ["F4 historical fork excludes later revisions", "const history = events.slice(0, index + 1);", "const history = events;"],
+  ["F4 fork content matches selected history", "!redactedParent && (event.original !== point.original || stable(event.seed_spec) !== stable(point.seed_spec))", "false"],
+  ["F4 child retry idempotency", "canonical(['fork-request', session.person, fork[1], key])", "canonical(['fork-request', session.person, fork[1], randomUUID()])"],
+  ["F4 child retry binds payload", "existing.reason !== input.reason || canonical(existing.from) !== canonical(input.from)", "false"],
+  ["F4 import parents before descendants", "if (first?.type === 'forked') importItem(JSON.parse(first.bytes).parent.item);", ""],
+  ["F4 lineage verification", "if (stable(lineage || null) !== stable(expectedLineage)) return { item, ok: false, reason: 'lineage' };", ""],
+  ["F4 lineage rebuild repairs rows", "if (this.db.prepare(\"SELECT 1 FROM sqlite_master WHERE name='lineage'\").get()) this.rebuildLineage();", ""],
+  ["F4 steer scope cannot expand", "if (!withinScope(approved?.scope || emptyScope(), event.scope)) throw refused('scope expansion requires a new spec and approval');", ""],
+  ["F4 scope subsets cover both resource and audience", "['data_sources', 'audiences'].every(key => requested[key].every(value => approved[key].includes(value)))", "['data_sources'].every(key => requested[key].every(value => approved[key].includes(value)))"],
+  ["F4 artifact export carries tries", "if (!['sent', 'tried'].includes(row.type)) continue;", "if (!['sent'].includes(row.type)) continue;"],
+  ["F4 artifact import restores bytes before events", "this.putArtifact(artifact.item, artifact.bytes) !== artifact.hash", "false"],
+  ["F4 container forwards adopted instruction text", "instructions: request.instructions.map(row => row.instruction)", "instructions: []"],
+  ["F4 builder preserves instruction data", "...(spec.instructions?.length ? { instructions: spec.instructions } : {})", "...{}"],
+  ["F4 worker forwards approved scope", "...(scope !== undefined ? { scope } : {})", "...{}"],
+  ["F4 worker applies narrowed scope", "steering.findLast(event => event.scope !== undefined)?.scope ?? spec.scope", "spec.scope"],
   ['V1 only OP revises', 'context.rules >= 2 && steward(context, event, who)', 'context.rules >= 2 && person(who)'],
   ['V1 revise base hash', 'event.base_hash === context.seeHash', 'true'],
   ['V1 posted only fresh item', "if (event.type === 'posted' && this.eventRows(item).length !== 0)", "if (false)"],
@@ -152,7 +180,7 @@ const mutants = [
   ['verify submission hash', 'submittedEventHash(this.submittedEventFromRow(row), row.idem) !== row.submitted_hash', 'false'],
   ['verify idempotency key', 'digest(stable({ idem, event }))', 'digest(stable({ event }))'],
   ['verify orphaned events', "...this.db.prepare('SELECT DISTINCT item FROM events').all().map(row => row.item),", ''],
-  ['verify cache drift', "return same ? { item, ok: true } : { item, ok: false, reason: 'cache' };", 'return { item, ok: true };'],
+  ['verify cache drift', "if (!same) return { item, ok: false, reason: 'cache' };", ''],
   ['user enumeration', "throw invalid('login unavailable');", "throw invalid('unknown user');"],
   ['step-up freshness', 'row.stepup + 5 * minute < this.clock()', 'false'],
   ['step-up single use', 'AND stepup_used=0', 'AND 1=1'],
@@ -395,7 +423,7 @@ const mutants = [
   ['slice27 gateway socket directory is private', "if (statSync(parent).mode & 0o022) fail(", "if (false) fail("],
 ];
 
-const files = ['compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'research/connectors.js', 'cli.js',
+const files = ['core/memory.js', 'research/workspace.js', 'app/pages-memory.js', 'compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'core/scope.js', 'research/connectors.js', 'cli.js',
   'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js', 'core/diff.js',
   'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'app/effort.js', 'app/pages-spec.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/effort.js', 'gateway/http.js', 'effort/prompt.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js', 'public/app.js', 'effort/prompt.js'];
 

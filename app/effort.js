@@ -1,5 +1,6 @@
 import { transaction } from '../worker/control.js';
 import { effortPrompt } from '../effort/prompt.js';
+import { workspaceRecords } from '../research/workspace.js';
 
 const now = () => Date.now();
 export class EffortWorker {
@@ -14,7 +15,9 @@ export class EffortWorker {
   async tick({ crashAfterCall = false } = {}) {
     const job = this.claim(); if (!job) return false;
     const state = this.store.read(job.item); const original = this.store.events(job.item)[0]?.original || '';
-    const prompt = effortPrompt(original, this.store.events(job.item));
+    const prompt = effortPrompt(original, this.store.events(job.item), {
+      workspaceRecords: workspaceRecords(this.store, job.requester, job.item, original),
+    });
     try {
       const result = await this.gateway.call(job.requester, `effort:${job.id}:a${job.attempts}`, { model: this.gateway.ledger.rate.model, input: prompt.input, max_output_tokens: 128 }, job.item, job.id);
       if (result.status !== 200) throw Error('provider failed');

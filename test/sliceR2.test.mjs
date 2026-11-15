@@ -61,7 +61,8 @@ test('R2 N-04/N-05: the page distinguishes originator from steward and shows att
   const source = store.events('r2').at(-1).body_hash;
   append(store, { type: 'revised', actor: 'op', text: 'Callers lose context. Keep the caller note.', base_hash: see, credits: [{ comment: source, mode: 'quoted' }] }, 3);
   const page = itemPage({ id: 'r2', ...store.read('r2'), effort: [] }, store.events('r2'), 'maya', false);
-  assert.match(page, /Originator: op\. Current steward: op\./);
+  assert.match(page.replace(/<[^>]*>/g, ''), /Originator: op\. Current steward: op\./);
+  assert.match(page, /href="\/people\/op"/);
   assert.match(page, /credit: maya, quoted/);
   assert.match(page, new RegExp(`href="#comment-${source}"`));
 });

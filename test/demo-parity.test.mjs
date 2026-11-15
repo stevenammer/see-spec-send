@@ -34,6 +34,7 @@ function registryFor(events) {
 // What each story is supposed to end in, written from reading the stories. `refused` lists the
 // 1-based positions the machine must refuse.
 const expected = {
+  'rules-2-credit': { state: 'SEEN', refused: [3] },
   'already-have': { state: 'SHELVED', refused: [] },
   happy: { state: 'HELPS', refused: [] },
   'past-shapers-cannot-help': { state: 'TRYING', refused: [7] },
@@ -64,7 +65,7 @@ async function replayBoth(story) {
     const event = { ...source, at: at(index + 1) };
     if (source.role === 'steward') event.actor = store.read('i').context.steward ?? event.actor;
     delete event.role;
-    for (const key of ['see_hash', 'spec_hash', 'anchor_hash', 'base_hash']) {
+    for (const key of ['see_hash', 'spec_hash', 'anchor_hash', 'base_hash', 'source']) {
       if (aliases.has(event[key])) event[key] = aliases.get(event[key]);
     }
     const idem = `k${index + 1}`;

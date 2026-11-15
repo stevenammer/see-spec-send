@@ -13,6 +13,8 @@ export const MIGRATIONS = Object.freeze([
   { name: 'F1 rules 2 Effort actors, jobs, receipts, and run iterations', up: store => store.migrateF1() },
   { name: 'R stale-state run SEE hash fence', up: store => store.migrateR() },
   { name: 'F3 accountable decisions and research packet', up: store => store.rebuild() },
+  { name: 'F4 historical fork lineage', up: store => store.migrateF4() },
+  { name: 'F5 workspace search and contribution memory', up: store => store.migrateF5() },
 ]);
 export const SCHEMA_VERSION = MIGRATIONS.length;
 

@@ -27,7 +27,7 @@ const stages = {
   SHELVED: 'Shelved',
 };
 const shell = (title, content) =>
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See / Spec / Send</a></header><main>${content}</main><script src="/assets/app.js" defer></script></body></html>`;
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See / Spec / Send</a> <a href="/search">Search</a></header><main>${content}</main><script src="/assets/app.js" defer></script></body></html>`;
 const progress = item => `${item.helpers} of ${item.quorum} people have said it helps`;
 
 export function signInPage({ oidc = false } = {}) {
@@ -97,6 +97,26 @@ function eventWords(event) {
   return `${escape(event.type === 'tried' && event.delivered_by ? event.delivered_by : event.actor)} ${words[event.type] || 'updated this item'}${['approved', 'returned', 'not_built'].includes(event.type) && event.reason ? `. Reason: ${escape(event.reason)}` : ''}${event.type === 'erased' ? `${event.ground ? `. Ground: ${escape(event.ground)}. ${escape(event.note)}` : ''}` : ''}${event.type === 'steward_changed' ? ` to ${escape(event.steward)}${event.reason ? `. Note: ${escape(event.reason)}` : ''}` : ''}${event.type === 'tried' && event.model_output ? ' (model output)' : ''}`;
 }
 
+// A selected point is an event identity, never an arbitrary artifact blob.
+export function forkForm(events, context = {}) {
+  const candidates = events.filter(event => ['posted', 'forked', 'revised', 'specced', 'tried'].includes(event.type));
+  const totals = { see: 0, spec: 0, artifact: 0 };
+  const kindFor = event => event.type === 'specced' ? 'spec' : event.type === 'tried' ? 'artifact' : 'see';
+  for (const event of candidates) totals[kindFor(event)] += 1;
+  const counts = { see: 0, spec: 0, artifact: 0 };
+  const options = candidates.map(event => {
+    const kind = kindFor(event); const version = ++counts[kind];
+    const historical = version < totals[kind] || (kind === 'artifact' && event.artifact_hash !== context.artifact);
+    const label = kind === 'see' ? 'SEE' : kind === 'spec' ? 'Spec' : 'Try';
+    return `<option value="${kind}:${escape(event.body_hash)}">${label} ${kind === 'artifact' ? '' : 'v'}${version}${historical ? ' (historical)' : ''}${event.original === '[erased]' || event.text === '[erased]' || event.must?.includes('[erased]') ? ' (erased)' : ''}</option>`;
+  }).join('');
+  return `<form data-fork="true"><h2>Fork</h2><p>A fork starts as your SEE. Any starting spec is an unapproved draft. It needs its own SEND IT! and independent leader approval before building.</p><label>Start from<select name="from"><option value="">Current point</option>${options}</select></label><label>Why try another direction?<input name="reason" required maxlength="2000"></label><button>Fork</button></form>`;
+}
+
+export function scopeFields(scope = {}) {
+  return `<fieldset><legend>Proposed scope</legend><p>Use source and audience IDs, one per line. Leaving these empty requests no added sources or audiences. The leader reviews this scope with the spec; writing an ID doesn't connect a source or grant access.</p><label>Data source IDs<textarea name="scope_data_sources">${escape((scope.data_sources || []).join('\n'))}</textarea></label><label>Audience IDs<textarea name="scope_audiences">${escape((scope.audiences || []).join('\n'))}</textarea></label></fieldset>`;
+}
+
 export function itemPage(item, events, person, leader) {
   const context = item.context;
   const firstEvent = events[0];
@@ -131,13 +151,13 @@ export function itemPage(item, events, person, leader) {
   }).join('');
   let action = '';
   // A Vision Quest build proposal is only a first draft: the steward edits it and saves it by hand.
-  const draftSpec = questDraft && !questDraft.stopped ? questDraft.spec : { must: [], how_we_know: [], out_of_scope: [] };
+  const draftSpec = firstEvent?.seed_spec || (questDraft && !questDraft.stopped ? questDraft.spec : { must: [], how_we_know: [], out_of_scope: [] });
   const fill = key => escape(draftSpec[key].join('\n'));
   const specForm = `<form data-event="specced"><h2>Write the spec</h2>${rules2 ? `<input type="hidden" name="see_hash" value="${escape(context.seeHash)}">` : ''}` +
     `<label>Must do<textarea name="must" required>${fill('must')}</textarea></label>` +
     `<label>How we'll know<textarea name="how_we_know" required>${fill('how_we_know')}</textarea></label>` +
     `<label>Out of scope<textarea name="out_of_scope">${fill('out_of_scope')}</textarea></label>` +
-    '<button>SPEC IT!</button></form>';
+    `${rules2 ? scopeFields(draftSpec.scope) : ''}<button>SPEC IT!</button></form>`;
   if ((item.state === 'CHECKED' || (rules2 && item.state === 'SEEN')) && context.steward === person) action = specForm;
   if (item.state === 'SUBMITTED') {
     const packetBody = item.packet ? `<pre>${escape(item.packet)}</pre>` : '';
@@ -193,8 +213,9 @@ export function itemPage(item, events, person, leader) {
   }).join('') : '';
   const revise = rules2 && context.steward === person ? `<form data-event="revised"><h2>Revise SEE</h2><input type="hidden" name="base_hash" value="${escape(context.seeHash)}"><label>Current SEE<textarea name="text" required maxlength="4000">${escape(events.filter(event => event.type === 'revised').at(-1)?.text || firstEvent.original)}</textarea></label><button>Save revision</button></form>` : '';
   const see = rules2 ? `<section><h2>Original</h2><p>${escape(firstEvent.original)}</p><p>Hash ${escape(firstEvent.body_hash)}, posted ${escape(firstEvent.at)}</p><h2>Current SEE v${escape(context.seeVersion)}</h2><p>${escape(events.filter(event => event.type === 'revised').at(-1)?.text || firstEvent.original)}</p><h2>Version history</h2><ol><li>SEE v1: ${escape(firstEvent.original)}</li>${revisions}</ol>${context.specHash ? `<p><a class="button" href="/items/${encodeURIComponent(item.id)}/spec">Open the spec</a></p>` : ''}</section>` : '';
-  const forkedFrom = context.parent ? `<p>Forked from <a href="/items/${encodeURIComponent(context.parent.item)}">the original item</a>${firstEvent?.reason ? `: ${escape(firstEvent.reason)}` : ''}.</p>` : '';
-  const fork = rules2 ? `<form data-fork="true"><h2>Fork</h2><label>Why try another direction?<input name="reason" required maxlength="2000"></label><button>Fork</button></form>` : '';
+  const forkedFrom = context.parent ? `<p>Forked from <a href="/items/${encodeURIComponent(context.parent.item)}">the original item</a>${firstEvent?.from ? `, selected ${escape(firstEvent.from.kind)} event ${escape(firstEvent.from.hash)}` : ''}, at event ${escape(context.parent.seq)}${firstEvent?.reason ? `: ${escape(firstEvent.reason)}` : ''}.</p>` : '';
+  const fork = rules2 ? forkForm(events, context) : '';
+  const forkDraft = firstEvent?.seed_spec ? `<section><h2>Fork starting spec (unapproved draft)</h2><p>This is starting material from the selected parent point. It isn't a saved spec or approval to build.</p><h3>Must do</h3><ul>${firstEvent.seed_spec.must.map(value => `<li>${escape(value)}</li>`).join('')}</ul><h3>How we'll know</h3><ul>${firstEvent.seed_spec.how_we_know.map(value => `<li>${escape(value)}</li>`).join('')}</ul></section>` : '';
   const reassign = rules2 && leader && !['HELPS', 'SHELVED'].includes(item.state)
     ? `<form data-event="steward_changed"><h2>Reassign steward</h2><p>Only after the current steward records consent, or has made no event anywhere for 14 days.</p><label>New steward (person ID)<input name="steward" required maxlength="64"></label><label>Note, at least 12 characters<input name="reason" required minlength="12" maxlength="2000"></label><button>Reassign steward</button></form>` : '';
   const checkin = `<form data-event="checked_in"><h2>Check-in</h2><label>What changed?<input name="note" required maxlength="2000"></label>${rules2 && context.steward === person ? '<label><input type="checkbox" name="consent" value="true"> I consent to a leader assigning a new steward.</label>' : ''}<button>Post check-in</button></form>`;
@@ -221,8 +242,8 @@ export function itemPage(item, events, person, leader) {
   return shell(
     problem,
     '<p><a href="/">Back to the work</a></p>' +
-      `<p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1><p>Originator: ${escape(context.originator || context.steward)}. Current steward: ${escape(context.steward)}.</p>` +
-      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${context.superseded ? `<p>This old approval is superseded. Update the spec, SEND IT!, and get a new leader approval.${context.supersededArtifact ? ' The delivered try is superseded and cannot receive new Helps votes.' : ''}</p>` : ''}${forkedFrom}${effortStatus}${effortAllowance}${see}${questMemo}${specSummary}${decision}${leash}${decisionHistory ? `<section><h2>Decision history</h2><ol>${decisionHistory}</ol></section>` : ''}${erasures ? `<section><h2>Erased content</h2><ol>${erasures}</ol></section>` : ''}${revise}${action}${packetView}${tryThread}${oldTryHistory}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${shelve}${reassign}${checkin}${comment}` +
+      `<p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1><p>Originator: <a href="/people/${encodeURIComponent(context.originator || context.steward)}">${escape(context.originator || context.steward)}</a>. Current steward: <a href="/people/${encodeURIComponent(context.steward)}">${escape(context.steward)}</a>.</p><p><a href="/items/${encodeURIComponent(item.id)}/related">Discover related work</a></p>` +
+      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${context.superseded ? `<p>This old approval is superseded. Update the spec, SEND IT!, and get a new leader approval.${context.supersededArtifact ? ' The delivered try is superseded and cannot receive new Helps votes.' : ''}</p>` : ''}${forkedFrom}${effortStatus}${effortAllowance}${see}${forkDraft}${questMemo}${specSummary}${decision}${leash}${decisionHistory ? `<section><h2>Decision history</h2><ol>${decisionHistory}</ol></section>` : ''}${erasures ? `<section><h2>Erased content</h2><ol>${erasures}</ol></section>` : ''}${revise}${action}${packetView}${tryThread}${oldTryHistory}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${shelve}${reassign}${checkin}${comment}` +
       `<h2>${rules2 ? 'Thread' : 'Comments'}</h2>${rules2 ? (renderThread(events, { ...context, steward: context.steward === person ? context.steward : null }) || '<p>No comments yet.</p>') : `<ol>${anchoredComments || '<li>No comments yet.</li>'}</ol>`}<h2>What happened</h2><ol>${events.filter(event => event.type !== 'commented' && event.type !== 'revised').map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
   );
 }

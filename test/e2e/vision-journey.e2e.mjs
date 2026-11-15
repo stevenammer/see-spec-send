@@ -275,7 +275,14 @@ async function main() {
     assert.match(await ben.locator('main').innerText(), /Cap: \$2\.00/);
     step('leader approved with a configurable leash and password step-up; member sees reason and bounds');
 
-    // 9. A member forks. The fork names its parent and has no approval and no build.
+    // 9. A member forks an older spec on a phone, retaining only an explicitly unapproved draft.
+    await ben.goto(`${itemUrl}/spec`);
+    const selectedFrom = await ben.locator('form[data-fork] option', { hasText: 'Spec v1 (historical)' }).getAttribute('value');
+    await ben.locator('form[data-fork] [name=from]').selectOption(selectedFrom);
+    const oldSpec = await ben.evaluate(async ({ itemId, hash }) => {
+      const data = await (await fetch(`/api/items/${itemId}`)).json();
+      return data.events.find(event => event.body_hash === hash);
+    }, { itemId, hash: selectedFrom.split(':')[1] });
     await ben.locator('form[data-fork] [name=reason]').fill('Try passing it through the transfer screen instead.');
     await ben.getByRole('button', { name: 'Fork', exact: true }).click();
     await ben.waitForURL(url => url.href !== itemUrl && /\/items\/[^/]+$/.test(url.pathname));
@@ -283,7 +290,11 @@ async function main() {
     assert.equal(await ben.locator('form[data-approve]').count(), 0, 'a fork has no approval');
     assert.equal(await ben.locator('iframe').count(), 0, 'a fork has no build');
     assert.equal(await ben.locator('form[data-artifact]').count(), 0, 'a fork has no delivery');
-    step('fork shows Forked from, no approval, no build');
+    await ben.getByRole('heading', { name: 'Fork starting spec (unapproved draft)' }).waitFor();
+    assert.equal(await ben.locator('form[data-event=specced] [name=must]').inputValue(), oldSpec.must.join('\n'));
+    assert.equal(await ben.locator('form[data-send]').count(), 0, 'draft has not become a saved spec');
+    assert.equal(ben.viewportSize().width, 390);
+    step('phone member forked a historical spec as an unapproved draft, with no inherited approval or build');
 
     // 10. The fake builder delivers a try for the parent.
     await olive.goto(itemUrl);
@@ -552,6 +563,49 @@ async function main() {
     assert.ok(await ben.getByText(returnReason).count() > 0, 'earlier return reason remains');
     assert.equal(await ben.locator('iframe[title="Playable try"]').count(), 0);
     step('Not building records a concrete reason, evidence receipt and pivot note; prior decision stays public');
+
+    // 18. A completed/closed parent remains available as a historical fork source.
+    await leader.goto(itemUrl);
+    await leader.locator('form[data-event=shelved] [name=reason]').fill('Keep this trial as history while trying another direction.');
+    await leader.getByRole('button', { name: 'Shelve with a reason' }).click();
+    await leader.locator('.stage', { hasText: 'Shelved' }).waitFor();
+    await ben.goto(itemUrl);
+    await ben.locator('form[data-fork] [name=from]').selectOption({ label: 'SEE v1 (historical)' });
+    await ben.locator('form[data-fork] [name=reason]').fill('Start over from the first observation after this trial closed.');
+    await ben.getByRole('button', { name: 'Fork', exact: true }).click();
+    await ben.waitForURL(url => url.href !== itemUrl && /\/items\/[^/]+$/.test(url.pathname));
+    await ben.getByText('Forked from').first().waitFor();
+    assert.equal(await ben.locator('.stage', { hasText: /^See$/ }).count(), 1);
+    assert.equal(await ben.locator('form[data-approve], form[data-send], iframe').count(), 0);
+    await leader.goto(itemUrl);
+    assert.equal(await leader.locator('.stage', { hasText: 'Shelved' }).count(), 1, 'fork leaves terminal parent closed');
+    step('phone member forked a terminal parent without reopening it or inheriting its authority');
+
+    // Workspace memory exposes source records, never scores or authority.
+    await olive.goto(`${origin}/items/new`);
+    await olive.locator('[name=original]').fill('Transfer notes need a searchable handoff record.');
+    await olive.getByRole('button', { name: 'Post SEE' }).click();
+    await olive.waitForURL(/\/items\/(?!new$)[^/]+$/);
+    const memoryUrl = olive.url(), memoryId = memoryUrl.split('/').at(-1);
+    await maya.goto(memoryUrl);
+    await maya.locator('form[data-event=commented] [name=comment]').first().fill('quartz memory marker <img src=x onerror=alert(1)>');
+    await maya.locator('form[data-event=commented]').first().getByRole('button', { name: 'Post comment' }).click();
+    await maya.getByText('quartz memory marker').first().waitFor();
+    await ben.goto(`${origin}/search?q=quartz`);
+    await ben.getByRole('link', { name: 'commented by maya', exact: true }).click();
+    await ben.getByRole('heading', { name: 'Work record', exact: true }).waitFor();
+    const memoryHash = await ben.locator('form[data-event=credit_note] [name=source]').inputValue();
+    await ben.locator('form[data-event=credit_note] [name=note]').fill('The searchable marker clarified the handoff detail.');
+    const acknowledgement = ben.waitForResponse(response => response.url().endsWith(`/api/items/${memoryId}/events`) && response.request().method() === 'POST');
+    await ben.getByRole('button', { name: 'Record acknowledgement' }).click();
+    assert.equal((await acknowledgement).status(), 201);
+    await ben.goto(`${origin}/people/maya`);
+    await ben.getByRole('heading', { name: 'Contribution record: maya' }).waitFor();
+    assert.match(await ben.locator('main').innerText(), /credited/);
+    assert.equal(await rawPost(maya, `/api/items/${memoryId}/erase`, { body_hash: memoryHash }), 201);
+    await ben.goto(`${origin}/search?q=quartz`);
+    await ben.getByText('No matching records.', { exact: true }).waitFor();
+    step('phone member found a source record, acknowledged its author, and erased text disappeared from search');
 
     assert.deepEqual(problems, [], `browser problems:\n${problems.join('\n')}`);
     console.log('PASS: Vision journey in a real browser: SEE, Effort, mention, include and credit, SPEC IT!, SEND IT!, decision, fork, adopted steer, reassign, mention cap, Vision Quest.');

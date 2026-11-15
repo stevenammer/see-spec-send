@@ -107,3 +107,11 @@ policy, scoped capability mint/revoke seam, durable estimates and unknown holds.
 amounts. The gateway CLI never configures or calls a real provider. SQLite backups
 include gateway rows; JSONL exports don't. The existing `token create` command
 creates a generic item token, not a usable metering capability.
+
+## Workspace research and search (F5)
+
+Node 22.19 or newer with SQLite FTS5 is required. Search and contribution records are derived, verified workspace indexes. Every enabled member can currently read the workspace; there is no per-item audience partition. Resource/audience proposal IDs do not grant access.
+
+Internal prior-work research starts off. `node cli.js research status` reports it. An operator can use `node cli.js research enable --source this_workspace` or `disable` to change it; changes enter the admin audit. It performs no network or model call. External sources remain disconnected. Refreshing a SPEC research record states what was checked, gives source identities, and preserves the snapshot used at SEND.
+
+Erasure removes the target from the active search index and leaves a contribution tombstone. It does not purge text already copied into another record, a frozen packet, or a previous backup. Contribution pages show records, never employee rankings or performance scores.

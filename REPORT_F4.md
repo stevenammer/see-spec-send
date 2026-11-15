@@ -14,7 +14,7 @@ Legacy three-list builder input remains supported. Optional instructions and sco
 
 - Real Docker acceptance: 9/9 passed using the pinned container and a local mock model, including OP adoption across two model-built iterations.
 - Real Chrome: historical SPEC and terminal-parent SEE forks passed at 390px member width.
-- Focused fork, HTTP, migration, page, builder, and existing-regression checks passed. Full-suite and mutation gates are recorded separately before release.
+- The full suite passed 405/405 with zero skips on Node 22.23.4. Fork, HTTP, migration, page, builder, existing-regression, listener, public/demo and manual browser checks passed. All 17 focused mutation controls failed on their intended assertions; all 17 standard full-suite mutation gates also completed with exit code zero on the frozen `d4ab97a` checkpoint.
 - No hosted vendor or paid API was called.
 
 ## Remaining work

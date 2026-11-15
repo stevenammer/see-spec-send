@@ -17,6 +17,8 @@ Rules 2 verification (2026-11-14): unit, public-file and demo-parity checks run 
 | Docker acceptance | `npm run test:container` | `2ab8c9f` | 2026-11-14 | Docker + local mock | NOT RUN for F3; F4 records its own proof |
 | Hosted model/vendor | explicit opt-in only | `2ab8c9f` | 2026-11-14 | bounded provider | NOT RUN, no paid calls |
 
+Additional local checkpoints (2026-11-15): F4 `d4ab97a` passed 405/405 tests, real Chrome, 9/9 real Docker tests with a local mock model, and all 17 standard full-suite mutation gates. F5 `87c3547` passed 414/414 tests, real Chrome, listener, public/demo checks, and all ten standard full-suite mutation gates. The merged application source and tests match `87c3547`; this merge preserves the required browser CI and completed F3 evidence from main.
+
 Everybody at work already knows the thing that's broken. The workaround has a name. Somebody has a spreadsheet for it. And nobody fixes it, because the people who feel it don't get to build anything, and the people who build things never feel it.
 
 This is my attempt at a free, open-source way for any organization to fix that with AI, and to do it the right way:

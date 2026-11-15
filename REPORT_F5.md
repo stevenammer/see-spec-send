@@ -22,7 +22,7 @@ The runtime minimum is now Node 22.19 with FTS5. An actual official Node 22.13 b
 
 ## Verification
 
-Focused memory/HTTP tests, the phone-width Chrome journey, schema upgrade, old story parity and ten substantive mutation controls are verified. Full-suite, public-file, listener and exact mutation campaign results are recorded at release; focused kills alone do not claim those longer gates finished.
+The full suite passed 414/414 with zero skips on Node 22.23.4. Focused memory/HTTP tests, the phone-width Chrome journey, schema upgrade, old story parity, public/history scan, generated demo parity, listener and manual browser workflow passed. All ten substantive focused mutation controls failed on their intended assertions, and all ten standard full-suite mutation gates completed successfully on the frozen `87c3547` checkpoint. No hosted vendor was called.
 
 ## Remaining work
 

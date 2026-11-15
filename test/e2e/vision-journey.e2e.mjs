@@ -650,8 +650,10 @@ async function main() {
     const memoryHash = await ben.locator('form[data-event=credit_note] [name=source]').inputValue();
     await ben.locator('form[data-event=credit_note] [name=note]').fill('The searchable marker clarified the handoff detail.');
     const acknowledgement = ben.waitForResponse(response => response.url().endsWith(`/api/items/${memoryId}/events`) && response.request().method() === 'POST');
+    const acknowledgementReload = ben.waitForNavigation({ waitUntil: 'load' });
     await ben.getByRole('button', { name: 'Record acknowledgement' }).click();
     assert.equal((await acknowledgement).status(), 201);
+    await acknowledgementReload;
     await ben.goto(`${origin}/people/maya`);
     await ben.getByRole('heading', { name: 'Contribution record: maya' }).waitFor();
     assert.match(await ben.locator('main').innerText(), /credited/);

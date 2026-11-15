@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { Ledger, rateWithSystemText } from './ledger.js';
 
 const reply = (res, status, body) => {
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store',
@@ -46,11 +47,13 @@ export class Gateway {
 // completion contract into the legacy gateway response shape. Construct the
 // Ledger with the matching provider/config priceRate before exposing this path.
 export function providerGateway(ledger, provider, options) {
-  return new Gateway(ledger, async input => {
+  const system = options?.system ?? '';
+  const boundedLedger = new Ledger(ledger.store, { clock: ledger.clock, rate: rateWithSystemText(ledger.rate, system) });
+  return new Gateway(boundedLedger, async input => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), ledger.policy().timeout_ms);
     try {
-      const result = await provider.complete({ system: options?.system || '',
+      const result = await provider.complete({ system,
         messages: [{ role: 'user', content: input.input }], maxOutputTokens: input.max_output_tokens,
         model: input.model, signal: controller.signal });
       return { output: result.text, usage: { input_tokens: result.usage.inputTokens, output_tokens: result.usage.outputTokens } };

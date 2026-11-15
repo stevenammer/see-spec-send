@@ -52,7 +52,12 @@ maximum billable usage before it can use this control. Configured providers supp
 The app cannot verify the provider's invoice or an operator's pricing assumption.
 
 Before forwarding, `BEGIN IMMEDIATE` validates the live capability and reserves
-input byte bound plus framing and maximum output cost. Integer arithmetic must
+input byte bound plus framing and maximum output cost. The real builder, Effort,
+and Quest paths add a UTF-8 byte bound for their server-owned system text to
+the separately reviewed framing allowance. Effort reserves for the larger of
+its two possible system texts. Fixture paths without system text are unchanged.
+This does not establish a universal provider billing bound: the operator must
+still review provider-specific framing, tokenizer and other billable overhead. Integer arithmetic must
 remain nonnegative and safely representable. Admission checks the original
 approval's cap, operator lifetime/day caps and concurrency. The reservation
 stores the immutable payload hash, original approval body hash, cap, rate and

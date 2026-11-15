@@ -24,6 +24,13 @@ export function priceRate({ model, inputMicrosPerMillion, outputMicrosPerMillion
   return Object.freeze({ model, input_micros_per_million: inputMicrosPerMillion,
     output_micros_per_million: outputMicrosPerMillion, framing_tokens: framingTokens });
 }
+// Add only server-owned system text. framing_tokens remains the separately
+// reviewed allowance for provider-specific message framing and other overhead.
+export function rateWithSystemText(rate, ...systems) {
+  demand(validRate(rate) && systems.every(system => typeof system === 'string'), 'invalid trusted system text');
+  const systemBytes = Math.max(0, ...systems.map(system => Buffer.byteLength(system, 'utf8')));
+  return Object.freeze({ ...rate, framing_tokens: add(rate.framing_tokens, systemBytes) });
+}
 const rateCost = (rate, input, output) => {
   if (Number.isSafeInteger(rate.input_micros)) return add(multiply(input, rate.input_micros), multiply(output, rate.output_micros));
   const numerator = add(multiply(input, rate.input_micros_per_million), multiply(output, rate.output_micros_per_million));

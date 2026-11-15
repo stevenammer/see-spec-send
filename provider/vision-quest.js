@@ -4,6 +4,8 @@ import { validateCompletion } from './index.js';
 import { validateQuest, portableQuestPrompt, importPortableMemo, QUEST_MODEL_LABEL } from '../public/vision-quest.js';
 import { refused } from '../core/errors.js';
 
+export const QUEST_SYSTEM = 'Draft only. Never decide or claim verification. Return JSON only.';
+
 export { portableQuestPrompt, importPortableMemo, QUEST_MODEL_LABEL };
 
 export function preflightQuestModel({ providerName, org = 'default', doc, maxOutputTokens = 800 }, env = process.env) {
@@ -17,7 +19,7 @@ export async function draftQuestModel({ providerName, doc, approved = false, max
   if (approved !== true) throw refused('explicit approval required');
   const packet = preflightQuestModel({ providerName, doc, maxOutputTokens }, env);
   const result = validateCompletion(await providerFor(providerName, env).complete({
-    system: 'Draft only. Never decide or claim verification. Return JSON only.',
+    system: QUEST_SYSTEM,
     messages: [{ role: 'user', content: packet.input }], maxOutputTokens: packet.max_output_tokens,
     model: packet.model, signal: AbortSignal.timeout(30_000),
   }));

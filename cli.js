@@ -6,13 +6,13 @@ import { Worker } from './worker/runner.js';
 import { killed, setKill } from './worker/control.js';
 import { watchdog } from './worker/watchdog.js';
 import { ContainerAdapter, DockerCli } from './worker/container.js';
-import { Ledger, fixturePolicy } from './gateway/ledger.js';
+import { Ledger, fixturePolicy, rateWithSystemText } from './gateway/ledger.js';
 import { Gateway, createGatewayServer, providerGateway } from './gateway/http.js';
 import { QuestGateway } from './gateway/quest.js';
 import { EffortGateway } from './gateway/effort.js';
 import { EffortWorker } from './app/effort.js';
 import { SPEC_INSTRUCTIONS } from './effort/spec.js';
-import { effortProviderRequest } from './effort/prompt.js';
+import { EFFORT_SYSTEM, effortProviderRequest } from './effort/prompt.js';
 import { fixtureProvider } from './gateway/fixture.js';
 import { readFileSync, mkdirSync, statSync, unlinkSync, chmodSync } from 'node:fs';
 import { dirname, join, resolve as resolvePath } from 'node:path';
@@ -23,6 +23,7 @@ import { Auth } from './app/auth.js';
 import { createServerFor, isLoopback } from './app/http.js';
 import { Integrations, recoverStaleSending } from './app/integrations.js';
 import { questModelService } from './provider/quest-service.js';
+import { QUEST_SYSTEM } from './provider/vision-quest.js';
 import { validateCompletion } from './provider/index.js';
 import { migrationStatus, SCHEMA_VERSION, userVersion } from './core/migrations.js';
 import { appendAudit, verifyAudit } from './core/audit.js';
@@ -328,10 +329,12 @@ async function run(argv, env, write) {
       const selected = meteredProviderFor(name, env);
       const providerLedger = new Ledger(store, { rate: selected.rate });
       if (!providerLedger.policy().enabled) fail('gateway is disabled');
-      const server = createGatewayServer(providerGateway(providerLedger, selected.provider, { system: SYSTEM_PROMPT }));
+      const gateway = providerGateway(providerLedger, selected.provider, { system: SYSTEM_PROMPT });
+      const server = createGatewayServer(gateway);
       const port = Number(value('--port') || '8081');
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
-      const worst = Math.ceil((selected.rate.input_micros_per_million * 8192 + selected.rate.output_micros_per_million * providerLedger.policy().output_tokens) / 1_000_000);
+      const policy = gateway.ledger.policy();
+      const { worst } = gateway.ledger.validateInput({ model: selected.rate.model, input: 'x'.repeat(policy.input_bytes), max_output_tokens: policy.output_tokens }, policy);
       write(`Metered provider gateway http://127.0.0.1:${server.address().port}; provider=${name}; model=${selected.rate.model}; worst-case=${worst} micro-dollars before approval`);
       return;
     } else if (args[0] === 'serve') {
@@ -451,10 +454,10 @@ async function run(argv, env, write) {
     let questModel = null;
     if (args.includes('--enable-quest-model')) {
       const name = value('--quest-provider') || readProviders(env).defaults.default || fail('missing --quest-provider or configured default');
-      const selected = meteredProviderFor(name, env); const ledger = new Ledger(store, { rate: selected.rate });
+      const selected = meteredProviderFor(name, env); const ledger = new Ledger(store, { rate: rateWithSystemText(selected.rate, QUEST_SYSTEM) });
       if (!ledger.policy().enabled) fail('gateway is disabled');
       const gateway = new QuestGateway(ledger, async input => {
-        const result = validateCompletion(await selected.provider.complete({ system: 'Draft only. Never decide or claim verification. Return JSON only.',
+        const result = validateCompletion(await selected.provider.complete({ system: QUEST_SYSTEM,
           messages: [{ role: 'user', content: input.input }], maxOutputTokens: input.max_output_tokens, model: input.model,
           signal: AbortSignal.timeout(ledger.policy().timeout_ms) }));
         return { output: result.text, usage: { input_tokens: result.usage.inputTokens, output_tokens: result.usage.outputTokens } };
@@ -469,7 +472,7 @@ async function run(argv, env, write) {
         write('Effort fixture enabled. No real provider is configured.');
       } else {
         const name = value('--effort-provider') || readProviders(env).defaults.default || fail('missing --effort-provider or configured default');
-        const selected = meteredProviderFor(name, env); const ledger = new Ledger(store, { rate: selected.rate });
+        const selected = meteredProviderFor(name, env); const ledger = new Ledger(store, { rate: rateWithSystemText(selected.rate, EFFORT_SYSTEM, SPEC_INSTRUCTIONS) });
         gateway = new EffortGateway(ledger, async input => {
           const specDraft = JSON.parse(input.input).task === 'spec_prepare';
           const signal = AbortSignal.timeout(ledger.policy().timeout_ms);

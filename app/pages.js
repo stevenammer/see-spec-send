@@ -31,6 +31,11 @@ const shell = (title, content) =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See / Spec / Send</a> <a href="/search">Search</a> <a href="/intelligence">Investigate</a> <a href="/mentoring">Mentoring</a></header><main>${content}</main><script src="/assets/app.js" defer></script></body></html>`;
 const progress = item => `${item.helpers} of ${item.quorum} people have said it helps`;
 
+export function renderEffortAllowance(allowance) {
+  const dollars = micros => `$${(micros / 1_000_000).toFixed(4)}`;
+  return allowance ? `<section><h2>Effort allowance remaining</h2><p>UTC day ${escape(allowance.day)}. ${allowance.enabled ? 'AI spending enabled.' : 'AI spending disabled or stopped.'}</p><p>You can request ${escape(allowance.mention_requests_person)} more mention replies; this item can accept ${escape(allowance.mention_requests_item)} more. Model calls for mentions and SPEC drafts: ${escape(allowance.on_demand_person)} remaining for you, ${escape(allowance.on_demand_item)} for this item. Automatic first replies: ${escape(allowance.automatic_person)} remaining for you, ${escape(allowance.automatic_item)} for this item.</p><p>Metered budget headroom, including charged holds: ${dollars(allowance.person_micros)} for your Effort calls today, ${dollars(allowance.day_micros)} shared today, ${dollars(allowance.global_micros)} shared overall. Queued work is not reserved yet. Request size, other queued calls, provider availability and money caps can still prevent a reply.</p></section>` : `<p>Effort daily limits: ${EFFORT_LIMITS.calls_per_person_day} mention replies per person, ${EFFORT_LIMITS.calls_per_item_day} per item. Startup replies have a separate limit of ${EFFORT_LIMITS.automatic_calls_per_person_day} per person, ${EFFORT_LIMITS.automatic_calls_per_item_day} per item. Remaining allowances are unavailable in this view. All replies still stop at the shared spend caps.</p>`;
+}
+
 export function signInPage({ oidc = false } = {}) {
   return shell(
     'Sign in',
@@ -238,7 +243,7 @@ export function itemPage(item, events, person, leader) {
         : job.state === 'done' ? 'answered' : job.state;
     return `<p>Effort: ${escape(job.kind)} is ${escape(status)}${job.last_error ? ` (${escape(job.last_error)})` : ''}.</p>`;
   }).join('') || '<p>Effort is not turned on on this server.</p>';
-  const effortAllowance = `<p>Effort daily limits: ${EFFORT_LIMITS.calls_per_person_day} mention replies per person, ${EFFORT_LIMITS.calls_per_item_day} per item. Startup replies have a separate limit of ${EFFORT_LIMITS.automatic_calls_per_person_day} per person, ${EFFORT_LIMITS.automatic_calls_per_item_day} per item. These are limits, not remaining balances. All replies still stop at the shared spend caps.</p>`;
+  const effortAllowance = renderEffortAllowance(item.effortAllowance);
   const instructions = events.filter(event => event.type === 'steered' && event.approval === context.approval)
     .map(event => `<li>${escape(event.instruction)}${event.source ? ` (from ${escape(event.source)})` : ''}</li>`).join('');
   const decision = context.decided ? `<section><h2>Leader decision</h2><p><strong>${escape(context.decided.disposition === 'not_built' ? NOT_BUILT_LABEL : context.decided.disposition)}</strong>, by ${escape(context.decided.actor)} on ${escape(context.decided.at)}.</p><p>${escape(context.decided.reason)}</p>${context.decided.restrictedEvidence ? `<p>${escape(context.decided.restrictedEvidence)}</p>` : ''}${context.decided.pivotNote ? `<p>What changed: ${escape(context.decided.pivotNote)}</p>` : ''}<p>Reviewed packet: ${escape(context.decided.packetHash)}. Reviewed spec: ${escape(context.decided.specHash)}.</p></section>` : '';

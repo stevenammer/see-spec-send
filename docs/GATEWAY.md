@@ -1,9 +1,10 @@
 # Local metering gateway
 
-This slice provides a real `node:http` endpoint backed by SQLite and an injected
-mock provider. It ships one deterministic local fixture. It makes no external
-network request, uses no provider account or secret, and adds no runtime package.
-`gateway serve --socket PATH` exposes it to the container builder over a Unix socket (see ADMIN.md). The fixture is the default; a configured provider is used with `--name`.
+The gateway provides a real `node:http` endpoint backed by SQLite. Its deterministic
+fixture makes no external request and uses no provider account. An explicitly
+configured provider can make model calls; those calls require reviewed prices and
+operator authorization. No runtime package is required.
+`gateway serve --socket PATH` exposes it to the container builder over a Unix socket (see ADMIN.md). Use `--fixture` for the Unix-socket fixture; use `--name NAME` for an explicitly configured provider. The default worker uses its fake adapter until a container builder is selected.
 
 The gateway starts disabled. The CLI is its only administration surface:
 
@@ -20,13 +21,13 @@ All commands use `SSS_DB`, as the app and worker do. `serve-fixture` binds only
 `127.0.0.1`. Enablement persists fixed fixture defaults: $1 lifetime, $0.10 per
 UTC day, four concurrent reservations, 8192 input bytes, 1024 output tokens,
 8192 response bytes and a two-second response wait. These are synthetic prices,
-not a paid-spend authorization. An existing policy cannot be replaced through
-these commands. A different programmatic policy is useful for local tests;
-all processes sharing a database must use its persisted policy.
+not a paid-spend authorization. The initialization command does not replace an existing policy. Use
+`gateway policy set --file policy.json` to record a reviewed replacement policy
+version; all processes sharing a database use the persisted policy.
 
 Mint requires an active, current SENDING run. Find its ID in the owner-only
 SQLite `runs` table. The fake adapter normally finishes immediately; the seam is
-intended for an injected waiting mock, or a later external adapter. Mint returns
+usable for an active container-builder run as well as an injected waiting mock. Mint returns
 a random credential once. Copy it directly to the caller's protected environment.
 The database stores only its digest and the run, item, approval, spec and expiry.
 It lasts fifteen minutes. Revocation takes its digest to avoid a secret in CLI
@@ -43,13 +44,12 @@ The entire JSON shape is:
 {"model":"fixture:text-v1","input":"A synthetic prompt","max_output_tokens":10}
 ```
 
-Unknown fields, model names and noninteger limits are refused. Only the named
-fixture has a reviewed rate: one micro-dollar per input token and two per output
+Unknown fields, model names and noninteger limits are refused. The local fixture has a synthetic rate of one micro-dollar per input token and two per output
 token, plus eight fixed input framing tokens. Input UTF-8 byte length is the
 conservative token bound for this fixture protocol. A later real adapter must
 review its own tokenizer, framing, hidden/reasoning tokens, price source and
-maximum billable usage before it can use this control. No real model rate or
-external provider adapter is supplied here.
+maximum billable usage before it can use this control. Configured providers supply an explicit reviewed model and integer price table.
+The app cannot verify the provider's invoice or an operator's pricing assumption.
 
 Before forwarding, `BEGIN IMMEDIATE` validates the live capability and reserves
 input byte bound plus framing and maximum output cost. Integer arithmetic must
@@ -62,9 +62,9 @@ permission again and durably marks dispatch. A confirmed refusal at that seam
 can cancel the fresh reservation because no provider was invoked.
 
 The original approval's legacy `charged` events and gateway receipts share its
-run cap. A later legacy charge cannot cross an existing hold. Operator lifetime
-and UTC-day caps cover gateway receipts, not other ways an operator might spend
-money. Gateway access is not a financial cap on an external account.
+shared approval cap across all its iterations. A later legacy charge cannot cross an existing hold. Operator lifetime
+and UTC-day caps cover build, Quest and Effort receipts together, including charged
+holds. They do not cover other ways an operator might spend money. Gateway access is not a financial cap on an external account.
 
 A successful response includes the stored output and `estimated_micros`.
 Settlement validates usage and computes exact integer micro-dollar estimates
@@ -77,8 +77,10 @@ or midnight. It never changes the newer approval's allowance or reservation day.
 A retry of the same run/key/payload returns the stored result, or HTTP 202 with
 an honest reserved/dispatched hold. It never calls the provider again. A changed
 payload with the same key is refused. Both a crash before dispatch and a crash
-after dispatch leave a hold on restart. There is no TTL refund, automatic
-redispatch or manual release command. A request whose reservation was cancelled
+after dispatch leave a hold on restart. There is no TTL refund or automatic
+redispatch. An operator can inspect `gateway holds list` and explicitly reconcile a
+hold with `gateway holds release --id ID --reason REASON`, optionally `--refund`
+only when the evidence supports it; this records an audit receipt. A request whose reservation was cancelled
 at the fresh dispatch seam remains cancelled on retry. Use a new key only for
 a new explicitly intended request. A lost client response isn't permission to
 spend again.

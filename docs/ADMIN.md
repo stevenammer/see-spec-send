@@ -3,8 +3,9 @@
 Set `SSS_DB` to the database path. The CLI is the only administrator surface.
 
 `node cli.js init --id leader` creates the first leader and prints that leader's
-initial password. Save it before closing the terminal. It is never stored as
-plaintext, but it remains valid because no password-change or reset command exists.
+temporary password. Save it before closing the terminal. It is never stored as
+plaintext. Sign in and change it before working. `person reset --id ID` prints a
+one-time reset code; a temporary credential does not grant normal app access.
 
 `node cli.js invite create --role member --expires 24h` prints one redeemable invite.
 Roles are `member` or `leader`.
@@ -40,10 +41,11 @@ hashes are preserved, so those historical roles cannot be independently authenti
 from the old chain. Migration rebuilds the derived context cache in the same transaction.
 Later registry edits and reopening do not recapture those roles.
 
-The store has erasure receipts that bind replacement tombstone bytes, but no CLI
-command invokes erasure. Erasure is not an operator feature yet. If it is invoked by
-code, unknown body metadata is removed along with authored text; actor IDs and
-structural references remain. It does not guarantee removal from backups or earlier
+The store has erasure receipts that bind replacement tombstone bytes. The signed-in
+product erasure route checks author/steward/leader authority; erasing someone else's
+text requires a stated privacy/legal ground and an attributable note. Decisions and
+original SEE records are protected. There is no separate erasure CLI. Unknown body
+metadata is removed along with authored text; actor IDs and structural references remain. It does not guarantee removal from backups or earlier
 copies of the database.
 
 ## Worker and emergency stop
@@ -91,7 +93,7 @@ I keep the database and its adjacent kill file together, with one canonical path
 Don't use different symlink paths to the same database. A latch read error blocks
 work. A failed clear can leave the file set; check status after fixing the error.
 The database backup includes worker rows, but not the separate latch file. JSONL
-export doesn't include worker state or artifact bytes, so it isn't a worker backup.
+export includes referenced SEND/TRY artifacts but not live worker/gateway state or private mentoring, so it isn't a full database backup.
 Don't restore an old database into a running worker. Stop it and set kill first.
 
 Database symlinks resolve to the real database path before selecting the independent

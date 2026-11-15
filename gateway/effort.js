@@ -1,12 +1,35 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { killed, transaction } from '../worker/control.js';
-import { canonical } from './ledger.js';
+import { canonical, Ledger } from './ledger.js';
 
 export const EFFORT_LIMITS = Object.freeze({ calls_per_person_day: 10, calls_per_item_day: 30, automatic_calls_per_person_day: 50, automatic_calls_per_item_day: 2, output_tokens: 256, person_day_micros: 100_000 });
 const digest = value => createHash('sha256').update(value).digest('hex');
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const demand = (value, message) => { if (!value) throw Error(message); };
 const seal = row => { const { seal: ignored, ...body } = row; return digest(canonical(body)); };
+const isAutomatic = kind => ['see_first', 'spec_first', 'spec_draft'].includes(kind);
+
+export function effortAllowance(store, person, item, clock = Date.now) {
+  const ledger = new Ledger(store), all = ledger.allMeteredReceipts(), policy = ledger.policy();
+  const day = new Date(clock()).toISOString().slice(0, 10), start = Date.parse(`${day}T00:00:00.000Z`);
+  const jobs = store.db.prepare('SELECT id,kind,requester,item,created FROM effort_jobs WHERE created>=? AND created<?').all(start, start + 86400000);
+  const kind = new Map(store.db.prepare('SELECT id,kind FROM effort_jobs').all().map(row => [row.id, row.kind]));
+  const receipts = all.filter(row => row.day === day && row.job !== undefined);
+  const remaining = (limit, count) => Math.max(0, limit - count);
+  const sum = rows => rows.reduce((total, row) => total + row.charged_micros, 0);
+  const mine = receipts.filter(row => row.person === person), here = receipts.filter(row => row.item === item);
+  return {
+    day, enabled: policy.enabled && !killed(store),
+    mention_requests_person: remaining(EFFORT_LIMITS.calls_per_person_day, jobs.filter(row => row.kind === 'tag' && row.requester === person).length),
+    mention_requests_item: remaining(EFFORT_LIMITS.calls_per_item_day, jobs.filter(row => row.kind === 'tag' && row.item === item).length),
+    on_demand_person: remaining(EFFORT_LIMITS.calls_per_person_day, mine.filter(row => !isAutomatic(kind.get(row.job))).length),
+    on_demand_item: remaining(EFFORT_LIMITS.calls_per_item_day, here.filter(row => !isAutomatic(kind.get(row.job))).length),
+    automatic_person: remaining(EFFORT_LIMITS.automatic_calls_per_person_day, mine.filter(row => isAutomatic(kind.get(row.job))).length),
+    automatic_item: remaining(EFFORT_LIMITS.automatic_calls_per_item_day, here.filter(row => isAutomatic(kind.get(row.job))).length),
+    person_micros: remaining(EFFORT_LIMITS.person_day_micros, sum(mine)),
+    global_micros: remaining(policy.global_micros, sum(all)), day_micros: remaining(policy.day_micros, sum(all.filter(row => row.day === day))),
+  };
+}
 
 export class EffortGateway {
   constructor(ledger, provider, { clock = Date.now } = {}) { demand(typeof provider === 'function', 'Effort provider required'); this.ledger = ledger; this.store = ledger.store; this.db = ledger.db; this.provider = provider; this.clock = clock; }
@@ -24,9 +47,9 @@ export class EffortGateway {
       const day = new Date(this.clock()).toISOString().slice(0, 10); const mine = all.filter(row => row.person === person && row.day === day);
       const itemCalls = all.filter(row => row.item === item && row.day === day);
       const jobKind = this.db.prepare('SELECT kind FROM effort_jobs WHERE id=?').get(job)?.kind;
-      const automatic = jobKind === 'see_first' || jobKind === 'spec_first' || jobKind === 'spec_draft';
+      const automatic = isAutomatic(jobKind);
       const receiptKind = row => this.db.prepare('SELECT kind FROM effort_jobs WHERE id=?').get(row.job)?.kind;
-      const sameClass = row => automatic === (['see_first', 'spec_first', 'spec_draft'].includes(receiptKind(row)));
+      const sameClass = row => automatic === isAutomatic(receiptKind(row));
       const sum = rows => rows.reduce((total, row) => total + row.charged_micros, 0);
       demand(mine.filter(sameClass).length < (automatic ? EFFORT_LIMITS.automatic_calls_per_person_day : EFFORT_LIMITS.calls_per_person_day), automatic ? 'automatic daily call limit' : 'mention daily call limit');
       demand(itemCalls.filter(sameClass).length < (automatic ? EFFORT_LIMITS.automatic_calls_per_item_day : EFFORT_LIMITS.calls_per_item_day), automatic ? 'automatic item call limit' : 'mention item call limit');

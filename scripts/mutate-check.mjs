@@ -27,10 +27,18 @@ fullSuite.push('test/sliceF5-memory.test.mjs', 'test/sliceF5-pages.test.mjs');
 fullSuite.push('test/sliceF6-mentoring.test.mjs', 'test/sliceF6-pages.test.mjs', 'test/sliceF6-demo.test.mjs');
 fullSuite.push('test/sliceF7-spec.test.mjs');
 fullSuite.push('test/sliceF8-evidence.test.mjs', 'test/sliceF8-http.test.mjs');
+fullSuite.push('test/sliceF9.test.mjs');
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
 const mutants = [
+  ['F9 Include keeps prior requirements', '[...((spec?.must) || []), comment.comment]', '[comment.comment]'],
+  ['F9 Include keeps checks and exclusions', "const joined = key => (spec?.[key] || []).join('\\n');", "const joined = key => '';"],
+  ['F9 current intent in Effort context', '...(currentEvent ? { current:', '...(false ? { current:'],
+  ['F9 trigger survives recent-thread trimming', '...(trigger ? { triggering_comment:', '...(false ? { triggering_comment:'],
+  ['F9 worker passes trigger to prompt', "anchorKind: anchor_kind, anchorHash: anchor_hash, trigger: job.kind === 'tag' ? triggerBody : undefined", 'anchorKind: anchor_kind, anchorHash: anchor_hash, trigger: undefined'],
+  ['F9 budget headroom counts holds', 'const sum = rows => rows.reduce((total, row) => total + row.charged_micros, 0);\n  const mine = receipts.filter', "const sum = rows => rows.filter(row => row.state === 'settled').reduce((total, row) => total + row.charged_micros, 0);\n  const mine = receipts.filter"],
+  ['F9 remaining calls reset by UTC day', 'all.filter(row => row.day === day && row.job !== undefined)', 'all.filter(row => row.job !== undefined)'],
   ['F8 selected work scope', 'WHERE e.item=? AND COALESCE(ps.disabled,0)=0 ORDER BY e.seq', 'WHERE ? IS NOT NULL AND COALESCE(ps.disabled,0)=0 ORDER BY e.seq'],
   ['F8 objectives and constraints preserved', 'canonical(answer.constraints) !== canonical(packet.request.constraints)', 'false'],
   ['F8 exact included citations', 'ids.has(`${ref.item}:${ref.hash}`)', 'true'],

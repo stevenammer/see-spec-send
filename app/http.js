@@ -19,6 +19,7 @@ import { workspaceConnectors } from '../research/workspace.js';
 import { requestSpecDraft } from '../effort/spec.js';
 import { evidencePackage, readAnalysisAnswer } from '../intelligence/evidence.js';
 import { intelligencePage } from './pages-intelligence.js';
+import { effortAllowance } from '../gateway/effort.js';
 import { Mentoring } from '../core/mentoring.js';
 import { mentoringHome, mentoringRequest, mentoringEvidence } from './pages-mentoring.js';
 import { emptyScope, validScope } from '../core/scope.js';
@@ -426,7 +427,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       const specView = url.pathname.match(/^\/items\/([^/]+)\/spec$/);
       if (req.method === 'GET' && specView) {
         const state = store.read(specView[1]);
-        return page(res, specPage({ id: specView[1], ...state,
+        return page(res, specPage({ id: specView[1], ...state, effortAllowance: effortAllowance(store, session.person, specView[1], clock),
           workspaceResearch: store.db.prepare("SELECT enabled FROM research_config WHERE source='this_workspace'").get()?.enabled === 1 }, store.events(specView[1]), session.person));
       }
       const view = url.pathname.match(/^\/items\/([^/]+)$/);
@@ -442,6 +443,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
               ? store.artifact(view[1], state.context.sent?.packetHash || state.context.decided.packetHash) : null,
             decisionPackets: Object.fromEntries(events.filter(event => ['approved', 'returned', 'not_built'].includes(event.type) && event.packet_hash)
               .map(event => [event.packet_hash, store.artifact(view[1], event.packet_hash)])),
+            effortAllowance: effortAllowance(store, session.person, view[1], clock),
             effort: store.db.prepare('SELECT kind,state,last_error,requester,created FROM effort_jobs WHERE item=? ORDER BY created').all(view[1]) }, events, session.person, leader),
         );
       }

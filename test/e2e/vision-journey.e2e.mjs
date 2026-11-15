@@ -179,8 +179,9 @@ async function main() {
     assert.ok(order.findIndex(line => line.includes(mention)) < order.findLastIndex(line => line.includes('Effort, AI')), "Effort's reply comes after the mention");
     const mentionThread = maya.locator('li').filter({ has: maya.locator('p', { hasText: mention }) }).first();
     assert.equal(await mentionThread.locator('li:has-text("Effort, AI")').count(), 1, 'the mention reply remains in its exact nested thread');
-    assert.match(await maya.locator('main').textContent(), /Effort daily limits: 10 mention replies per person, 30 per item/);
-    step('@effort mention got a nested labeled AI reply and honest quota limits');
+    assert.match(await maya.locator('main').textContent(), /You can request 9 more mention replies; this item can accept 29 more/);
+    assert.match(await maya.locator('main').textContent(), /Model calls for mentions and SPEC drafts: 9 remaining for you, 29 for this item/);
+    step('@effort mention got a nested labeled AI reply and actual remaining allowances');
 
     // 4. Only OP can include it.
     assert.equal(await maya.locator('form[data-include]').count(), 0, 'a member sees no Include control');
@@ -245,6 +246,8 @@ async function main() {
     const specInclude = olive.locator('li:has-text("Keep the caller name") form[data-include="spec"]');
     await specInclude.getByRole('button', { name: 'Include' }).click();
     await olive.getByRole('heading', { name: 'Spec v2' }).waitFor();
+    assert.equal(await olive.locator('form[data-event=specced] [name=must]').inputValue(), 'Pass the account number on transfer.\nShow it to the next agent.\nKeep the caller name with the transfer.');
+    assert.equal(await olive.locator('form[data-event=specced] [name=how_we_know]').inputValue(), 'Callers stop repeating it.');
     assert.equal(await olive.locator('form[data-event=specced] [name=assumptions]').inputValue(), 'The transfer system can display a note.');
     assert.equal(await olive.locator('form[data-event=specced] [name=open_questions]').inputValue(), 'Who maintains the note after a transfer?');
     step('SPEC Include clicked and created a version-bound spec update, preserving assumptions and open questions');

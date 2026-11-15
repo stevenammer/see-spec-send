@@ -12,7 +12,7 @@ Schema 8 includes the new event vocabulary and rebuilds derived contexts. The pr
 
 ## Verification
 
-Final verification results are recorded in the README matrix and release follow-up. The focused F3 mutation pass killed all 11 controls through named failing assertions. The standard full-suite mutation runs are separate gates; a focused kill is not a claim that those longer runs finished.
+Final verification results are recorded in the README matrix and release follow-up. The focused F3 mutation pass killed all 11 controls through named failing assertions. All 11 standard full-suite exact-name mutation gates also passed. One baseline hit a timing-sensitive concurrent-backup assertion; the test now uses a deterministic halfway writer rendezvous, passed under CPU contention, and the exact failed gate passed on retry.
 
 ## Remaining work
 

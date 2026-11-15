@@ -12,7 +12,7 @@ Rules 2 verification (2026-11-14): unit, public-file and demo-parity checks run 
 | Browser journey | `npm run test:vision` | `2ab8c9f` | 2026-11-14 | Chrome, including 390px member | PASS, fixture provider |
 | Manual workflow | `npm run test:e2e` | `2ab8c9f` | 2026-11-14 | Chrome + Playwright | PASS |
 | Real listener | `npm run test:listen` | `2ab8c9f` | 2026-11-14 | Local HTTP | PASS |
-| F3 controls, focused mutation pass | 11 exact mutations with named failing assertions | `2ab8c9f` | 2026-11-14 | Frozen tree, five F3 files | PASS; longer full-suite per-mutant gates still running |
+| F3 controls, focused mutation pass | 11 exact mutations with named failing assertions | `2ab8c9f` | 2026-11-14 | Frozen tree, five F3 files | PASS, 11 focused kills plus all 11 standard full-suite exact-name gates |
 | Backup concurrency rendezvous | `node test/slice20.test.mjs` | `4f94ac2` | 2026-11-14 | Normal and four CPU burners | PASS, 16 tests in each run |
 | Docker acceptance | `npm run test:container` | `2ab8c9f` | 2026-11-14 | Docker + local mock | NOT RUN for F3; F4 records its own proof |
 | Hosted model/vendor | explicit opt-in only | `2ab8c9f` | 2026-11-14 | bounded provider | NOT RUN, no paid calls |

@@ -20,11 +20,10 @@ jobs:
       - run: npm run check:demo
       - run: npm run check:public
   browser-workflows:
-    name: browser workflow gates (real Chrome; not yet proven on this runner)
+    name: browser workflow gates (real Chrome)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # The runner's own Chrome is used. Until this job has run green on the hosted runner it does not block the build.
-    continue-on-error: true
+    # Both hosted Chrome journeys passed at 4b48a83; subsequent failures block CI.
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4

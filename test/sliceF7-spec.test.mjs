@@ -83,3 +83,36 @@ test('F7 missing build prices remain unknown while an explicit operator zero is 
   assert.equal(packet({ worstCaseSpendMicros: 0 }).worstCaseSpendMicros, 0);
   assert.equal(packet({ worstCaseSpendMicros: 1350 }).worstCaseSpendMicros, 1350);
 });
+
+test('SPEC normalization accepts a complete JSON fence and comments without altering strings', () => {
+  const draft = { must: ['Keep https://example.test/a/*literal*/ and say "yes" \\ safely.'], how_we_know: ['A reviewer sees // and /* unchanged.'], out_of_scope: [], assumptions: [], open_questions: [] };
+  const json = JSON.stringify(draft, null, 2).replace('"how_we_know":', '// A synthetic model comment\n  "how_we_know":').replace('"assumptions":', '/* evidence is limited */ "assumptions":');
+  assert.deepEqual(parseSpecDraft('```json\n' + json + '\n```'), draft);
+  assert.deepEqual(parseSpecDraft(json), draft);
+});
+
+test('SPEC normalization rejects malformed fences, comments, prose, extra authority and missing fields', () => {
+  const valid = JSON.stringify({ must: ['One'], how_we_know: ['Test'], out_of_scope: [], assumptions: [], open_questions: [] });
+  for (const invalid of [
+    '```json\n' + valid, '```json\n' + valid + '\n```\nextra', 'Here is a draft:\n```json\n' + valid + '\n```',
+    '```javascript\n' + valid + '\n```', valid + ' /* unclosed', valid.replace('"One"', '"One" /* unclosed'),
+    valid.replace('"One"', '"One" // comments out the rest'), valid.replace('"One"', '"One" /*x*/ "Two"'),
+    valid.replace('"must"', '"approved":true,"must"'), valid.replace('"open_questions":[]', '"open_questions":null'),
+    valid.replace(',"open_questions":[]', ''),
+  ]) assert.throws(() => parseSpecDraft(invalid), undefined, invalid);
+  assert.throws(() => parseSpecDraft(' '.repeat(3501)), /bounded JSON/);
+});
+
+test('SPEC worker preserves the raw formatted response in the receipt and only posts an advisory draft', async t => {
+  const { store, ledger } = setup(t), hash = store.read('draft').context.seeHash;
+  await new EffortWorker(store, new EffortGateway(ledger, fixtureProvider)).tick();
+  requestSpecDraft(store, 'op', 'draft', hash);
+  const raw = '```json\n{"must":["Keep the note"], // context\n"how_we_know":["Find it"],"out_of_scope":[],"assumptions":[],"open_questions":[]}\n```';
+  const provider = async input => ({ ...await fixtureProvider(input), output: raw });
+  assert.equal(await new EffortWorker(store, new EffortGateway(ledger, provider)).tick(), true);
+  assert.ok(ledger.effortReceipts().some(receipt => JSON.parse(receipt.outcome).output === raw));
+  const comment = store.events('draft').at(-1).comment;
+  assert.deepEqual(parseSpecDraft(comment.slice(SPEC_DRAFT_PREFIX.length)).must, ['Keep the note']);
+  assert.equal(store.read('draft').state, 'SEEN');
+  assert.equal(store.read('draft').context.specHash, null);
+});

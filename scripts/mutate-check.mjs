@@ -27,11 +27,13 @@ fullSuite.push('test/sliceF5-memory.test.mjs', 'test/sliceF5-pages.test.mjs');
 fullSuite.push('test/sliceF6-mentoring.test.mjs', 'test/sliceF6-pages.test.mjs', 'test/sliceF6-demo.test.mjs');
 fullSuite.push('test/sliceF7-spec.test.mjs');
 fullSuite.push('test/sliceF8-evidence.test.mjs', 'test/sliceF8-http.test.mjs');
-fullSuite.push('test/sliceF9.test.mjs');
+fullSuite.push('test/sliceF9.test.mjs', 'test/trusted-system-metering.test.mjs');
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
 const mutants = [
+  ['trusted builder system reservation', 'rateWithSystemText(ledger.rate, system)', 'ledger.rate'],
+  ['trusted Effort system reservation', 'rateWithSystemText(selected.rate, EFFORT_SYSTEM, SPEC_INSTRUCTIONS)', 'selected.rate'],
   ['F9 Include keeps prior requirements', '[...((spec?.must) || []), comment.comment]', '[comment.comment]'],
   ['F9 Include keeps checks and exclusions', "const joined = key => (spec?.[key] || []).join('\\n');", "const joined = key => '';"],
   ['F9 current intent in Effort context', '...(currentEvent ? { current:', '...(false ? { current:'],

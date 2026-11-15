@@ -404,7 +404,7 @@ async function main() {
     const jobLines = () => olive.locator('main > p:has-text("Effort:")').allInnerTexts();
     for (let tries = 0; ; tries += 1) {
       const lines = await jobLines();
-      if (lines.length >= 11 && lines.every(line => /is (answered|unavailable, retrying|done|failed|blocked)/.test(line))) break;
+      if (lines.length >= 11 && lines.every(line => /is (answered|unavailable, retries exhausted|done|failed|blocked)/.test(line))) break;
       assert.ok(tries < 120, `Effort jobs never finished: ${lines.join(' / ')}`);
       await new Promise(resolve => setTimeout(resolve, 700));
       await olive.reload();

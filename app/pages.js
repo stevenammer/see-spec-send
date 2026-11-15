@@ -1,3 +1,4 @@
+import { renderEffortStatus } from './pages-effort.js';
 import { postedQuestMemo } from '../public/vision-quest.js';
 import { renderThread } from './pages-thread.js';
 import { lineDiff } from '../core/diff.js';
@@ -68,8 +69,8 @@ export function feedPage(items, next = null) {
       .join('') || '<li>No problems posted yet.</li>';
   return shell(
     'The work',
-    '<div class="top"><h1>The work</h1><div><a class="button" href="/items/new">Post a problem</a> ' +
-      `<a href="/quest">Start a Vision Quest</a></div></div><ul class="feed">${cards}</ul>` +
+    '<div class="top"><h1>The work</h1><div><a class="button" href="/quest">Start a Vision Quest (recommended)</a> ' +
+      `<a class="button" href="/items/new">Post a problem directly</a></div></div><ul class="feed">${cards}</ul>` +
       (next ? `<p><a href="/?after=${encodeURIComponent(next)}">Next page</a></p>` : ''),
   );
 }
@@ -237,12 +238,7 @@ export function itemPage(item, events, person, leader) {
   const reassign = rules2 && leader && !['HELPS', 'SHELVED'].includes(item.state)
     ? `<form data-event="steward_changed"><h2>Reassign steward</h2><p>Only after the current steward records consent, or has made no event anywhere for 14 days.</p><label>New steward (person ID)<input name="steward" required maxlength="64"></label><label>Note, at least 12 characters<input name="reason" required minlength="12" maxlength="2000"></label><button>Reassign steward</button></form>` : '';
   const checkin = `<form data-event="checked_in"><h2>Check-in</h2><label>What changed?<input name="note" required maxlength="2000"></label>${rules2 && context.steward === person ? '<label><input type="checkbox" name="consent" value="true"> I consent to a leader assigning a new steward.</label>' : ''}<button>Post check-in</button></form>`;
-  const effortStatus = (item.effort || []).map(job => {
-    const status = job.state === 'queued' || job.state === 'running' ? 'thinking'
-      : job.state === 'blocked' || job.state === 'failed' ? 'unavailable, retrying'
-        : job.state === 'done' ? 'answered' : job.state;
-    return `<p>Effort: ${escape(job.kind)} is ${escape(status)}${job.last_error ? ` (${escape(job.last_error)})` : ''}.</p>`;
-  }).join('') || '<p>Effort is not turned on on this server.</p>';
+  const effortStatus = renderEffortStatus(item.effort);
   const effortAllowance = renderEffortAllowance(item.effortAllowance);
   const instructions = events.filter(event => event.type === 'steered' && event.approval === context.approval)
     .map(event => `<li>${escape(event.instruction)}${event.source ? ` (from ${escape(event.source)})` : ''}</li>`).join('');

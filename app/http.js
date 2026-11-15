@@ -428,7 +428,8 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (req.method === 'GET' && specView) {
         const state = store.read(specView[1]);
         return page(res, specPage({ id: specView[1], ...state, effortAllowance: effortAllowance(store, session.person, specView[1], clock),
-          workspaceResearch: store.db.prepare("SELECT enabled FROM research_config WHERE source='this_workspace'").get()?.enabled === 1 }, store.events(specView[1]), session.person));
+          workspaceResearch: store.db.prepare("SELECT enabled FROM research_config WHERE source='this_workspace'").get()?.enabled === 1,
+          effort: store.db.prepare("SELECT kind,state,last_error FROM effort_jobs WHERE item=? AND kind='spec_draft' ORDER BY created").all(specView[1]) }, store.events(specView[1]), session.person));
       }
       const view = url.pathname.match(/^\/items\/([^/]+)$/);
       if (req.method === 'GET' && view) {

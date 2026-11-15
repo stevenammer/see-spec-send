@@ -15,7 +15,9 @@ import { CURRENT_RULES } from '../core/machine.js';
 import { buildPacket } from '../core/packet.js';
 import { specPage } from './pages-spec.js';
 import { researchRecord } from '../research/connectors.js';
+import { workspaceConnectors } from '../research/workspace.js';
 import { emptyScope, validScope } from '../core/scope.js';
+import { searchPage, contributionsPage, recordPage } from './pages-memory.js';
 
 // Object key order does not change a retry identity. Array order is meaningful.
 const canonical = value => JSON.stringify(value, (_key, entry) =>
@@ -171,6 +173,7 @@ const validEvent = input => {
       && text(input.reason, 2000) && (input.restricted_evidence === undefined || text(input.restricted_evidence, 2000))
       && (input.pivot_note === undefined || text(input.pivot_note, 2000))
       && (input.spec_hash === undefined || hex(input.spec_hash)) && (input.packet_hash === undefined || hex(input.packet_hash));
+    case 'credit_note': return exactKeys(input, ['type', 'person', 'source', 'note']) && text(input.person, 64) && hex(input.source) && text(input.note, 2000);
     case 'shelved': case 'checked_in':
       return exactKeys(input, input.type === 'checked_in' ? ['type', 'note', 'consent'] : ['type', input.type === 'shelved' ? 'reason' : 'note'])
         && text(input[input.type === 'shelved' ? 'reason' : 'note'], 2000)
@@ -343,10 +346,37 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (req.method === 'GET' && url.pathname === '/quest') {
         return page(res, questPage(session.person));
       }
+      if (req.method === 'GET' && url.pathname === '/search') {
+        const query = url.searchParams.get('q') || '';
+        return page(res, searchPage(query, store.search(session.person, query)));
+      }
+      const personView = url.pathname.match(/^\/people\/([^/]+)$/);
+      if (req.method === 'GET' && personView) {
+        const subject = decodeURIComponent(personView[1]);
+        return page(res, contributionsPage(subject, store.contributions(session.person, subject)));
+      }
+      const recordView = url.pathname.match(/^\/items\/([^/]+)\/record\/([a-f0-9]{64})$/);
+      if (req.method === 'GET' && recordView) {
+        const event = store.events(recordView[1]).find(entry => entry.body_hash === recordView[2]);
+        if (!event) return json(res, 404, { error: 'not found' });
+        const erased = store.db.prepare('SELECT erased FROM bodies WHERE hash=?').get(recordView[2])?.erased === 1
+          || !!store.db.prepare(`SELECT 1 FROM events e JOIN bodies b ON b.hash=e.body_hash
+            WHERE e.item=? AND e.type='erased' AND json_extract(b.bytes,'$.body_hash')=?`).get(recordView[1], recordView[2]);
+        const canAcknowledge = ['person', 'agent'].includes(store.db.prepare('SELECT kind FROM actors WHERE id=?').get(event.actor)?.kind);
+        return page(res, recordPage(recordView[1], event, erased, canAcknowledge));
+      }
+      const relatedView = url.pathname.match(/^\/items\/([^/]+)\/related$/);
+      if (req.method === 'GET' && relatedView) {
+        const first = store.events(relatedView[1])[0];
+        if (!first) return json(res, 404, { error: 'not found' });
+        const query = (first.original || first.problem || '').match(/[\p{L}\p{N}_-]+/gu)?.slice(0, 4).join(' ') || '';
+        return page(res, searchPage(query, store.search(session.person, query).filter(row => row.item !== relatedView[1]), { related: true }));
+      }
       const specView = url.pathname.match(/^\/items\/([^/]+)\/spec$/);
       if (req.method === 'GET' && specView) {
         const state = store.read(specView[1]);
-        return page(res, specPage({ id: specView[1], ...state }, store.events(specView[1]), session.person));
+        return page(res, specPage({ id: specView[1], ...state,
+          workspaceResearch: store.db.prepare("SELECT enabled FROM research_config WHERE source='this_workspace'").get()?.enabled === 1 }, store.events(specView[1]), session.person));
       }
       const view = url.pathname.match(/^\/items\/([^/]+)$/);
       if (req.method === 'GET' && view) {
@@ -424,7 +454,9 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         const state = store.read(research[1]).context;
         if (state.steward !== session.person) throw refused('only the steward can refresh research');
         const at = new Date(clock()).toISOString();
-        const sources = await researchRecord({ at });
+        const events = store.events(research[1]);
+        const current = events.filter(event => event.type === 'revised').at(-1)?.text || events[0]?.original || events[0]?.problem;
+        const sources = await researchRecord({ at, connectors: workspaceConnectors(store, session.person), input: { item: research[1], text: current } });
         return json(res, 201, store.append(research[1], { type: 'researched', actor: session.person, sources, at },
           { idem: req.headers['idempotency-key'] || randomUUID() }));
       }

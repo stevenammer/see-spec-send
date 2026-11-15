@@ -85,6 +85,8 @@ const validWords = value => value === undefined || (array(value) && value.every(
 export function step(state, event, who) {
   const context = typeof state === 'string' ? { ...initial(), phase: state } : state;
   if (!event || typeof event !== 'object' || typeof event.type !== 'string') return fail('invalid event');
+  if (event.type === 'credit_note' && person(who) && nonempty(event.person) && nonempty(event.source)
+      && nonempty(event.note) && event.note.length <= 2000) return result(context);
   if (!open.has(context.phase)) return fail('terminal state');
   if (forgedReporter(event.evidence, event.actor)) return fail('reported evidence reported_by must equal actor');
 

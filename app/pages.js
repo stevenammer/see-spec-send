@@ -27,7 +27,7 @@ const stages = {
   SHELVED: 'Shelved',
 };
 const shell = (title, content) =>
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See / Spec / Send</a></header><main>${content}</main><script src="/assets/app.js" defer></script></body></html>`;
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See / Spec / Send</a> <a href="/search">Search</a></header><main>${content}</main><script src="/assets/app.js" defer></script></body></html>`;
 const progress = item => `${item.helpers} of ${item.quorum} people have said it helps`;
 
 export function signInPage({ oidc = false } = {}) {
@@ -242,7 +242,7 @@ export function itemPage(item, events, person, leader) {
   return shell(
     problem,
     '<p><a href="/">Back to the work</a></p>' +
-      `<p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1><p>Originator: ${escape(context.originator || context.steward)}. Current steward: ${escape(context.steward)}.</p>` +
+      `<p class="stage">${stages[item.state]}</p><h1>${escape(problem)}</h1><p>Originator: <a href="/people/${encodeURIComponent(context.originator || context.steward)}">${escape(context.originator || context.steward)}</a>. Current steward: <a href="/people/${encodeURIComponent(context.steward)}">${escape(context.steward)}</a>.</p><p><a href="/items/${encodeURIComponent(item.id)}/related">Discover related work</a></p>` +
       `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${context.superseded ? `<p>This old approval is superseded. Update the spec, SEND IT!, and get a new leader approval.${context.supersededArtifact ? ' The delivered try is superseded and cannot receive new Helps votes.' : ''}</p>` : ''}${forkedFrom}${effortStatus}${effortAllowance}${see}${forkDraft}${questMemo}${specSummary}${decision}${leash}${decisionHistory ? `<section><h2>Decision history</h2><ol>${decisionHistory}</ol></section>` : ''}${erasures ? `<section><h2>Erased content</h2><ol>${erasures}</ol></section>` : ''}${revise}${action}${packetView}${tryThread}${oldTryHistory}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${shelve}${reassign}${checkin}${comment}` +
       `<h2>${rules2 ? 'Thread' : 'Comments'}</h2>${rules2 ? (renderThread(events, { ...context, steward: context.steward === person ? context.steward : null }) || '<p>No comments yet.</p>') : `<ol>${anchoredComments || '<li>No comments yet.</li>'}</ol>`}<h2>What happened</h2><ol>${events.filter(event => event.type !== 'commented' && event.type !== 'revised').map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
   );

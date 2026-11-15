@@ -74,6 +74,11 @@ export function createLog({ roster, item, now = () => new Date().toISOString(),
           if (existing.submittedHash !== submitted) throw new Error('idempotency key reused with a different event');
           return { ok: true, idempotent: true, seq: existing.seq, ...log.replay() };
         }
+        if (event.type === 'credit_note') {
+          const source = rows.find(row => row.bodyHash === event.source);
+          if (!source || source.actor !== event.person || !['person', 'agent'].includes(roster[event.person]?.kind))
+            throw new Error('credit source must be an unerased contribution by this person in this item');
+        }
         const bytes = stable(bodyOf(event));
         const bodyHash = await scopedHash(bytes);
         const prior = log.replay();

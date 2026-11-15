@@ -2,7 +2,7 @@ import { renderThread } from './pages-thread.js';
 import { forkForm, scopeFields } from './pages.js';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
-const shell = (title, content) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See / Spec / Send</a></header><main>${content}</main><script src="/assets/app.js" defer></script></body></html>`;
+const shell = (title, content) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See / Spec / Send</a> <a href="/search">Search</a></header><main>${content}</main><script src="/assets/app.js" defer></script></body></html>`;
 
 export function specPage(item, events, person) {
   const context = item.context;
@@ -12,7 +12,7 @@ export function specPage(item, events, person) {
   const own = context.steward === person;
   const fields = key => escape((current[key] || []).join('\n'));
   const update = own && !['HELPS', 'SHELVED'].includes(item.state) ? `<form data-event="specced"><h2>Update the spec</h2><input type="hidden" name="see_hash" value="${escape(context.seeHash)}"><label>Must do<textarea name="must" required>${fields('must')}</textarea></label><label>How we'll know<textarea name="how_we_know" required>${fields('how_we_know')}</textarea></label><label>Out of scope<textarea name="out_of_scope">${fields('out_of_scope')}</textarea></label>${scopeFields(current.scope)}<button>Save Spec update</button></form>` : '';
-  const send = own && item.state === 'SPECCED' ? `<form data-research="true"><p>Research sources aren't connected. Refreshing records exactly what was and wasn't checked.</p><button>Refresh research record</button></form><form data-send="true"><input type="hidden" name="spec_hash" value="${escape(context.specHash)}"><label>Your cost and time estimate (optional, not independently verified)<textarea name="estimate" maxlength="2000"></textarea></label><button>SEND IT!</button></form>` : '';
+  const send = own && item.state === 'SPECCED' ? `<form data-research="true"><p>${item.workspaceResearch ? 'Workspace research is connected. Other sources remain disconnected.' : "Research sources aren't connected. An operator can enable workspace research."} Refreshing records exactly what was and wasn't checked.</p><button>Refresh research record</button></form><form data-send="true"><input type="hidden" name="spec_hash" value="${escape(context.specHash)}"><label>Your cost and time estimate (optional, not independently verified)<textarea name="estimate" maxlength="2000"></textarea></label><button>SEND IT!</button></form>` : '';
   const scope = current.scope || { data_sources: [], audiences: [] };
   const scopeSummary = `<section><h2>Proposed scope</h2><p>Data sources: ${scope.data_sources.length ? scope.data_sources.map(escape).join(', ') : 'none'}. Audiences: ${scope.audiences.length ? scope.audiences.map(escape).join(', ') : 'none'}. These IDs describe the proposal; they don't connect a source or grant access.</p></section>`;
   const versions = specs.map((spec, index) => `<li>Spec v${index + 1}${spec.body_hash === context.specHash ? ' (current)' : ''}</li>`).join('');

@@ -12,7 +12,7 @@ import { Ledger } from '../gateway/ledger.js';
 import { main as cli } from '../cli.js';
 
 // Bump together with a new entry in core/migrations.js.
-const CURRENT = 9;
+const CURRENT = 10;
 const temp = () => join(mkdtempSync(join(tmpdir(), 'sss-slice21-')), 'db.sqlite');
 const fixtureSql = name => readFileSync(new URL(`./fixtures/golden/${name}.sql`, import.meta.url), 'utf8');
 
@@ -142,6 +142,22 @@ test('golden schema 8 preserves all cached contexts and rebuilds historical fork
   } finally { store.close(); }
   assert.equal(backups(file).length, 1);
   assert.equal(userVersion(backups(file)[0]), 8);
+});
+
+test('golden schema 9 upgrades memory without changing cached workflow contexts', () => {
+  const file = loadFixture('d4ab97a-v9');
+  const before = new DatabaseSync(file, { readOnly: true });
+  const contexts = before.prepare('SELECT item,context FROM items ORDER BY item').all(); before.close();
+  const store = new Store(file);
+  try {
+    assert.equal(userVersion(file), CURRENT);
+    assert.deepEqual(store.db.prepare('SELECT item,context FROM items ORDER BY item').all(), contexts);
+    assert.ok(store.verifyAll().every(result => result.ok));
+    assert.ok(store.search('originator', 'caller').length > 0);
+    assert.ok(store.contributions('leader', 'originator').length > 0);
+    assert.equal(store.db.prepare("SELECT enabled FROM research_config WHERE source='this_workspace'").get().enabled, 0);
+  } finally { store.close(); }
+  assert.equal(userVersion(backups(file)[0]), 9);
 });
 
 test('a routine open of a current database runs no schema work, no backfill, and takes no write lock', () => {

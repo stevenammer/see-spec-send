@@ -581,6 +581,32 @@ async function main() {
     assert.equal(await leader.locator('.stage', { hasText: 'Shelved' }).count(), 1, 'fork leaves terminal parent closed');
     step('phone member forked a terminal parent without reopening it or inheriting its authority');
 
+    // Workspace memory exposes source records, never scores or authority.
+    await olive.goto(`${origin}/items/new`);
+    await olive.locator('[name=original]').fill('Transfer notes need a searchable handoff record.');
+    await olive.getByRole('button', { name: 'Post SEE' }).click();
+    await olive.waitForURL(/\/items\/(?!new$)[^/]+$/);
+    const memoryUrl = olive.url(), memoryId = memoryUrl.split('/').at(-1);
+    await maya.goto(memoryUrl);
+    await maya.locator('form[data-event=commented] [name=comment]').first().fill('quartz memory marker <img src=x onerror=alert(1)>');
+    await maya.locator('form[data-event=commented]').first().getByRole('button', { name: 'Post comment' }).click();
+    await maya.getByText('quartz memory marker').first().waitFor();
+    await ben.goto(`${origin}/search?q=quartz`);
+    await ben.getByRole('link', { name: 'commented by maya', exact: true }).click();
+    await ben.getByRole('heading', { name: 'Work record', exact: true }).waitFor();
+    const memoryHash = await ben.locator('form[data-event=credit_note] [name=source]').inputValue();
+    await ben.locator('form[data-event=credit_note] [name=note]').fill('The searchable marker clarified the handoff detail.');
+    const acknowledgement = ben.waitForResponse(response => response.url().endsWith(`/api/items/${memoryId}/events`) && response.request().method() === 'POST');
+    await ben.getByRole('button', { name: 'Record acknowledgement' }).click();
+    assert.equal((await acknowledgement).status(), 201);
+    await ben.goto(`${origin}/people/maya`);
+    await ben.getByRole('heading', { name: 'Contribution record: maya' }).waitFor();
+    assert.match(await ben.locator('main').innerText(), /credited/);
+    assert.equal(await rawPost(maya, `/api/items/${memoryId}/erase`, { body_hash: memoryHash }), 201);
+    await ben.goto(`${origin}/search?q=quartz`);
+    await ben.getByText('No matching records.', { exact: true }).waitFor();
+    step('phone member found a source record, acknowledged its author, and erased text disappeared from search');
+
     assert.deepEqual(problems, [], `browser problems:\n${problems.join('\n')}`);
     console.log('PASS: Vision journey in a real browser: SEE, Effort, mention, include and credit, SPEC IT!, SEND IT!, decision, fork, adopted steer, reassign, mention cap, Vision Quest.');
   } finally {

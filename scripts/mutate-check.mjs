@@ -23,10 +23,21 @@ const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test
   'test/mutation-security.test.mjs', 'test/slice23.test.mjs', 'test/slice24.test.mjs',
   'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs', 'test/slice27.test.mjs', 'test/password-screen.test.mjs',
   'test/vision-01.test.mjs', 'test/vision-02.test.mjs', 'test/vision-03.test.mjs', 'test/vision-04.test.mjs', 'test/sliceR.test.mjs', 'test/sliceR2.test.mjs', 'test/sliceF3.test.mjs', 'test/sliceF3-worker.test.mjs', 'test/pagesF3.test.mjs', 'test/sliceF3-http.test.mjs', 'test/sliceF3-gateway.test.mjs', 'test/sliceF4-builder.test.mjs', 'test/sliceF4-forks.test.mjs', 'test/sliceF4-http.test.mjs', 'test/sliceF4-pages.test.mjs'];
+fullSuite.push('test/sliceF5-memory.test.mjs', 'test/sliceF5-pages.test.mjs');
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
 const mutants = [
+  ['F5 enabled person search predicate', "JOIN actors viewer ON viewer.id=? AND viewer.kind='person'", "JOIN actors viewer ON viewer.id=?"],
+  ['F5 disabled viewer search predicate', "WHERE search_docs MATCH ? AND COALESCE(ps.disabled,0)=0", "WHERE search_docs MATCH ?"],
+  ['F5 literal search tokens', ".join(' AND ');", ".join(' OR ');"],
+  ['F5 memory append is transactional', '    syncMemory(this, item);', ''],
+  ['F5 contribution cache verified', '&& canonical(ordered(contributions)) === canonical(ordered(expected.contributions))', '&& true'],
+  ['F5 search cache verified', 'canonical(ordered(docs)) === canonical(ordered(expected.docs))', 'true'],
+  ['F5 credit source author bound', 'source.actor !== event.person', 'false'],
+  ['F5 workspace source off by default', "if (store.db.prepare(\"SELECT enabled FROM research_config WHERE source='this_workspace'\").get()?.enabled !== 1) return [];", 'if (false) return [];'],
+  ['F5 contribution viewer predicate', "WHERE c.person=? AND COALESCE(ps.disabled,0)=0", "WHERE c.person=?"],
+  ['F5 retrieved evidence reaches Effort data', 'workspaceRecords: workspaceRecords(this.store, job.requester, job.item, original)', 'workspaceRecords: []'],
   ["F4 fork selected kind matches event", "!row || (selection && !kinds[selection.kind]?.includes(selected.type))", "!row"],
   ["F4 fork selected hash matches parent body", "selected.body_hash !== event.from.hash", "false"],
   ["F4 historical fork excludes later revisions", "const history = events.slice(0, index + 1);", "const history = events;"],
@@ -412,7 +423,7 @@ const mutants = [
   ['slice27 gateway socket directory is private', "if (statSync(parent).mode & 0o022) fail(", "if (false) fail("],
 ];
 
-const files = ['compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'core/scope.js', 'research/connectors.js', 'cli.js',
+const files = ['core/memory.js', 'research/workspace.js', 'app/pages-memory.js', 'compose.yaml', 'deploy/tls-front.conf', 'docs/systemd/see-spec-send-server.service', 'app/auth.js', 'app/http.js', 'app/pages.js', 'app/pages-thread.js', 'core/machine.js', 'core/migrations.js', 'core/schema.js', 'core/store.js', 'core/packet.js', 'core/scope.js', 'research/connectors.js', 'cli.js',
   'public/vision-quest.js', 'public/quest-storage.js', 'public/quest-ui.js', 'core/diff.js',
   'worker/control.js', 'worker/watchdog.js', 'worker/policy.js', 'worker/container.js', 'drafting/preflight.js', 'app/oidc.js', 'app/integrations.js', 'app/effort.js', 'app/pages-spec.js', 'worker/runner.js', 'worker/fake.js', 'gateway/ledger.js', 'gateway/quest.js', 'gateway/effort.js', 'gateway/http.js', 'effort/prompt.js', 'provider/config.js', 'provider/safe-http.js', 'provider/adapters.js', 'worker/builder/index.js', 'provider/vision-quest.js', 'core/backup.js', 'core/audit.js', 'core/errors.js', 'core/secrets.js', 'public/app.js', 'effort/prompt.js'];
 

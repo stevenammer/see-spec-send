@@ -7,6 +7,7 @@ import { migrate } from './migrations.js';
 import { invalid, refused } from './errors.js';
 import { appendAudit } from './audit.js';
 import { emptyScope, validScope, withinScope } from './scope.js';
+import { initializeMemory, syncMemory, rebuildMemory, verifyMemory, searchMemory, contributionMemory } from './memory.js';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 // Fixed page size for the feed and the item API. There is no setting for it.
@@ -51,7 +52,7 @@ function redactBody(type, body) {
   const structural = ['verdict', 'quorum', 'cap_usd', 'approval', 'spec_hash',
     'artifact_hash', 'usd', 'steward', 'body_hash', 'redacted_hash', 'delivered_by',
     'anchor_kind', 'anchor_hash', 'parent', 'kind', 'base_hash', 'rules', 'source_label', 'honesty_label',
-    'see_hash', 'spec_hash', 'base_spec_hash', 'packet_hash', 'approval', 'iteration', 'job', 'receipt', 'model', 'mode', 'credits', 'questMemo', 'consent', 'absent', 'ground', 'max_iterations', 'window_minutes', 'restricted_evidence', 'pivot_note', 'from', 'scope'];
+    'see_hash', 'spec_hash', 'base_spec_hash', 'packet_hash', 'approval', 'iteration', 'job', 'receipt', 'model', 'mode', 'credits', 'questMemo', 'consent', 'absent', 'ground', 'max_iterations', 'window_minutes', 'restricted_evidence', 'pivot_note', 'from', 'scope', 'person', 'source'];
   const textFields = ['problem', 'looked', 'found', 'must', 'how_we_know', 'out_of_scope',
     'note', 'reason', 'comment', 'original', 'text', 'assumptions', 'open_questions', 'instruction'];
   // Preserve only known machine fields; unknown metadata may contain personal writing.
@@ -71,6 +72,9 @@ function redactBody(type, body) {
 }
 
 export class Store {
+  migrateF5() { initializeMemory(this); }
+  search(person, text, options) { return searchMemory(this, person, text, options); }
+  contributions(viewer, subject) { return contributionMemory(this, viewer, subject); }
   migrateF4() {
     this.db.exec(`CREATE TABLE lineage(child TEXT PRIMARY KEY, parent_item TEXT NOT NULL,
       parent_seq INTEGER NOT NULL, parent_hash TEXT NOT NULL, source_kind TEXT, source_body_hash TEXT);
@@ -346,6 +350,15 @@ export class Store {
     if (Object.hasOwn(event, 'role')) throw refused('event role is forbidden');
     if (typeof event.at !== 'string' || !event.at) throw refused('event.at required');
     this.actor(event.actor, item);
+    if (event.type === 'credit_note') {
+      const source = this.db.prepare(`SELECT e.actor,b.erased FROM events e JOIN bodies b ON b.hash=e.body_hash
+        WHERE e.item=? AND e.body_hash=?`).get(item, event.source);
+      const target = this.db.prepare('SELECT kind FROM actors WHERE id=?').get(event.person);
+      const erasedReceipt = this.db.prepare(`SELECT 1 FROM events e JOIN bodies b ON b.hash=e.body_hash
+        WHERE e.item=? AND e.type='erased' AND json_extract(b.bytes,'$.body_hash')=?`).get(item, event.source);
+      if (!source || ((source.erased || erasedReceipt) && !importing) || source.actor !== event.person || !['person', 'agent'].includes(target?.kind))
+        throw refused('credit source must be an unerased contribution by this person in this item');
+    }
     if (event.type === 'steward_changed') {
       const next = this.db.prepare('SELECT kind FROM actors WHERE id=?').get(event.steward);
       if (!next || next.kind !== 'person') throw invalid('steward must be a registered person');
@@ -523,6 +536,7 @@ export class Store {
       this.db.prepare("UPDATE runs SET status='stop_requested' WHERE item=? AND approval=? AND status='active'")
         .run(item, prior.context.approval);
     }
+    syncMemory(this, item);
     return { seq, hash, ...this.read(item), effects: outcome.effects };
   }
 
@@ -593,6 +607,8 @@ export class Store {
       ...this.db.prepare('SELECT DISTINCT item FROM events').all().map(row => row.item),
       ...this.db.prepare('SELECT item FROM items').all().map(row => row.item),
       ...this.db.prepare('SELECT child FROM lineage').all().map(row => row.child),
+      ...this.db.prepare('SELECT DISTINCT item FROM search_docs').all().map(row => row.item),
+      ...this.db.prepare('SELECT DISTINCT item FROM contributions').all().map(row => row.item),
     ]);
     return [...names].sort().map(item => {
       const chain = this.verify(item);
@@ -612,6 +628,7 @@ export class Store {
         const parent = this.db.prepare('SELECT hash FROM events WHERE item=? AND seq=?').get(expectedLineage.parent_item, expectedLineage.parent_seq);
         if (parent?.hash !== expectedLineage.parent_hash) return { item, ok: false, reason: 'lineage-parent' };
       }
+      if (!verifyMemory(this, item)) return { item, ok: false, reason: 'memory' };
       return { item, ok: true };
     });
   }
@@ -627,6 +644,7 @@ export class Store {
       );
     }
     if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='lineage'").get()) this.rebuildLineage();
+    rebuildMemory(this);
   }
 
   erase(item, targetHash, actor, at, { ground, note } = {}) {
@@ -655,6 +673,7 @@ export class Store {
       });
       // Keep machine fields so an erasure cannot corrupt item history.
       this.db.prepare('UPDATE bodies SET bytes=?, erased=1 WHERE hash=?').run(tombstone, targetHash);
+      syncMemory(this, item);
       this.db.exec('COMMIT');
     } catch (error) {
       try { this.db.exec('ROLLBACK'); } catch {}

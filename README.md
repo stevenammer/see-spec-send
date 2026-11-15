@@ -6,13 +6,16 @@ Rules 2 verification (2026-11-14): unit, public-file and demo-parity checks run 
 
 | Gate | Command | Commit | Date | Environment | Result |
 | --- | --- | --- | --- | --- | --- |
-| Unit and in-process HTTP | `npm test` | `0d6c83c` | 2026-11-14 | Node 22 | NOT RUN for this uncommitted repair |
-| Public files | `npm run check:public` | `0d6c83c` | 2026-11-14 | Node 22 | NOT RUN for this uncommitted repair |
-| Demo parity | `npm run check:demo` | `0d6c83c` | 2026-11-14 | Node 22 | NOT RUN for this uncommitted repair |
-| Browser journey | `npm run test:vision` | `0d6c83c` | 2026-11-14 | Chrome + Playwright | NOT RUN in this sandbox |
-| Mutation controls | `npm run check:mutants` | `0d6c83c` | 2026-11-14 | Node 22 | NOT RUN for this uncommitted repair |
-| Docker acceptance | `npm run test:container` | `0d6c83c` | 2026-11-14 | Docker + local mock | NOT RUN in this sandbox |
-| Hosted model/vendor | explicit opt-in only | `0d6c83c` | 2026-11-14 | bounded provider | NOT AUTHORIZED / NOT RUN |
+| Full unit and HTTP suite | `npm test` | `2ab8c9f` | 2026-11-14 | Node 22.23.4 | PASS, 387 tests, zero skips |
+| Public files | `npm run check:public` | `2ab8c9f` | 2026-11-14 | Node 22.23.4 | PASS |
+| Demo parity | `npm run check:demo` | `2ab8c9f` | 2026-11-14 | Node 22.23.4 | PASS |
+| Browser journey | `npm run test:vision` | `2ab8c9f` | 2026-11-14 | Chrome, including 390px member | PASS, fixture provider |
+| Manual workflow | `npm run test:e2e` | `2ab8c9f` | 2026-11-14 | Chrome + Playwright | PASS |
+| Real listener | `npm run test:listen` | `2ab8c9f` | 2026-11-14 | Local HTTP | PASS |
+| F3 controls, focused mutation pass | 11 exact mutations with named failing assertions | `2ab8c9f` | 2026-11-14 | Frozen tree, five F3 files | PASS; longer full-suite per-mutant gates still running |
+| Backup concurrency rendezvous | `node test/slice20.test.mjs` | `4f94ac2` | 2026-11-14 | Normal and four CPU burners | PASS, 16 tests in each run |
+| Docker acceptance | `npm run test:container` | `2ab8c9f` | 2026-11-14 | Docker + local mock | NOT RUN for F3; F4 records its own proof |
+| Hosted model/vendor | explicit opt-in only | `2ab8c9f` | 2026-11-14 | bounded provider | NOT RUN, no paid calls |
 
 Everybody at work already knows the thing that's broken. The workaround has a name. Somebody has a spreadsheet for it. And nobody fixes it, because the people who feel it don't get to build anything, and the people who build things never feel it.
 

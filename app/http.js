@@ -8,7 +8,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Integrations } from './integrations.js';
-import { feedPage, htmlHeaders, itemPage, newItemPage, passwordPage, questPage, redeemPage, signInPage } from './pages.js';
+import { feedPage, frozenPostPage, htmlHeaders, itemPage, newItemPage, passwordPage, questPage, redeemPage, signInPage } from './pages.js';
 import { invalid, kindOf, refused, tooLarge as tooLargeError } from '../core/errors.js';
 import { redact } from '../provider/safe-http.js';
 import { CURRENT_RULES } from '../core/machine.js';
@@ -193,13 +193,15 @@ const validEvent = input => {
       && text(input.text, 4000) && hex(input.base_hash);
     case 'commented': return exactKeys(input, ['type', 'comment', 'anchor_kind', 'anchor_hash', 'parent', 'kind'])
       && text(input.comment, 4000) && ((input.anchor_kind === undefined && input.anchor_hash === undefined)
-        || (['see', 'spec', 'artifact'].includes(input.anchor_kind) && hex(input.anchor_hash)))
+        || (['see', 'spec', 'artifact', 'send'].includes(input.anchor_kind) && hex(input.anchor_hash)))
       && (input.parent === undefined || hex(input.parent))
       && (input.kind === undefined || ['comment', 'question', 'concern'].includes(input.kind));
     case 'sent': case 'forked': case 'steered': return false;
     default: return false;
   }
 };
+
+const postBinding = req => ({ post_id: req.headers['x-post-id'], post_version: req.headers['x-post-version'] });
 
 export function createHandler({ auth, store, integrations, questModel = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, trustedProxy = false }) {
   integrations ||= new Integrations(store, { origin });
@@ -424,12 +426,20 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         const query = (first.original || first.problem || '').match(/[\p{L}\p{N}_-]+/gu)?.slice(0, 4).join(' ') || '';
         return page(res, searchPage(query, store.search(session.person, query).filter(row => row.item !== relatedView[1]), { related: true }));
       }
+      const history = url.pathname.match(/^\/items\/([^/]+)\/history\/([^/]+)$/);
+      if (req.method === 'GET' && history) {
+        const post = store.db.prepare('SELECT * FROM stage_posts WHERE item=? AND post_id=? AND closed_seq IS NOT NULL').get(history[1], decodeURIComponent(history[2]));
+        if (!post) return json(res, 404, { error: 'not found' });
+        const job = store.db.prepare('SELECT state FROM closeout_jobs WHERE item=? AND post_id=? AND snapshot_hash=?').get(history[1], post.post_id, post.snapshot_hash);
+        return page(res, frozenPostPage(history[1], post, store.events(history[1]), job));
+      }
       const specView = url.pathname.match(/^\/items\/([^/]+)\/spec$/);
       if (req.method === 'GET' && specView) {
         const state = store.read(specView[1]);
         return page(res, specPage({ id: specView[1], ...state, effortAllowance: effortAllowance(store, session.person, specView[1], clock),
           workspaceResearch: store.db.prepare("SELECT enabled FROM research_config WHERE source='this_workspace'").get()?.enabled === 1,
-          effort: store.db.prepare("SELECT kind,state,last_error FROM effort_jobs WHERE item=? AND kind='spec_draft' ORDER BY created").all(specView[1]) }, store.events(specView[1]), session.person));
+          effort: store.db.prepare("SELECT kind,state,last_error,post_id FROM effort_jobs WHERE item=? AND kind='spec_draft' ORDER BY created").all(specView[1]),
+          specPostId: state.context.rules === 3 ? store.db.prepare("SELECT post_id FROM stage_posts WHERE item=? AND kind='spec' ORDER BY opened_seq DESC LIMIT 1").get(specView[1])?.post_id : null }, store.events(specView[1]), session.person));
       }
       const view = url.pathname.match(/^\/items\/([^/]+)$/);
       if (req.method === 'GET' && view) {
@@ -445,6 +455,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
             decisionPackets: Object.fromEntries(events.filter(event => ['approved', 'returned', 'not_built'].includes(event.type) && event.packet_hash)
               .map(event => [event.packet_hash, store.artifact(view[1], event.packet_hash)])),
             effortAllowance: effortAllowance(store, session.person, view[1], clock),
+            stagePosts: store.db.prepare('SELECT * FROM stage_posts WHERE item=? ORDER BY opened_seq, post_id').all(view[1]),
             effort: store.db.prepare('SELECT kind,state,last_error,requester,created FROM effort_jobs WHERE item=? ORDER BY created').all(view[1]) }, events, session.person, leader),
         );
       }
@@ -511,12 +522,14 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         const events = store.events(research[1]);
         const current = events.filter(event => event.type === 'revised').at(-1)?.text || events[0]?.original || events[0]?.problem;
         const sources = await researchRecord({ at, connectors: workspaceConnectors(store, session.person), input: { item: research[1], text: current } });
-        return json(res, 201, store.append(research[1], { type: 'researched', actor: session.person, sources, at },
+        return json(res, 201, store.append(research[1], { type: 'researched', actor: session.person, sources, at, ...postBinding(req) },
           { idem: req.headers['idempotency-key'] || randomUUID() }));
       }
       const prepareSpec = url.pathname.match(/^\/api\/items\/([^/]+)\/spec-draft$/);
       if (req.method === 'POST' && prepareSpec) {
         if (!exactKeys(input, ['see_hash']) || !hex(input.see_hash)) throw refused('current SEE required');
+        const draftContext = store.read(prepareSpec[1]).context;
+        if (draftContext.rules === 3 && (req.headers['x-post-id'] !== draftContext.activePost?.id || req.headers['x-post-version'] !== draftContext.activePost?.version)) throw refused('frozen or superseded post');
         return json(res, 202, requestSpecDraft(store, session.person, prepareSpec[1], input.see_hash, clock));
       }
       const send = url.pathname.match(/^\/api\/items\/([^/]+)\/send$/);
@@ -538,15 +551,16 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           lineage: first.type === 'forked' ? { ...first.parent, from: first.from || null, reason: first.reason || 'No reason recorded',
             parentDecision: store.events(first.parent.item).slice(0, first.parent.seq).filter(event => ['approved', 'returned', 'not_built'].includes(event.type)).at(-1) || null } : null });
         const packet_hash = store.putArtifact(send[1], JSON.stringify(packet));
-        const result = store.append(send[1], { type: 'sent', actor: session.person, spec_hash: input.spec_hash, packet_hash,
+        const result = store.append(send[1], { type: 'sent', actor: session.person, spec_hash: input.spec_hash, packet_hash, ...postBinding(req),
           at: new Date().toISOString() }, { idem: req.headers['idempotency-key'] || randomUUID() });
         return json(res, 201, { ...result, packet_hash });
       }
       const fork = url.pathname.match(/^\/api\/items\/([^/]+)\/fork$/);
       if (req.method === 'POST' && fork) {
         if (!exactKeys(input, ['reason', 'from']) || !text(input.reason, 2000)
-          || (input.from !== undefined && (!input.from || !exactKeys(input.from, ['kind', 'hash'])
-            || !['see', 'spec', 'artifact'].includes(input.from.kind) || !hex(input.from.hash)))) return json(res, 409, { error: 'request refused' });
+          || (input.from !== undefined && (!input.from || !exactKeys(input.from, ['kind', 'hash', 'post_id'])
+            || !['see', 'spec', 'artifact', 'snapshot'].includes(input.from.kind) || !hex(input.from.hash)
+            || (input.from.kind === 'snapshot' ? !text(input.from.post_id, 160) : input.from.post_id !== undefined)))) return json(res, 409, { error: 'request refused' });
         const key = req.headers['idempotency-key'] || randomUUID();
         const id = createHash('sha256').update(canonical(['fork-request', session.person, fork[1], key])).digest('hex');
         const existing = store.events(id)[0];
@@ -566,7 +580,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           || (input.mode !== undefined && !['quoted', 'paraphrased'].includes(input.mode))
           || (input.scope !== undefined && !validScope(input.scope))) return json(res, 409, { error: 'request refused' });
         const context = store.read(steer[1]).context;
-        const result = store.append(steer[1], { type: 'steered', actor: session.person, instruction: input.instruction,
+        const result = store.append(steer[1], { type: 'steered', actor: session.person, instruction: input.instruction, ...postBinding(req),
           ...(input.source ? { source: input.source, mode: input.mode || 'paraphrased' } : {}), approval: context.approval,
           spec_hash: context.specHash, ...(input.scope ? { scope: input.scope } : {}), at: new Date().toISOString() }, { idem: req.headers['idempotency-key'] || randomUUID() });
         return json(res, 201, result);
@@ -604,6 +618,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           throw refused('event not allowed');
         // Check the stage before storing any bytes, so a refused delivery leaves nothing behind.
         if (state.state !== 'SENDING') throw refused('event not allowed');
+        if (state.context.rules === 3 && (req.headers['x-post-id'] !== state.context.activePost?.id || req.headers['x-post-version'] !== state.context.activePost?.version)) throw refused('frozen or superseded post');
         const hash = store.putArtifact(deliver[1], input.html);
         const run = auth.createToken('run', deliver[1]);
         const actor = createHash('sha256').update(run).digest('hex');
@@ -639,6 +654,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         return json(res, 403, { error: 'request refused' });
       if (!validEvent(input)) return json(res, 409, { error: 'request refused' });
       if (input.type === 'specced' && store.read(match[1]).context.rules >= 2) input = { ...input, scope: input.scope || emptyScope() };
+      if (input.type === 'approved' && input.spec_hash === undefined && store.read(match[1]).context.rules === 3) throw refused('reviewed packet required');
       if (input.type === 'approved' && input.spec_hash === undefined) {
         // Older API clients did not carry the rendered binding. Bind them to the
         // current record here; a browser that has seen Decide must echo its view.
@@ -656,6 +672,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       }
       if (['returned', 'not_built'].includes(input.type)) {
         const state = store.read(match[1]).context;
+        if (state.rules === 3 && (!input.spec_hash || !input.packet_hash)) throw refused('reviewed packet required');
         if ((input.spec_hash !== undefined && input.spec_hash !== state.sent?.specHash)
           || (input.packet_hash !== undefined && input.packet_hash !== state.sent?.packetHash))
           return json(res, 409, { error: 'request refused' });
@@ -664,9 +681,10 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (input.type === 'commented') {
         const state = store.read(match[1]).context;
         const current = { see: state.seeHash,
-          spec: state.specSeeHash === state.seeHash ? state.specHash : null, artifact: state.artifact };
+          spec: state.specSeeHash === state.seeHash ? state.specHash : null, artifact: state.artifact,
+          ...(state.rules === 3 && state.activePost?.kind === 'send' ? { send: state.activePost.version } : {}) };
         if (current[input.anchor_kind] !== input.anchor_hash) {
-          return json(res, 409, { error: 'request refused' });
+          return json(res, 409, { error: state.rules === 3 ? 'frozen or superseded post' : 'request refused' });
         }
       }
       if (input.type === 'approved') {
@@ -677,7 +695,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         201,
         store.append(
           match[1],
-          { ...input, actor: session.person, at: eventAt },
+          { ...input, actor: session.person, at: eventAt, ...postBinding(req) },
           { expectedSeq: input.expected_seq, idem: req.headers['idempotency-key'] || randomUUID() },
         ),
       );
@@ -689,7 +707,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         return json(res, 503, { error: 'busy, try again in a moment' });
       }
       if (kind === 'too_large') return json(res, 413, { error: 'request too large' });
-      if (kind === 'refused') return json(res, 409, { error: 'request refused' });
+      if (kind === 'refused') return json(res, 409, { error: error.message === 'frozen or superseded post' ? error.message : 'request refused' });
       if (kind === 'invalid') return json(res, 400, { error: 'request refused' });
       // A plain error is a defect. The client gets the request ID to quote; the stack goes to the log.
       emit({ event: 'error', rid: context.rid, route: routeOf(req.url), status: 500, stack: redact(String(error?.stack || error)) });

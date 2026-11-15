@@ -52,7 +52,7 @@ function redactBody(type, body) {
   const tombstone = {};
   const structural = ['verdict', 'quorum', 'cap_usd', 'approval', 'spec_hash',
     'artifact_hash', 'usd', 'steward', 'body_hash', 'redacted_hash', 'delivered_by',
-    'anchor_kind', 'anchor_hash', 'parent', 'kind', 'base_hash', 'rules', 'source_label', 'honesty_label',
+    'anchor_kind', 'anchor_hash', 'parent', 'kind', 'base_hash', 'rules', 'post_id', 'post_version', 'source_label', 'honesty_label',
     'see_hash', 'spec_hash', 'base_spec_hash', 'packet_hash', 'approval', 'iteration', 'job', 'receipt', 'model', 'mode', 'credits', 'questMemo', 'consent', 'absent', 'ground', 'max_iterations', 'window_minutes', 'restricted_evidence', 'pivot_note', 'from', 'scope', 'person', 'source', 'seed_policy'];
   const textFields = ['problem', 'looked', 'found', 'must', 'how_we_know', 'out_of_scope',
     'note', 'reason', 'comment', 'original', 'text', 'assumptions', 'open_questions', 'instruction'];
@@ -73,6 +73,62 @@ function redactBody(type, body) {
 }
 
 export class Store {
+  migrateStagePosts() {
+    this.db.exec(`CREATE TABLE stage_posts(item TEXT NOT NULL, post_id TEXT NOT NULL, kind TEXT NOT NULL,
+      opened_seq INTEGER NOT NULL, previous_post_id TEXT, closed_seq INTEGER, snapshot_hash TEXT,
+      successor_post_id TEXT, PRIMARY KEY(item,post_id));
+      CREATE UNIQUE INDEX stage_one_active ON stage_posts(item) WHERE closed_seq IS NULL;
+      CREATE TABLE closeout_jobs(item TEXT NOT NULL, post_id TEXT NOT NULL, snapshot_hash TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'pending', PRIMARY KEY(item,post_id,snapshot_hash));
+      ALTER TABLE effort_jobs ADD COLUMN post_id TEXT;
+      ALTER TABLE effort_jobs ADD COLUMN post_version TEXT;`);
+  }
+  stageProjection(item) {
+    let context = initial();
+    const posts = [], jobs = [], byId = new Map();
+    let previous = '';
+    for (const row of this.eventRows(item)) {
+      const event = this.eventFromRow(row), before = context.activePost;
+      const next = step(context, event, this.authorityFromRow(row));
+      if (next.refusal) throw new Error(`stage replay refused: ${next.refusal}`);
+      context = next.context;
+      const after = context.activePost;
+      if (context.rules === 3) {
+        if (!before && after && ['posted', 'forked'].includes(event.type)) {
+          const post = { item, post_id: after.id, kind: after.kind, opened_seq: row.seq, previous_post_id: null, closed_seq: null, snapshot_hash: null, successor_post_id: null };
+          posts.push(post); byId.set(post.post_id, post);
+        } else if (before && before.id !== after?.id) {
+          const post = byId.get(before.id);
+          if (!post || post.closed_seq !== null) throw new Error('stage projection inconsistent');
+          const closingEventIncluded = ['helped', 'shelved', 'failed'].includes(event.type);
+          const snapshotSeq = closingEventIncluded ? row.seq : row.seq - 1;
+          const snapshotHash = closingEventIncluded ? row.hash : previous;
+          const decisionId = ['approved', 'returned', 'not_built'].includes(event.type) ? `decision:${row.body_hash}` : null;
+          Object.assign(post, { closed_seq: snapshotSeq, snapshot_hash: snapshotHash, successor_post_id: decisionId ?? after?.id ?? null });
+          jobs.push({ item, post_id: post.post_id, snapshot_hash: snapshotHash });
+          if (after) {
+            const successor = { item, post_id: after.id, kind: after.kind, opened_seq: row.seq, previous_post_id: decisionId ?? before.id, closed_seq: null, snapshot_hash: null, successor_post_id: null };
+            posts.push(successor); byId.set(successor.post_id, successor);
+          }
+          if (['approved', 'returned', 'not_built'].includes(event.type)) {
+            const decision = { item, post_id: decisionId, kind: 'decision', opened_seq: row.seq, previous_post_id: before.id, closed_seq: row.seq, snapshot_hash: row.hash, successor_post_id: after?.id ?? null };
+            posts.push(decision); jobs.push({ item, post_id: decision.post_id, snapshot_hash: row.hash });
+          }
+        }
+      }
+      previous = row.hash;
+    }
+    return { posts: posts.sort((a,b) => a.post_id.localeCompare(b.post_id)), jobs: jobs.sort((a,b) => a.post_id.localeCompare(b.post_id)) };
+  }
+  rebuildStagePosts() {
+    this.db.exec('DELETE FROM stage_posts');
+    for (const { item } of this.db.prepare('SELECT DISTINCT item FROM events').all()) {
+      const projection = this.stageProjection(item);
+      for (const p of projection.posts) this.db.prepare('INSERT INTO stage_posts VALUES(?,?,?,?,?,?,?,?)').run(...Object.values(p));
+      for (const j of projection.jobs) this.db.prepare('INSERT OR IGNORE INTO closeout_jobs(item,post_id,snapshot_hash) VALUES(?,?,?)').run(...Object.values(j));
+    }
+    this.db.exec('DELETE FROM closeout_jobs WHERE NOT EXISTS (SELECT 1 FROM stage_posts p WHERE p.item=closeout_jobs.item AND p.post_id=closeout_jobs.post_id AND p.snapshot_hash=closeout_jobs.snapshot_hash)');
+  }
   migrateF6() { initializeMentoring(this); }
   migrateF5() { initializeMemory(this); }
   search(person, text, options) { return searchMemory(this, person, text, options); }
@@ -86,10 +142,11 @@ export class Store {
 
   forkPoint(item, selection, sequence, { extended = false } = {}) {
     const events = this.events(item), rows = this.eventRows(item);
-    const index = selection ? events.findIndex(event => event.body_hash === selection.hash) : (sequence ?? events.length) - 1;
+    const snapshot = selection?.kind === 'snapshot' ? this.db.prepare('SELECT closed_seq FROM stage_posts WHERE item=? AND snapshot_hash=? AND post_id=?').get(item, selection.hash, selection.post_id) : null;
+    const index = selection?.kind === 'snapshot' ? (snapshot?.closed_seq ?? 0) - 1 : selection ? events.findIndex(event => event.body_hash === selection.hash) : (sequence ?? events.length) - 1;
     const selected = events[index], row = rows[index];
     const kinds = { see: ['posted', 'forked', 'revised', 'checked', 'seen'], spec: ['specced'], artifact: ['tried'] };
-    if (!row || (selection && !kinds[selection.kind]?.includes(selected.type))) throw refused('fork selection does not match its parent event');
+    if (!row || (selection && selection.kind !== 'snapshot' && !kinds[selection.kind]?.includes(selected.type))) throw refused('fork selection does not match its parent event');
     const history = events.slice(0, index + 1);
     const first = history[0];
     const original = history.filter(event => event.type === 'revised').at(-1)?.text ?? first?.original ?? first?.problem;
@@ -410,7 +467,7 @@ export class Store {
       if (event.from !== undefined) {
         const selected = this.events(parent.item)[parent.seq - 1];
         const kinds = { see: ['posted', 'forked', 'revised', 'checked', 'seen'], spec: ['specced'], artifact: ['tried'] };
-        if (!selected || !kinds[event.from?.kind]?.includes(selected.type) || selected.body_hash !== event.from.hash)
+        if (!selected || (event.from?.kind === 'snapshot' ? !this.db.prepare('SELECT 1 FROM stage_posts WHERE item=? AND closed_seq=? AND snapshot_hash=? AND post_id=?').get(parent.item, parent.seq, event.from.hash, event.from.post_id) : (!kinds[event.from?.kind]?.includes(selected.type) || selected.body_hash !== event.from.hash)))
           throw refused('fork selection does not match its parent event');
       }
       if (event.from !== undefined || event.seed_spec !== undefined || event.seed_policy === 2) {
@@ -436,6 +493,7 @@ export class Store {
       let body;
       try { body = JSON.parse(parent.bytes); } catch { throw refused('parent is invalid'); }
       if (body.anchor_kind !== event.anchor_kind || body.anchor_hash !== event.anchor_hash) throw refused('parent anchor does not match');
+      if (this.read(item).context.rules === 3 && body.post_id !== event.post_id) throw refused('parent belongs to a frozen post');
     }
     const comment = hash => this.db.prepare(`SELECT b.bytes,b.erased FROM events e JOIN bodies b ON b.hash=e.body_hash
       WHERE e.item=? AND e.body_hash=? AND e.type='commented'`).get(item, hash);
@@ -446,9 +504,14 @@ export class Store {
       if (credit.mode === 'quoted' && (!event.text.includes(body.comment) || !body.comment.includes(credit.quote || body.comment)))
         throw refused('quoted credit must be verbatim in the comment and revision');
     }
+    if (this.read(item).context.rules === 3 && ['revised', 'specced'].includes(event.type) && Array.isArray(event.credits)) for (const credit of event.credits) {
+      const row = comment(credit.comment);
+      if (!row || JSON.parse(row.bytes).post_id !== event.post_id) throw refused('credit belongs to a frozen post');
+    }
     if (event.type === 'steered' && event.source) {
       const row = comment(event.source);
       if (!row || row.erased) throw refused('steer source must be an unerased comment in this item');
+      if (this.read(item).context.rules === 3 && JSON.parse(row.bytes).post_id !== event.post_id) throw refused('steer source belongs to a frozen post');
       if (event.mode === 'quoted' && !event.instruction.includes(JSON.parse(row.bytes).comment)) throw refused('quoted steer must be verbatim');
     }
     if (event.type === 'sent') {
@@ -514,15 +577,39 @@ export class Store {
       ON CONFLICT(item) DO UPDATE SET state=excluded.state,head=excluded.head,
       seq=excluded.seq,context=excluded.context`)
       .run(item, outcome.state, hash, seq, stable(outcome.context));
+    if (outcome.context.rules === 3) {
+      const before = prior.context.activePost, after = outcome.context.activePost;
+      if (!before && after && ['posted', 'forked'].includes(event.type)) {
+        this.db.prepare('INSERT INTO stage_posts(item,post_id,kind,opened_seq) VALUES(?,?,?,?)').run(item, after.id, after.kind, seq);
+      } else if (before && before.id !== after?.id) {
+        const closingEventIncluded = ['helped', 'shelved', 'failed'].includes(event.type);
+        const snapshotSeq = closingEventIncluded ? seq : currentSeq;
+        const snapshotHash = closingEventIncluded ? hash : previous;
+        const decisionId = ['approved', 'returned', 'not_built'].includes(event.type) ? `decision:${hashOfBody}` : null;
+        const changed = this.db.prepare('UPDATE stage_posts SET closed_seq=?,snapshot_hash=?,successor_post_id=? WHERE item=? AND post_id=? AND closed_seq IS NULL')
+          .run(snapshotSeq, snapshotHash, decisionId ?? after?.id ?? null, item, before.id);
+        if (changed.changes !== 1) throw refused('post freeze inconsistent');
+        this.db.prepare('INSERT INTO closeout_jobs(item,post_id,snapshot_hash) VALUES(?,?,?)').run(item, before.id, snapshotHash);
+        if (after) this.db.prepare('INSERT INTO stage_posts(item,post_id,kind,opened_seq,previous_post_id) VALUES(?,?,?,?,?)')
+          .run(item, after.id, after.kind, seq, decisionId ?? before.id);
+        if (['approved', 'returned', 'not_built'].includes(event.type)) {
+          const decision = decisionId;
+          this.db.prepare('INSERT INTO stage_posts(item,post_id,kind,opened_seq,previous_post_id,closed_seq,snapshot_hash,successor_post_id) VALUES(?,?,?,?,?,?,?,?)')
+            .run(item, decision, 'decision', seq, before.id, seq, hash, after?.id ?? null);
+          this.db.prepare('INSERT INTO closeout_jobs(item,post_id,snapshot_hash) VALUES(?,?,?)').run(item, decision, hash);
+        }
+      }
+    }
     this.enqueueIntegrationOutbox(item, event, outcome.state, seq);
     if (event.type === 'forked') this.recordLineage(item);
-    if (event.type === 'posted' || event.type === 'forked' || (event.type === 'specced' && prior.context.specHash === null)) {
-      const kind = event.type === 'specced' ? 'spec_draft' : 'see_first';
+    if (event.type === 'posted' || event.type === 'forked' || (event.type === 'specced' && prior.context.specHash === null) || (outcome.context.rules === 3 && ['returned', 'failed'].includes(event.type))) {
+      const kind = ['specced', 'returned', 'failed'].includes(event.type) ? 'spec_draft' : 'see_first';
       const now = new Date(event.at).getTime();
       this.db.prepare(`INSERT OR IGNORE INTO effort_jobs(id,item,kind,trigger_seq,requester,state,attempts,next_at,last_error,created)
         VALUES(?,?,?,?,?,'queued',0,?,NULL,?)`)
-        .run(digest(stable(['effort', item, kind, seq])), item, kind, seq, event.actor, now, now);
+        .run(digest(stable(['effort', item, kind, seq])), item, kind, seq, ['returned', 'failed'].includes(event.type) ? outcome.context.steward : event.actor, now, now);
     }
+    if (outcome.context.rules === 3) this.db.prepare('UPDATE effort_jobs SET post_id=?,post_version=? WHERE item=? AND trigger_seq=? AND post_id IS NULL').run(outcome.context.activePost?.id ?? null, outcome.context.activePost?.version ?? null, item, seq);
     // A mention is a request, never an instruction. Agent output cannot ask itself
     // for more work, and hitting a cap never prevents the person's comment landing.
     if (event.type === 'commented' && authority.kind === 'person' && /@effort\b/i.test(event.comment)) {
@@ -539,6 +626,7 @@ export class Store {
       this.db.prepare("UPDATE runs SET status='stop_requested' WHERE item=? AND approval=? AND status='active'")
         .run(item, prior.context.approval);
     }
+    if (outcome.context.rules === 3) this.db.prepare('UPDATE effort_jobs SET post_id=?,post_version=? WHERE item=? AND trigger_seq=? AND post_id IS NULL').run(outcome.context.activePost?.id ?? null, outcome.context.activePost?.version ?? null, item, seq);
     syncMemory(this, item);
     return { seq, hash, ...this.read(item), effects: outcome.effects };
   }
@@ -632,6 +720,12 @@ export class Store {
         if (parent?.hash !== expectedLineage.parent_hash) return { item, ok: false, reason: 'lineage-parent' };
       }
       if (!verifyMemory(this, item)) return { item, ok: false, reason: 'memory' };
+      if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='stage_posts'").get()) {
+        const expected = this.stageProjection(item);
+        const posts = this.db.prepare('SELECT * FROM stage_posts WHERE item=? ORDER BY post_id').all(item);
+        const jobs = this.db.prepare('SELECT item,post_id,snapshot_hash FROM closeout_jobs WHERE item=? ORDER BY post_id').all(item);
+        if (stable(posts) !== stable(expected.posts) || stable(jobs) !== stable(expected.jobs)) return { item, ok: false, reason: 'stage-projection' };
+      }
       return { item, ok: true };
     });
   }
@@ -648,6 +742,7 @@ export class Store {
     }
     if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='lineage'").get()) this.rebuildLineage();
     rebuildMemory(this);
+    if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='stage_posts'").get()) this.rebuildStagePosts();
   }
 
   erase(item, targetHash, actor, at, { ground, note } = {}) {

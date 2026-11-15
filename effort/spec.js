@@ -59,6 +59,7 @@ export function requestSpecDraft(store, person, item, seeHash, clock = Date.now)
     const at = clock();
     store.db.prepare(`INSERT OR IGNORE INTO effort_jobs(id,item,kind,trigger_seq,requester,state,attempts,next_at,last_error,created)
       VALUES(?,?,'spec_prepare',?,?,'queued',0,?,NULL,?)`).run(id, item, seq, person, at, at);
+    if (state.context.rules === 3) store.db.prepare('UPDATE effort_jobs SET post_id=?,post_version=? WHERE id=? AND post_id IS NULL').run(state.context.activePost.id, state.context.activePost.version, id);
     return { id, label: 'AI draft requested. Review and publish it yourself; this grants no build authority.' };
   });
 }

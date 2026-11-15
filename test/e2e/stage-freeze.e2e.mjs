@@ -1,0 +1,52 @@
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+const require = createRequire(import.meta.url);
+const playwright = require(join(process.env.PLAYWRIGHT_DIR || '', 'playwright'));
+const root = new URL('../..', import.meta.url).pathname;
+const db = join(mkdtempSync(join(tmpdir(), 'sss-freeze-')), 'sss.db');
+const env = { ...process.env, SSS_DB: db };
+const cli = args => new Promise((resolve,reject) => {
+  let out='', err=''; const child=spawn(process.execPath,['cli.js',...args],{cwd:root,env});
+  child.stdout.on('data', b => out+=b); child.stderr.on('data', b => err+=b);
+  child.on('close', code => code ? reject(Error(err || out)) : resolve(out.trim()));
+});
+await cli(['init','--id','admin']);
+const invite = await cli(['invite','create','--role','member']);
+const port = 22000 + Math.floor(Math.random()*2000), origin = `http://127.0.0.1:${port}`;
+const server = spawn(process.execPath,['cli.js','serve','--port',String(port),'--origin',origin,'--insecure-cookies'],{cwd:root,env});
+let browser;
+try {
+  for (let i=0;i<100;i++) { try { if ((await fetch(`${origin}/signin`)).ok) break; } catch {} await new Promise(r=>setTimeout(r,100)); }
+  browser = await playwright.chromium.launch({ headless:true, executablePath:process.env.CHROME_PATH || '/usr/bin/google-chrome', args:['--no-sandbox'] });
+  const context = await browser.newContext({ viewport:{width:390,height:844} });
+  const page = await context.newPage();
+  await page.goto(`${origin}/redeem`); await page.locator('[name=invite]').fill(invite);
+  await page.locator('[name=id]').fill('olive'); await page.locator('[name=password]').fill('olive-long-password-9x');
+  await page.getByRole('button',{name:'Join'}).click(); await page.getByRole('link',{name:'Post a problem'}).waitFor();
+  await page.goto(`${origin}/items/new`); await page.locator('[name=original]').fill('Transfer context disappears.');
+  await page.getByRole('button',{name:'Post SEE'}).click(); await page.waitForURL(/\/items\/(?!new$)[^/]+$/);
+  const itemUrl = page.url();
+  const stale = await context.newPage(); await stale.goto(itemUrl);
+  const staleForm = stale.locator('form[data-event=commented]').first(); await staleForm.locator('[name=comment]').fill('Keep this unsent draft.');
+  const spec = page.locator('form[data-event=specced]');
+  await spec.locator('[name=must]').fill('Preserve the note.'); await spec.locator('[name=how_we_know]').fill('The next agent sees it.');
+  await spec.getByRole('button',{name:'SPEC IT!'}).click();
+  await page.getByText('SEE discussion is frozen.',{exact:false}).waitFor();
+  await staleForm.getByRole('button',{name:'Post comment'}).click();
+  await staleForm.getByRole('alert').getByText('This post may have frozen or changed.',{exact:false}).waitFor();
+  assert.equal(await staleForm.locator('[name=comment]').inputValue(),'Keep this unsent draft.');
+  await page.getByRole('link',{name:'Open the spec'}).click();
+  assert.equal(await page.locator('form[data-event=commented]').count() > 0,true);
+  await page.goto(itemUrl); await page.getByRole('link',{name:'see',exact:true}).click();
+  await page.getByRole('heading',{name:'Frozen see post'}).waitFor();
+  assert.equal(await page.locator('form[data-event=commented]').count(),0);
+  await page.locator('form[data-fork-frozen] [name=reason]').fill('A separate experiment.');
+  await page.getByRole('button',{name:'Fork frozen stage'}).click();
+  await page.waitForURL(url => url.href !== itemUrl && /\/items\/[^/]+$/.test(url.pathname));
+  await page.getByText('Forked from',{exact:false}).waitFor();
+  process.stdout.write('PASS stage freeze browser journey\n');
+} finally { if (browser) await browser.close(); server.kill('SIGTERM'); }

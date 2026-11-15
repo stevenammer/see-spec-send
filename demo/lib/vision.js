@@ -15,14 +15,16 @@ export function createVisionDemo() {
  const currentSee=()=>log.events().filter(row=>row.type==='revised').at(-1)?.text||log.events()[0]?.original||'';
  const append=async(type,actor,body={})=>{
   if(log.length>=200)return {ok:false,error:'This demo branch reached its event limit. Reset to try again.'};
-  return log.append({...body,type,actor,at:new Date().toISOString()},{idem:`vision:${log.length+1}`});
+  const active=context().activePost;
+  const binding=active && !['tried','failed','charged'].includes(type) ? {post_id:active.id,post_version:active.version} : {};
+  return log.append({...body,...binding,type,actor,at:new Date().toISOString()},{idem:`vision:${log.length+1}`});
  };
  const firstReply=async kind=>append('commented','effort',{kind:'agent',job:`fixture:${kind}`,receipt:'fixture receipt',model:'fixture:demo',
   comment:`Fixture Effort (AI): ${kind==='see'?'What happens when the note reaches the next person?':'Which handoff edge case should this draft cover?'}`,
   anchor_kind:kind,anchor_hash:kind==='see'?context().seeHash:context().specHash});
  const api={
   state:()=>({item:log.item,context:context(),events:log.events(),packet:packets.get(context().sent?.packetHash),hasParentApproval:!!parentApproval}),
-  async post(actor,original){const out=await append('posted',actor,{original,rules:2});if(out.ok)await firstReply('see');return out;},
+  async post(actor,original){const out=await append('posted',actor,{original,rules:3});if(out.ok)await firstReply('see');return out;},
   async comment(actor,comment){const c=context();return append('commented',actor,{comment,kind:'concern',anchor_kind:c.specHash?'spec':'see',anchor_hash:c.specHash||c.seeHash});},
   async include(actor,hash){const source=log.events().find(row=>row.type==='commented'&&row.body_hash===hash&&row.actor!=='effort');
    if(!source)return {ok:false,error:'Pick a person\'s comment in this branch.'};
@@ -37,7 +39,7 @@ export function createVisionDemo() {
   helps(actor){return append('helped',actor,{artifact_hash:context().artifact});},
   async fork(actor,reason){const previous=log;const row=previous.rows().at(-1);if(!row)return {ok:false,error:'Post a SEE first.'};
    const original=currentSee();parentApproval=previous.events().filter(event=>event.type==='approved').at(-1)||null;
-   branch+=1;log=fresh();const out=await append('forked',actor,{original,rules:2,reason,parent:{item:previous.item,seq:row.seq,hash:row.hash}});
+   branch+=1;log=fresh();const out=await append('forked',actor,{original,rules:3,reason,parent:{item:previous.item,seq:row.seq,hash:row.hash}});
    if(!out.ok){log=previous;return out;}await firstReply('see');return out;},
   parentApproval(){return parentApproval?append('approved',parentApproval.actor,parentApproval):Promise.resolve({ok:false,error:'The parent has no approval to reuse.'});},
   verify:()=>log.verify(),

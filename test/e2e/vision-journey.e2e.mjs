@@ -111,9 +111,10 @@ async function main() {
     page.evaluate(
       async ({ path, body }) => {
         const me = await (await fetch('/api/me')).json();
+        const active = document.querySelector('[data-active-post]');
         const response = await fetch(path, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrf },
+          headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrf, ...(active ? { 'x-post-id': active.dataset.activePost, 'x-post-version': active.dataset.postVersion } : {}) },
           body: JSON.stringify(body),
         });
         return response.status;
@@ -340,9 +341,9 @@ async function main() {
     await olive.goto(itemUrl);
     const effortItem = olive.locator('li:has(> p:has-text("Effort, AI"))').first();
     const effortButtons = (await effortItem.locator('button').allInnerTexts()).map(text => text.trim());
-    assert.deepEqual(effortButtons, ['Reply'], `Effort's comment offers only Reply, saw ${effortButtons}`);
+    assert.deepEqual(effortButtons, [], `Effort's frozen SEE comment has no reply controls, saw ${effortButtons}`);
     assert.equal(await olive.getByRole('button', { name: /delete|hide|remove|erase/i }).count(), 0, 'no delete or hide control anywhere on the OP page');
-    const effortHash = await effortItem.locator('input[name=parent]').inputValue();
+    const effortHash = (await effortItem.getAttribute('id')).replace(/^comment-/, '');
     for (const [who, page] of [['OP', olive], ['member', ben], ['leader', leader]]) {
       const erase = await rawPost(page, `/api/items/${itemId}/events`, { type: 'erased', body_hash: effortHash });
       assert.ok(erase >= 400, `${who} cannot erase Effort's comment, got ${erase}`);
@@ -382,7 +383,7 @@ async function main() {
     assert.ok(await olive.getByText('olive posted this SEE').count() > 0, "the old poster's own post is still credited");
     assert.match(await olive.locator('li:has-text("SEE v2:")').first().textContent(), /credit: maya, quoted/, 'earlier credit remains');
     await maya.goto(itemUrl);
-    assert.equal(await maya.locator('form[data-event=revised]').count(), 1, 'the new poster can revise');
+    assert.equal(await maya.locator('form[data-event=revised]').count(), 0, 'the frozen SEE stays read-only after reassignment');
     step('leader reassigned the steward with a note; originator credit remains');
 
     // 14. Mention cap: the 11th mention by one person in one day still lands, with no Effort reply.
@@ -473,44 +474,28 @@ async function main() {
     await maya.getByLabel('Comment on this try').fill(feedback);
     await maya.locator('form[data-event=commented]', { has: maya.getByLabel('Comment on this try') }).getByRole('button', { name: 'Post comment' }).click();
     await maya.getByText(feedback).first().waitFor();
-    assert.equal(await rawPost(maya, `/api/items/${regId}/events`, { type: 'commented', comment: 'A plain comment on the SEE.', kind: 'comment', anchor_kind: 'see', anchor_hash: await maya.locator('form[data-event=commented] [name=anchor_hash]').last().inputValue() }), 201);
+    assert.equal(await rawPost(maya, `/api/items/${regId}/events`, { type: 'commented', comment: 'A late comment on the SEE.', kind: 'comment', anchor_kind: 'see', anchor_hash: await maya.locator('form[data-event=commented] [name=anchor_hash]').last().inputValue() }), 409);
     assert.equal(await rawPost(maya, `/api/items/${regId}/events`, { type: 'checked_in', note: 'Still watching how this one goes.' }), 201);
     await olive.goto(regUrl);
     await olive.locator('iframe[title="Playable try"]').waitFor();
     assert.equal(await olive.locator('.stage', { hasText: /Send/ }).count() > 0, true, 'a comment and a check-in leave the item in Send');
-    assert.equal(await olive.getByText('superseded').count(), 0, 'a comment and a check-in do not supersede the try');
+    assert.equal(await olive.getByText('This old approval is superseded.', { exact: false }).count(), 0, 'a comment and a check-in do not supersede the try');
     assert.equal(await ben.goto(regUrl).then(() => ben.locator('form[data-event=helped]').count()), 1, 'the helper can still say it helps');
     step('comment and check-in left the delivered try alone');
 
-    // The OP revises the SEE: the old try is superseded.
-    const regBase = await olive.locator('form[data-event=revised] [name=base_hash]').inputValue();
-    await olive.locator('form[data-event=revised] [name=text]').fill('Agents re-key the caller phone number and the account number after every transfer.');
-    await olive.locator('form[data-event=revised]').getByRole('button', { name: 'Save revision' }).click();
-    await olive.getByText('SEE v2:').waitFor();
-    assert.notEqual(regBase, await olive.locator('form[data-event=revised] [name=base_hash]').inputValue(), 'the revision made a new SEE hash');
-    await olive.getByText('This old approval is superseded.').waitFor();
-    const oldNote = await olive.locator('p:has-text("This old approval is superseded.")').innerText();
-    assert.match(oldNote, /The delivered try is superseded and cannot receive new Helps votes\./);
-    assert.match(oldNote, /Update the spec, SEND IT!, and get a new leader approval\./, 'the OP is told a new spec, SEND and leader approval are needed');
-    assert.equal(await olive.locator('iframe[title="Playable try"]').count(), 0, 'no playable old try is offered');
-    const { DatabaseSync } = await import('node:sqlite');
-    const probe = new DatabaseSync(db, { readOnly: true });
-    let runs = [];
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      runs = probe.prepare('SELECT status FROM runs WHERE item=?').all(regId);
-      if (runs.length && runs.every(run => run.status === 'stopped')) break;
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-    probe.close();
-    assert.ok(runs.length > 0 && runs.every(run => run.status === 'stopped'), `the old run is stopped, saw ${JSON.stringify(runs)}`);
+    // The old SEE is frozen. Advancing the current TRY freezes its feedback and old vote target.
+    assert.equal(await olive.locator('form[data-event=revised]').count(), 0, 'SEE remains frozen after approval');
+    const feedbackRow = olive.locator('li', { hasText: feedback }).filter({ has: olive.locator('form[data-adopt]') }).last();
+    await Promise.all([olive.waitForEvent('load'), feedbackRow.locator('form[data-adopt] button').click()]);
+    await eventually(olive, 'iframe[title="Playable try"]', 'the next REG-02 try', 30000);
     await ben.goto(regUrl);
-    assert.equal(await ben.locator('form[data-event=helped]').count(), 0, 'a helper has no Helps control for the superseded try');
+    const nextArtifact = await ben.locator('form[data-event=helped] [name=artifact_hash]').inputValue();
+    assert.notEqual(nextArtifact, regArtifact);
     const stale = await rawPost(ben, `/api/items/${regId}/events`, { type: 'helped', artifact_hash: regArtifact });
-    assert.ok(stale >= 400 && stale < 500, `a direct Helps for the old artifact must be refused with a 4xx, got ${stale}`);
-    await ben.reload();
+    assert.ok(stale >= 400 && stale < 500, `a direct Helps for the old artifact must be refused, got ${stale}`);
     assert.ok(await ben.getByText(regReason).count() > 0, 'the old approval reason stays visible as history');
     assert.ok(await ben.getByText(feedback).count() > 0, 'the old try feedback stays visible as history');
-    step('SEE revision superseded the try; Helps refused; history and next steps shown');
+    step('old SEE and TRY are frozen; old Helps refused and history retained');
 
     // 17. Decisions remain public with the exact reviewed packet, even after a return and new spec.
     await olive.goto(`${origin}/items/new`);

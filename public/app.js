@@ -5,13 +5,15 @@ const sessionless = new Set(['/api/login', '/api/invite/redeem']);
 // Every other POST needs the session's CSRF token, so fetch it first.
 async function post(path, input, idempotencyKey) {
   const headers = { 'content-type': 'application/json' };
+  const active = document.querySelector('[data-active-post]');
+  if (active) { headers['x-post-id'] = active.dataset.activePost; headers['x-post-version'] = active.dataset.postVersion; }
   if (idempotencyKey) headers['idempotency-key'] = idempotencyKey;
   if (!sessionless.has(path)) {
     const me = await (await fetch('/api/me')).json();
     headers['x-csrf-token'] = me.csrf;
   }
   const response = await fetch(path, { method: 'POST', headers, body: JSON.stringify(input) });
-  if (!response.ok) throw new Error('That did not go through.');
+  if (!response.ok) throw new Error(response.status === 409 ? 'This post may have frozen or changed. Copy your draft and refresh before trying again.' : 'That did not go through.');
   return response.status === 204 ? {} : response.json();
 }
 
@@ -76,8 +78,10 @@ document.addEventListener('submit', async event => {
       await post(`/api/items/${id}/research`, {});
     } else if (form.dataset.send) {
       await post(`/api/items/${id}/send`, { spec_hash: input.spec_hash, ...(input.estimate?.trim() ? { estimate: input.estimate.trim() } : {}) });
-    } else if (form.dataset.fork) {
-      const from = input.from ? { kind: input.from.split(':')[0], hash: input.from.split(':')[1] } : undefined;
+    } else if (form.dataset.fork || form.dataset.forkFrozen) {
+      const from = !input.from ? undefined : input.from.startsWith('snapshot|')
+        ? { kind: 'snapshot', post_id: input.from.split('|')[1], hash: input.from.split('|')[2] }
+        : { kind: input.from.split(':')[0], hash: input.from.split(':')[1] };
       const request = { reason: input.reason, ...(from ? { from } : {}) };
       const requestBody = JSON.stringify(request);
       if (form.dataset.requestBody !== requestBody) {
@@ -123,7 +127,7 @@ document.addEventListener('submit', async event => {
       await post(`/api/items/${id}/events`, data);
     }
     location.reload();
-  } catch {
-    showError(form, 'That did not go through. Check the form and try again.');
+  } catch (error) {
+    showError(form, error.message || 'That did not go through. Check the form and try again.');
   }
 });

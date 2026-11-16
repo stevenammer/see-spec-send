@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { Ledger, rateWithSystemText } from './ledger.js';
 
@@ -21,18 +22,30 @@ const unsafe = value => value && typeof value === 'object' && (Object.hasOwn(val
   || Object.hasOwn(value, 'constructor') || Object.hasOwn(value, 'prototype')
   || Object.values(value).some(unsafe));
 const chatKeys = ['function_call', 'functions', 'max_tokens', 'messages', 'model', 'stream', 'tool_choice', 'tools'];
+// Real agents send sampling and bookkeeping parameters the gateway does not need.
+// These exact keys are accepted and dropped; anything else is still refused.
+const ignorableKeys = ['temperature', 'top_p', 'stop', 'seed', 'presence_penalty', 'frequency_penalty',
+  'parallel_tool_calls', 'user', 'stream_options', 'max_completion_tokens', 'n'];
 const proxyInput = request => ({ model: request.model, input: JSON.stringify({
   messages: request.messages, tools: request.tools, tool_choice: request.tool_choice,
   functions: request.functions, function_call: request.function_call,
 }), max_output_tokens: request.max_tokens });
-function validateChat(request, ledger) {
-  if (!request || Array.isArray(request) || typeof request !== 'object' || unsafe(request)) throw Error('invalid chat payload');
-  if (JSON.stringify(Object.keys(request).sort()) !== JSON.stringify(Object.keys(request).sort().filter(key => chatKeys.includes(key)))) throw Error('invalid chat payload keys');
-  if (request.model !== ledger.rate.model || !Array.isArray(request.messages) || request.messages.length === 0
-    || typeof request.stream !== 'boolean' || !Number.isSafeInteger(request.max_tokens) || request.max_tokens < 1) throw Error('invalid chat payload');
+function validateChat(raw, ledger) {
+  if (!raw || Array.isArray(raw) || typeof raw !== 'object' || unsafe(raw)) throw Error('invalid chat payload');
+  if (Object.keys(raw).some(key => !chatKeys.includes(key) && !ignorableKeys.includes(key))) throw Error('invalid chat payload');
+  if (raw.n !== undefined && raw.n !== 1) throw Error('invalid chat payload');
+  if (raw.stream_options !== undefined && !(raw.stream_options && typeof raw.stream_options === 'object'
+    && Object.keys(raw.stream_options).every(key => key === 'include_usage') )) throw Error('invalid chat payload');
   const policy = ledger.policy();
-  if (request.max_tokens > policy.output_tokens || Buffer.byteLength(JSON.stringify(request), 'utf8') > policy.input_bytes) throw Error('chat limit');
-  return proxyInput(request);
+  const request = Object.fromEntries(Object.entries(raw).filter(([key]) => chatKeys.includes(key)));
+  // A missing or oversized output limit is clamped to the reviewed policy, never exceeded.
+  const asked = request.max_tokens ?? raw.max_completion_tokens ?? policy.output_tokens;
+  if (!Number.isSafeInteger(asked) || asked < 1) throw Error('invalid chat payload');
+  request.max_tokens = Math.min(asked, policy.output_tokens);
+  if (request.model !== ledger.rate.model || !Array.isArray(request.messages) || request.messages.length === 0
+    || typeof request.stream !== 'boolean') throw Error('invalid chat payload');
+  if (Buffer.byteLength(JSON.stringify(request), 'utf8') > policy.input_bytes) throw Error('chat limit');
+  return { request, input: proxyInput(request) };
 }
 
 export class Gateway {
@@ -64,12 +77,22 @@ export class Gateway {
 // This is intentionally a separate protocol entry point, but not a separate
 // ledger: every chat completion uses the same reserve/dispatch/settle receipt
 // and original-approval cap as /v1/generate.
+// Providers report usage as OpenAI-style prompt/completion tokens; the ledger
+// settles on input/output tokens. Anything else stays as-is and fails closed.
+export function normalizeUsage(usage) {
+  if (usage && Number.isSafeInteger(usage.prompt_tokens) && Number.isSafeInteger(usage.completion_tokens)
+    && usage.input_tokens === undefined && usage.output_tokens === undefined)
+    return { input_tokens: usage.prompt_tokens, output_tokens: usage.completion_tokens };
+  return usage;
+}
+
 export class ChatGateway {
   constructor(ledger, provider) { this.ledger = ledger; this.provider = provider; }
 
   async call(raw, idem, request) {
     if (!this.provider || typeof this.provider.chat !== 'function') throw Error('no chat provider configured');
-    const input = validateChat(request, this.ledger);
+    const { request: clean, input } = validateChat(request, this.ledger);
+    request = clean;
     const { row, fresh } = this.ledger.reserve(raw, idem, input);
     if (!fresh) return this.ledger.outcome(row.id);
     if (!this.ledger.dispatch(raw, row.id)) return this.ledger.outcome(row.id);
@@ -78,18 +101,22 @@ export class ChatGateway {
       const controller = new AbortController();
       response = this.provider.chat(Object.freeze({ ...request, stream: false }), { id: row.id, signal: controller.signal });
       const work = Promise.resolve(response).then(result => Promise.resolve(this.ledger.settle(row.id,
-        { output: JSON.stringify(result), usage: result?.usage }, { retainOutput: false })).then(ok => ok ? result : null)).catch(() => null);
+        { output: JSON.stringify(result), usage: normalizeUsage(result?.usage) }, { retainOutput: false })).then(ok => ok ? result : null)).catch(() => null);
       const timeout = new Promise(resolve => { timer = setTimeout(() => { controller.abort(); resolve(null); }, JSON.parse(row.policy).timeout_ms); });
       const result = await Promise.race([work, timeout]);
       return result ? { status: 200, body: result } : this.ledger.outcome(row.id);
     } finally { clearTimeout(timer); }
   }
 
-  async stream(raw, idem, request, send) {
+  async stream(raw, idem, request, send, begin = () => {}) {
     if (!this.provider || typeof this.provider.chat !== 'function') throw Error('no chat provider configured');
-    const input = validateChat(request, this.ledger);
+    const { request: clean, input } = validateChat(request, this.ledger);
+    request = clean;
     const { row, fresh } = this.ledger.reserve(raw, idem, input);
     if (!fresh || !this.ledger.dispatch(raw, row.id)) throw Error('idempotency request is not dispatchable');
+    // Only now is the call authorized and charged, so only now may the response
+    // become a 200 event stream. Earlier refusals are ordinary HTTP errors.
+    begin();
     const controller = new AbortController();
     let usage = null;
     try {
@@ -97,7 +124,7 @@ export class ChatGateway {
       for await (const chunk of source) {
         // Permission is rechecked before every provider chunk. Revocation,
         // expiry, kill, or stale approval aborts the upstream stream.
-        this.ledger.authorize(raw); if (chunk?.usage) usage = chunk.usage;
+        this.ledger.authorize(raw); if (chunk?.usage) usage = normalizeUsage(chunk.usage);
         send(chunk);
       }
       if (!usage) throw Error('missing usage');
@@ -142,19 +169,25 @@ export function createGatewayServer(gateway, chatGateway = null) {
       const policy = handler.ledger.policy();
       // JSON escaping can expand each input byte, but is still strictly bounded before parsing.
       const input = await body(req, policy.input_bytes * 6 + 1024);
+      // Real agents do not send an Idempotency-Key. Each such request is a new,
+      // separately metered call; only a client that supplies a key gets retry
+      // de-duplication.
+      const idem = req.headers['idempotency-key'] || randomBytes(16).toString('hex');
       if (req.url === '/v1/chat/completions' && input.stream) {
-        res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
-        await handler.stream(match[1], req.headers['idempotency-key'], input, chunk => res.write(`data: ${typeof chunk === 'string' ? chunk : JSON.stringify(chunk)}\n\n`));
+        await handler.stream(match[1], idem, input, chunk => res.write(`data: ${typeof chunk === 'string' ? chunk : JSON.stringify(chunk)}\n\n`),
+          () => res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' }));
         return res.end();
       }
-      const result = await handler.call(match[1], req.headers['idempotency-key'], input);
+      const result = await handler.call(match[1], idem, input);
       reply(res, result.status, result.body);
     } catch (error) {
       const status = /cap exceeded/.test(error.message) ? 402
         : /concurrency/.test(error.message) ? 429
           : /capability|stale|stopped/.test(error.message) ? 403
             : /corrupt|verification|accounting/.test(error.message) ? 503 : 400;
-      if (!res.destroyed) reply(res, status, { error: 'gateway refused request' });
+      // After the stream has started, the status line is already sent: end it.
+      if (res.headersSent) res.end();
+      else if (!res.destroyed) reply(res, status, { error: 'gateway refused request' });
     }
   });
   server.headersTimeout = 5000;

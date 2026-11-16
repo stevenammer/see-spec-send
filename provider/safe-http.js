@@ -67,7 +67,9 @@ export async function resolvePinned(raw, { hosts, allowPrivate = false, resolver
   const name = literal(url.hostname);
   const answers = isIP(name) ? [{ address: name }] : await resolver(url.hostname);
   if (!answers.length || (!allowPrivate && answers.some(({ address }) => addressIsReserved(address)))) throw Error('private provider address refused');
-  const [{ address }] = answers;
+  // Every answer was checked above. Prefer IPv4 when offered: many hosts and networks cannot route IPv6,
+  // and the single pinned address cannot fall back the way a normal dialer would.
+  const { address } = answers.find(answer => isIP(answer.address) === 4) || answers[0];
   return { url, address, family: isIP(address) };
 }
 

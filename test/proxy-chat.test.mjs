@@ -97,3 +97,66 @@ test('revoked, stale, and forged capabilities refuse or abort proxy streams', as
   assert.equal(ledger.receipts()[0].state, 'dispatched');
   await assert.rejects(() => new ChatGateway(ledger, fixtureChatProvider).call('x'.repeat(43), 'forged', chat()), /capability/);
 });
+
+// Found by running a real agent through the proxy: agents send no Idempotency-Key,
+// and a refusal after the stream began once crashed the whole gateway process.
+test('wire: no Idempotency-Key is a fresh metered call; a refused stream is a normal HTTP error and the server survives', async t => {
+  const { store, ledger, token } = fixture(); t.after(() => store.close());
+  const server = createGatewayServer(new Gateway(ledger, fixtureProvider), new ChatGateway(ledger, fixtureChatProvider));
+  server.listen(0, '127.0.0.1');
+  try { await once(server, 'listening'); } catch (error) {
+    if (error.code === 'EPERM') { t.skip('sandbox blocks loopback listeners'); return; }
+    throw error;
+  }
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const url = `http://127.0.0.1:${server.address().port}/v1/chat/completions`;
+  const headers = { 'content-type': 'application/json', authorization: `Bearer ${token}` };
+  const a = await fetch(url, { method: 'POST', headers, body: JSON.stringify(chat()) });
+  const b = await fetch(url, { method: 'POST', headers, body: JSON.stringify(chat()) });
+  assert.equal(a.status, 200); assert.equal(b.status, 200);
+  assert.equal(ledger.receipts().length, 2, 'two keyless requests are two metered calls');
+  // An over-limit streaming request is refused before any event stream starts.
+  const refused = await fetch(url, { method: 'POST', headers, body: JSON.stringify(chat({ stream: true, provider_options: { anything: 1 } })) });
+  assert.ok([400, 402].includes(refused.status), `got ${refused.status}`);
+  assert.notEqual(refused.headers.get('content-type'), 'text/event-stream');
+  const after = await fetch(url, { method: 'POST', headers, body: JSON.stringify(chat()) });
+  assert.equal(after.status, 200, 'the gateway is still alive');
+});
+
+test('wire: agent sampling parameters are accepted and dropped, a missing limit is clamped to policy, unknown keys are refused', async t => {
+  const { store, ledger, token } = fixture(); t.after(() => store.close());
+  const server = createGatewayServer(new Gateway(ledger, fixtureProvider), new ChatGateway(ledger, fixtureChatProvider));
+  server.listen(0, '127.0.0.1');
+  try { await once(server, 'listening'); } catch (error) {
+    if (error.code === 'EPERM') { t.skip('sandbox blocks loopback listeners'); return; }
+    throw error;
+  }
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const url = `http://127.0.0.1:${server.address().port}/v1/chat/completions`;
+  const headers = { 'content-type': 'application/json', authorization: `Bearer ${token}` };
+  const { max_tokens: _omit, ...bare } = chat();
+  const agent = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ ...bare, temperature: 0.2, top_p: 1, stream_options: { include_usage: true }, parallel_tool_calls: true }) });
+  assert.equal(agent.status, 200);
+  const huge = await fetch(url, { method: 'POST', headers, body: JSON.stringify(chat({ max_tokens: 10_000_000 })) });
+  assert.equal(huge.status, 200, 'an oversized limit is clamped, never exceeded');
+  assert.ok(ledger.receipts().every(row => row.output_bound <= ledger.policy().output_tokens));
+  for (const bad of [{ response_format: { type: 'json_object' } }, { stream_options: { other: true } }, { n: 2 }, { __proto__: { x: 1 }, constructor: 1 }])
+    assert.equal((await fetch(url, { method: 'POST', headers, body: JSON.stringify(chat(bad)) })).status, 400);
+});
+
+test('provider-style usage (prompt_tokens, completion_tokens) settles the hold for normal and streamed calls', async () => {
+  const { normalizeUsage } = await import('../gateway/http.js');
+  assert.deepEqual(normalizeUsage({ prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 }), { input_tokens: 7, output_tokens: 3 });
+  assert.deepEqual(normalizeUsage({ input_tokens: 1, output_tokens: 2 }), { input_tokens: 1, output_tokens: 2 });
+  assert.equal(normalizeUsage(undefined), undefined);
+  assert.deepEqual(normalizeUsage({ prompt_tokens: 1.5, completion_tokens: 2 }), { prompt_tokens: 1.5, completion_tokens: 2 }, 'malformed usage is left to fail closed');
+});
+
+test('a gateway call whose provider reports OpenAI-style usage settles instead of staying held', async t => {
+  const { store, ledger, token } = fixture(); t.after(() => store.close());
+  const provider = { async chat() { return { id: 'c', choices: [{ message: { role: 'assistant', content: 'ok' } }], usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } }; } };
+  const chatGateway = new ChatGateway(ledger, provider);
+  const result = await chatGateway.call(token, 'oa:1', chat());
+  assert.equal(result.status, 200);
+  assert.equal(ledger.receipts().at(-1).state, 'settled');
+});

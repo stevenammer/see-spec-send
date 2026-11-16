@@ -12,7 +12,9 @@ export function openAICompatible(config) { return { async complete(request) {
 }, async chat(request) {
   const body = { model: request.model, messages: request.messages, tools: request.tools,
     tool_choice: request.tool_choice, functions: request.functions, function_call: request.function_call,
-    max_tokens: request.max_tokens, stream: request.stream };
+    max_tokens: request.max_tokens, stream: request.stream,
+    // Ask the provider to report usage on the final stream chunk, so the hold can settle.
+    ...(request.stream ? { stream_options: { include_usage: true } } : {}) };
   if (!request.stream) return jsonRequest(config.url, { ...config, headers: auth(config), body, signal: request.signal });
   const pin = await resolvePinned(config.url, config);
   const encoded = JSON.stringify(body);

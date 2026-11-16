@@ -69,3 +69,13 @@ test('local command adapter never inherits the server environment or its API key
   const result = await localCommand({ command: [process.execPath, script] }).complete({ system: '', messages: [{ role: 'user', content: 'x' }], maxOutputTokens: 8, model: 'm' });
   assert.doesNotMatch(result.text, /SSS_TEST_SECRET_KEY/);
 });
+
+test('pinned address prefers IPv4 when a host also has IPv6, and still refuses reserved answers', async () => {
+  const { resolvePinned } = await import('../provider/safe-http.js');
+  const mixed = async () => [{ address: '2606:4700:4700::1111' }, { address: '1.1.1.1' }];
+  assert.equal((await resolvePinned('https://api.example.test/v1', { hosts: ['api.example.test'], resolver: mixed })).address, '1.1.1.1');
+  const v6only = async () => [{ address: '2606:4700:4700::1111' }];
+  assert.equal((await resolvePinned('https://api.example.test/v1', { hosts: ['api.example.test'], resolver: v6only })).address, '2606:4700:4700::1111');
+  const hidden = async () => [{ address: '1.1.1.1' }, { address: '10.0.0.5' }];
+  await assert.rejects(resolvePinned('https://api.example.test/v1', { hosts: ['api.example.test'], resolver: hidden }), /private provider address refused/);
+});

@@ -33,6 +33,7 @@ import { kindOf } from './core/errors.js';
 import { runReanalysis } from './reanalysis/run.js';
 import { startReanalysisSchedule } from './reanalysis/schedule.js';
 import { AnalysisGateway } from './gateway/analysis.js';
+import { modelMessages } from './intelligence/prompt.js';
 
 const fail = message => {
   throw new Error(message);
@@ -278,7 +279,8 @@ async function run(argv, env, write) {
       const selected = meteredProviderFor(name, env); const ledger = new Ledger(store, { rate: selected.rate });
       if (!ledger.policy().enabled) fail('gateway is disabled');
       const gateway = new AnalysisGateway(ledger, async input => {
-        const result = validateCompletion(await selected.provider.complete({ system: 'Return JSON only. This is advisory and cannot change a decision.', messages: [{ role: 'user', content: input.input }], maxOutputTokens: input.max_output_tokens, model: input.model, signal: AbortSignal.timeout(ledger.policy().timeout_ms) }));
+        const shown = modelMessages(input.input);
+        const result = validateCompletion(await selected.provider.complete({ system: shown.system, messages: [{ role: 'user', content: shown.user }], maxOutputTokens: input.max_output_tokens, model: input.model, signal: AbortSignal.timeout(ledger.policy().timeout_ms) }));
         return { output: result.text, usage: { input_tokens: result.usage.inputTokens, output_tokens: result.usage.outputTokens } };
       });
       verify = (prompt, context) => gateway.ask(context.person, context.idem, prompt);
@@ -511,7 +513,8 @@ async function run(argv, env, write) {
       const selected = meteredProviderFor(name, env); const ledger = new Ledger(store, { rate: selected.rate });
       if (!ledger.policy().enabled) fail('gateway is disabled');
       analysisGateway = new AnalysisGateway(ledger, async input => {
-        const result = validateCompletion(await selected.provider.complete({ system: 'Return JSON only. This is advisory organizational analysis.', messages: [{ role: 'user', content: input.input }], maxOutputTokens: input.max_output_tokens, model: input.model, signal: AbortSignal.timeout(ledger.policy().timeout_ms) }));
+        const shown = modelMessages(input.input);
+        const result = validateCompletion(await selected.provider.complete({ system: shown.system, messages: [{ role: 'user', content: shown.user }], maxOutputTokens: input.max_output_tokens, model: input.model, signal: AbortSignal.timeout(ledger.policy().timeout_ms) }));
         return { output: result.text, usage: { input_tokens: result.usage.inputTokens, output_tokens: result.usage.outputTokens } };
       });
       write(`Analysis model enabled. provider=${name}; model=${selected.rate.model}`);

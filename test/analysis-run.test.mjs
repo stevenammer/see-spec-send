@@ -58,7 +58,7 @@ test('narrower scope: difference is disclosed, restricted sources absent', async
 
 test('AI answer is never a KnowledgeDelta and never an annex source', async t => {
   const store = setup(t); let called = 0;
-  const result = await runAnalysis({ store, viewer: 'alex', request: request(['open']), now: at, askModel: async packet => { called += 1; return JSON.stringify(packet.answer_contract); } });
+  const result = await runAnalysis({ store, viewer: 'alex', request: request(['open']), now: at, askModel: async packet => { called += 1; const answer = structuredClone(packet.answer_contract); const f = answer.findings[0]; f.claim = 'The open record documents a decision to keep the handoff checklist.'; f.alternatives = ['The checklist may be kept for another reason.']; f.uncertainty = ['Only one record was included.']; f.next_investigation = ['Ask the record owner what the checklist covers.']; answer.tradeoffs = ['One record is a small sample.']; answer.missingness = ['Other teams records are not included.']; return JSON.stringify(answer); } });
   assert.equal(called, 1); assert.equal(result.receipt.model_configuration.mode, 'model');
   assert.deepEqual(store.knowledge.entries().map(entry => entry.kind), ['analysis_receipt']);
   assert.equal(store.db.prepare("SELECT count(*) AS n FROM events WHERE type IN ('knowledge_delta','annex')").get().n, 0);

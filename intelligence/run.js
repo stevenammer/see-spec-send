@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
 import { refused } from '../core/errors.js';
 import { evidencePackage, readAnalysisAnswer } from './evidence.js';
+import { completeAnswer, repeatsTemplate } from './prompt.js';
 
 const canonical = value => JSON.stringify(value, (_key, entry) => entry && typeof entry === 'object' && !Array.isArray(entry)
   ? Object.fromEntries(Object.entries(entry).sort(([a], [b]) => a.localeCompare(b))) : entry);
 const sha = value => createHash('sha256').update(canonical(value)).digest('hex');
 // This catches requests that are still unsafe even when phrased differently from
 // the evidence packet's conservative legacy tripwire.
-const prohibited = /\bweakest(?:\s+links?)?|least\s+(?:effective|productive)|bottom\s+performers?|rank(?:ing)?\b|score\b|rate\b|infer\s+(?:their\s+)?motives?|why\s+(?:they|someone)\s+(?:wanted|did)|intentionally\b/i;
+const prohibited = /\bweakest(?:\s+links?)?|least\s+(?:effective|productive)|bottom\s+performers?|rank(?:ing)?\b|score\b|rate\b|infer\s+(?:their\s+)?motives?|why\s+(?:they|someone)\s+(?:wanted|did)|intentionally\b|\bmotives?\b|why\s+did\s+(?:the\s+)?(?:leader|manager|supervisor|director|executive|he|she|they)\b/i;
 const unsafeModelOutput = /\b(?:weakest(?:\s+links?)?|least\s+(?:effective|productive)|bottom\s+performers?|rank(?:ing)?|score|rate)\b[^.]{0,100}\b(?:people|person|employee|leader|staff|worker)s?\b|\b(?:their|the)\s+motives?\b/i;
 const sourceSet = packet => packet.sources.map(({ item, seq, hash, event_hash }) => ({ item, seq, hash, event_hash }));
 
@@ -62,8 +63,15 @@ export async function runAnalysis({ store, viewer, request, askModel = null, now
   } else if (typeof askModel === 'function') {
     const output = await askModel(Object.freeze(structuredClone(packet)));
     if (unsafeModelOutput.test(output)) throw refused('model output attempted a people ranking or motive inference');
-    checked = readAnalysisAnswer(packet, output);
-    configuration = { mode: 'model', provider: 'gateway analysis', job_class: 'analysis' };
+    try {
+      checked = readAnalysisAnswer(packet, completeAnswer(packet, output));
+      if (repeatsTemplate(packet, checked.answer)) throw refused('answer repeats the template text instead of findings');
+      configuration = { mode: 'model', provider: 'gateway analysis', job_class: 'analysis' };
+    } catch (error) {
+      // A malformed or hollow model answer never becomes a finding. The person still gets the sources, and is told why.
+      checked = { answer: sourcesOnly(packet), label: `The model's answer was refused (${String(error.message).slice(0, 120)}). Sources-only answer shown; human review is required.` };
+      configuration = { mode: 'model_refused_sources_only', provider: 'gateway analysis', job_class: 'analysis' };
+    }
   } else {
     checked = { answer: sourcesOnly(packet), label: 'Sources-only deterministic answer. No finding was generated; human review is required.' };
     configuration = { mode: 'sources_only', provider: 'none' };

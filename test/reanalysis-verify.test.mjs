@@ -20,7 +20,7 @@ function world(t) {
 
 test('advisory output can only downgrade, annotate exact citations, and records a metered receipt', async t => {
   const store = world(t); const ledger = new Ledger(store, { clock: () => Date.parse(later) }); ledger.configure(fixturePolicy()); let calls = 0;
-  const gateway = new AnalysisGateway(ledger, async input => { calls += 1; const cite = JSON.parse(input.input).impact.cites[0]; return { output: JSON.stringify({ material: true, bears_on: [cite], known_unknowns: ['Synthetic uncertainty.'], contrary: ['Synthetic contrary case.'] }), usage: { input_tokens: 2, output_tokens: 2 } }; }, { clock: () => Date.parse(later) });
+  const gateway = new AnalysisGateway(ledger, async input => { calls += 1; const cite = JSON.parse(input.input).old_statements[0]; return { output: JSON.stringify({ material: true, bears_on: [cite], known_unknowns: ['Synthetic uncertainty.'], contrary: ['Synthetic contrary case.'] }), usage: { input_tokens: 2, output_tokens: 2 } }; }, { clock: () => Date.parse(later) });
   const out = await runReanalysis(store, { now: later, verify: (prompt, context) => gateway.ask(context.person, context.idem, prompt) });
   assert.equal(calls, 1); assert.equal(out.annexes.length, 1); const annex = store.knowledge.entries('annex')[0].body;
   assert.deepEqual(annex.known_unknowns, ['Synthetic uncertainty.']); assert.deepEqual(annex.contrary, ['Synthetic contrary case.']); assert.equal(gateway.receipts().length, 1);

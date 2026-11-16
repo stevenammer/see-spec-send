@@ -43,6 +43,11 @@ const mutants = [
   ['bundle: capabilities that can reach out are refused', 'worker/bundle.js', "\\bsendBeacon\\b|", '', T(['bundle-html'])],
   ['bundle: scripts must be empty elements', 'worker/builder/index.js', "if (end < 0 || html.slice(match.index + match[0].length, end).trim()) return false;", '', T(['bundle-html'])],
   ['bundle: links must name bundle files', 'worker/builder/index.js', 'if (!links.has(value)) return false; continue;', 'continue;', T(['bundle-html'])],
+  ['prompt: the question comes from the request, not the model', 'intelligence/prompt.js', 'question: packet.request.question, objectives: packet.request.objectives, constraints: packet.request.constraints,', 'question: answer.question, objectives: answer.objectives, constraints: answer.constraints,', T(['prompt-shape'])],
+  ['prompt: an unknown status is never coerced into an allowed one', 'intelligence/prompt.js', '?.[1].toLowerCase() ?? value) : value;', "?.[1].toLowerCase() ?? 'documented') : value;", T(['prompt-shape'])],
+  ['analysis: a reply that repeats the template is refused', 'intelligence/run.js', "if (repeatsTemplate(packet, checked.answer)) throw refused('answer repeats the template text instead of findings');", '', T(['prompt-shape'])],
+  ['analysis: motive questions are refused before any model call', 'intelligence/run.js', '|\\bmotives?\\b|', '|', T(['prompt-shape'])],
+  ['verify: one outer fence is accepted', 'reanalysis/verify.js', 'JSON.parse(unfence(raw))', 'JSON.parse(raw)', T(['prompt-shape'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 if (process.argv.includes('--check-sources')) {

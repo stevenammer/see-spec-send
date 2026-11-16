@@ -125,3 +125,7 @@ Erasure removes the target from the active search index and leaves a contributio
 ## Reanalysis on a timer
 
 `node cli.js serve --reanalysis-interval-minutes N` (5 to 1440) runs a reanalysis pass inside the server every N minutes. It is off unless you pass the flag. A lock file next to the database (`sss.db.reanalysis.lock`) keeps a second server on the same database from running a second scheduler; a lock left by a crashed server is cleared. A slow pass is never overlapped, and a failed pass is logged and tried again on the next tick. You can still run one pass by hand with `node cli.js reanalysis run`.
+
+## Checking a model lane
+
+`node scripts/eval-model-lanes.mjs` runs a small labeled evaluation of the two optional model lanes against a configured Bedrock model (AWS credentials come from the environment; `EVAL_MODEL_ID` selects the model). It prints agreement with the labels, how often the reply was valid and grounded, whether prohibited questions are refused before any model call, and the approximate cost. A run costs a few cents at most. It is a sanity check on a small synthetic set. Re-run it after changing a prompt or switching models.

@@ -3,9 +3,9 @@ import { isChallenged } from '../knowledge/corrections.js';
 
 const stop = new Set(['the', 'and', 'for', 'with', 'that', 'this', 'from', 'into', 'have', 'has', 'was', 'were', 'are', 'not', 'new', 'old', 'our', 'their', 'your', 'will', 'can', 'need', 'needs', 'using']);
 const terms = text => new Set(String(text || '').toLowerCase().match(/[a-z0-9_]+/g)?.filter(word => word.length > 1 && !stop.has(word)) || []);
-const shared = (a, b) => [...terms(a)].filter(word => terms(b).has(word)).sort();
+export const shared = (a, b) => [...terms(a)].filter(word => terms(b).has(word)).sort();
 const decisionTypes = new Set(['approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew']);
-const sourceText = delta => delta.claims.map(claim => claim.text).join(' ');
+export const sourceText = delta => delta.claims.map(claim => claim.text).join(' ');
 
 function targets(store) {
   const found = [];

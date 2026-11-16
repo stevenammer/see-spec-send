@@ -2,6 +2,7 @@ import { parseAt } from '../core/reconcile.js';
 import { defaultCanRead, canRead } from '../access/read.js';
 import { extractDeltas } from '../knowledge/delta.js';
 import { findImpacts } from './match.js';
+import { deliverToOpenThreads } from './open.js';
 import { buildAnnex, recordAnnex } from './annex.js';
 import { deliverAnnexes } from '../notifications/digest.js';
 import { catalogCapabilities } from '../knowledge/catalog.js';
@@ -19,10 +20,11 @@ export function runReanalysis(store, { now, limit = 20, canRead: policy = defaul
   if (!Number.isFinite(parseAt(now))) throw new Error('now timestamp required');
   if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('limit must be a positive integer');
   const deltas = extractDeltas(store, { now, limit });
-  const annexes = [], held = [], receipts = [], skipped = [];
+  const annexes = [], held = [], receipts = [], skipped = [], openThreads = [];
   for (const delta of deltas) {
     const match = findImpacts(store, delta, { canRead: policy });
     held.push(...match.held);
+    openThreads.push(...deliverToOpenThreads(store, delta, { now, canRead: policy }));
     for (const impact of match.checked) {
       const viewer = store.read(delta.source.item).context.steward;
       if (!canRead(viewer, store.readScope(delta.source.item), policy) || !canRead(viewer, store.readScope(impact.target.item), policy)) { held.push(impact); continue; }
@@ -44,5 +46,5 @@ export function runReanalysis(store, { now, limit = 20, canRead: policy = defaul
   const capabilities = catalogCapabilities(store, { at: now });
   const edges = propagateOpportunities(store, { at: now });
   const delivery = deliverAnnexes(store, { now, canRead: policy });
-  return { deltas, annexes, held, receipts, skipped, capabilities, edges, delivery };
+  return { deltas, annexes, held, receipts, skipped, capabilities, edges, delivery, openThreads };
 }

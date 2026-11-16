@@ -22,6 +22,7 @@
     "sync:demo": "node scripts/sync-demo.mjs",
     "check:demo": "node scripts/sync-demo.mjs --check",
     "check:public": "node scripts/check-public.mjs",
-    "check:mutants": "node scripts/mutate-check.mjs"
+    "check:mutants": "node scripts/mutate-check.mjs",
+    "check:mutants-new": "node scripts/mutate-new.mjs"
   }
 }

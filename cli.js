@@ -31,6 +31,7 @@ import { migrationStatus, SCHEMA_VERSION, userVersion } from './core/migrations.
 import { appendAudit, verifyAudit } from './core/audit.js';
 import { kindOf } from './core/errors.js';
 import { runReanalysis } from './reanalysis/run.js';
+import { startReanalysisSchedule } from './reanalysis/schedule.js';
 
 const fail = message => {
   throw new Error(message);
@@ -513,6 +514,12 @@ async function run(argv, env, write) {
       }
       const effort = new EffortWorker(store, gateway);
       effort.tick(); effortTimer = setInterval(() => { effort.tick(); }, 1000);
+    }
+    let reanalysisSchedule = null;
+    if (value('--reanalysis-interval-minutes') !== undefined) {
+      const minutes = Number(value('--reanalysis-interval-minutes'));
+      reanalysisSchedule = startReanalysisSchedule(store, { intervalMinutes: minutes, lockFile: `${file}.reanalysis.lock`, log: write });
+      if (reanalysisSchedule) { process.once('SIGTERM', () => reanalysisSchedule.stop()); process.once('SIGINT', () => reanalysisSchedule.stop()); write(`Reanalysis runs every ${minutes} minutes.`); }
     }
     const bundleServer = bundlePort === null ? null : createBundleServer({ store, secret: randomBytes(32), hostSuffix: bundleHostSuffix, appOrigin: origin });
     if (bundleServer) await new Promise(resolve => bundleServer.listen(bundlePort, host, resolve));

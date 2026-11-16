@@ -121,3 +121,7 @@ Erasure removes the target from the active search index and leaves a contributio
 # Reanalysis
 
 `node cli.js reanalysis run [--limit N]` processes synthetic recorded knowledge against frozen posts and records linked annexes plus in-app digest entries. It does not schedule work, send an outbound message, approve anything, spend money, or start a build.
+
+## Reanalysis on a timer
+
+`node cli.js serve --reanalysis-interval-minutes N` (5 to 1440) runs a reanalysis pass inside the server every N minutes. It is off unless you pass the flag. A lock file next to the database (`sss.db.reanalysis.lock`) keeps a second server on the same database from running a second scheduler; a lock left by a crashed server is cleared. A slow pass is never overlapped, and a failed pass is logged and tried again on the next tick. You can still run one pass by hand with `node cli.js reanalysis run`.

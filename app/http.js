@@ -687,6 +687,8 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (input.type === 'approved' && !auth.hasStepup(sessionToken))
         return json(res, 403, { error: 'request refused' });
       if (!validEvent(input)) return json(res, 409, { error: 'request refused' });
+      if (['returned', 'not_built'].includes(input.type) && store.read(match[1]).context.rules >= 3)
+        throw refused('legacy decision type unavailable for current rules');
       if (input.type === 'specced' && store.read(match[1]).context.rules >= 2) input = { ...input, scope: input.scope || emptyScope() };
       if (input.type === 'approved' && input.spec_hash === undefined && store.read(match[1]).context.rules === 3) throw refused('reviewed packet required');
       if (input.type === 'approved' && input.spec_hash === undefined) {

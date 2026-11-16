@@ -60,7 +60,11 @@ test('F3 HTTP decisions bind reviewed packets, preserve history, label estimates
   const reason = 'The existing transfer screen already does this.';
   assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/events`, { type: 'not_built', reason, spec_hash: hash, packet_hash: '0'.repeat(64) }, leader)).status, 409);
   assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/events`, { type: 'not_built', reason, spec_hash: hash, packet_hash: packetHash }, member)).status, 409);
-  assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/events`, { type: 'not_built', reason, spec_hash: hash, packet_hash: packetHash }, leader)).status, 201);
+  assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/events`, { type: 'not_built', reason, spec_hash: hash, packet_hash: packetHash }, leader)).status, 409,
+    'rules-3 rejects new legacy generic NO events');
+  assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/events`, { type: 'decided', disposition: 'resolve_without_build',
+    reason_code: 'existing_view_sufficient', reason, metadata: { alternative: 'Use the existing transfer screen.', action_owner: 'service owner' },
+    spec_hash: hash, packet_hash: packetHash }, leader)).status, 201);
   let page = await boundCall(handler, 'GET', `/items/${id}`, null, member);
   assert.equal(page.status, 200); assert.match(page.text, /Two hours, no purchases/); assert.match(page.text, /existing transfer screen/);
   assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/send`, { spec_hash: hash, estimate: 'Two hours, no purchases.' }, op)).status, 409, 'unchanged decided pair cannot be resent');

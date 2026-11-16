@@ -16,7 +16,7 @@ function setup(t, rules = 3) {
   const binding = () => ({ post_id: s.read('item').context.activePost?.id, post_version: s.read('item').context.activePost?.version });
   const see = s.read('item').context.seeHash;
   append({ type: 'specced', actor: 'op', see_hash: see, must: ['Keep the caller note'], how_we_know: ['The next person can find it'], out_of_scope: [], ...binding() });
-  const spec = s.read('item').context.specHash, packet = s.putArtifact('item', JSON.stringify({ specHash: spec }));
+  const spec = s.read('item').context.specHash, packet = s.putArtifact('item', JSON.stringify({ specHash: spec, evidence: 'Current <transfer> snapshot' }));
   append({ type: 'sent', actor: 'op', spec_hash: spec, packet_hash: packet, ...binding() });
   return { s, append, binding, spec, packet };
 }
@@ -29,6 +29,9 @@ test('SEND disposition is attributable, exact-packet-bound, branchable, and repl
   const event = { type: 'decided', disposition: 'defer', reason_code: 'dependency_outstanding',
     reason: 'Wait for the service owner to confirm the existing handoff.', metadata: { owner: 'service-owner', review_by: '2026-12-01', trigger: 'service owner confirms the handoff' },
     spec_hash: spec, packet_hash: packet, ...binding() };
+  for (const type of ['returned', 'not_built']) assert.throws(() => append({ type, actor: 'leader',
+    reason: 'The current packet should use an explicit decision outcome.', spec_hash: spec, packet_hash: packet, ...binding() }), /not allowed|legacy decision type unavailable/,
+  `rules-3 rejects new legacy ${type} records`);
   assert.throws(() => append({ ...event, actor: 'op' }), /not allowed/, 'an author cannot decide their own SEND');
   assert.throws(() => append({ ...event, actor: 'leader', packet_hash: '0'.repeat(64) }), /not allowed/, 'decision must bind the exact packet');
   assert.throws(() => append({ ...event, actor: 'leader', metadata: { owner: 'service-owner' } }), /not allowed/, 'defer needs either a date or trigger');
@@ -45,8 +48,9 @@ test('SEND disposition is attributable, exact-packet-bound, branchable, and repl
   const decisionPost = s.db.prepare('SELECT * FROM stage_posts WHERE post_id=?').get(sendPost.successor_post_id);
   assert.equal(decisionPost.kind, 'decision');
   assert.equal(decisionPost.successor_post_id, null);
-  const page = itemPage({ id: 'item', ...state }, s.events('item'), 'member', false);
+  const page = itemPage({ id: 'item', ...state, decisionPackets: { [packet]: s.artifact('item', packet) } }, s.events('item'), 'member', false);
   assert.match(page, /Decision record/); assert.match(page, />Defer</); assert.match(page, /service owner confirms/);
+  assert.equal(page.match(/Current &lt;transfer&gt; snapshot/g)?.length, 1, 'the current decision displays its exact escaped review snapshot once');
   assert.throws(() => s.erase('item', s.events('item').at(-1).body_hash, 'leader', stamp), /decision records/);
   assert.ok(s.verifyAll().every(row => row.ok));
   s.rebuild(); assert.ok(s.verifyAll().every(row => row.ok));
@@ -69,6 +73,10 @@ test('HTTP accepts a valid decision with rendered SEND binding and refuses stale
     'x-post-id': binding().post_id, 'x-post-version': binding().post_version };
   const base = { type: 'decided', disposition: 'defer', reason_code: 'not_now', reason: 'Revisit after the service owner confirms readiness.',
     metadata: { owner: 'service-owner', review_by: '2026-12-01' }, spec_hash: spec, packet_hash: packet };
+  for (const type of ['returned', 'not_built']) {
+    const rejected = await call('POST', '/api/items/item/events', { type, reason: 'Use an explicit rules-3 decision record.', spec_hash: spec, packet_hash: packet }, headers);
+    assert.equal(rejected.status, 409, `rules-3 HTTP rejects legacy ${type}`);
+  }
   const stale = await call('POST', '/api/items/item/events', base, { ...headers, 'x-post-version': '0'.repeat(64) });
   assert.equal(stale.status, 409);
   const accepted = await call('POST', '/api/items/item/events', base, headers);

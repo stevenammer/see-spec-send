@@ -35,7 +35,9 @@ test('SEE freeze is atomic and rejects stale writes; return opens a distinct lin
   const send = binding();
   append({ type: 'commented', actor: 'peer', kind: 'comment', anchor_kind: 'send', anchor_hash: send.post_version, comment: 'A review question.', ...send });
   assert.throws(() => append({ type: 'commented', actor: 'peer', kind: 'comment', anchor_kind: 'spec', anchor_hash: specHash, comment: 'Too late.', ...firstSpec }), /frozen or superseded/);
-  append({ type: 'returned', actor: 'leader', reason: 'Please provide the missing detail.', spec_hash: specHash, packet_hash: packet, ...binding() });
+  append({ type: 'decided', actor: 'leader', disposition: 'return_for_revision', reason_code: 'missing_detail',
+    reason: 'Please provide the missing detail.', metadata: { needed: 'Specify the handoff detail.', next_reviewer: 'service owner' },
+    spec_hash: specHash, packet_hash: packet, ...binding() });
   assert.notEqual(binding().post_id, firstSpec.post_id);
   const sendPost = s.db.prepare('SELECT * FROM stage_posts WHERE post_id=?').get(send.post_id);
   const decision = s.db.prepare('SELECT * FROM stage_posts WHERE post_id=?').get(sendPost.successor_post_id);
@@ -194,7 +196,9 @@ test('same-head decision and returned SPEC snapshots retain distinct fork source
   append({type:'specced',actor:'op',see_hash:see,must:['Keep'],how_we_know:['Find'],out_of_scope:[],...binding()});
   const specHash=s.read('item').context.specHash, first=s.putArtifact('item',JSON.stringify({specHash, version:1}));
   append({type:'sent',actor:'op',spec_hash:specHash,packet_hash:first,...binding()});
-  append({type:'returned',actor:'leader',spec_hash:specHash,packet_hash:first,reason:'Please reconsider the evidence.',...binding()});
+  append({type:'decided',actor:'leader',disposition:'return_for_revision',reason_code:'recheck_evidence',
+    spec_hash:specHash,packet_hash:first,reason:'Please reconsider the evidence.',
+    metadata:{needed:'Recheck the supporting evidence.',next_reviewer:'service owner'},...binding()});
   const second=s.putArtifact('item',JSON.stringify({specHash, version:2}));
   append({type:'sent',actor:'op',spec_hash:specHash,packet_hash:second,...binding()});
   const rows=s.db.prepare("SELECT * FROM stage_posts WHERE kind IN ('decision','spec') AND snapshot_hash IS NOT NULL").all();
@@ -233,7 +237,9 @@ test('a returned SPEC with the same content hash cannot reply to the old SPEC po
   const parent = s.events('item').at(-1).body_hash;
   const packet = s.putArtifact('item', JSON.stringify({ specHash: spec }));
   append({ type: 'sent', actor: 'op', spec_hash: spec, packet_hash: packet, ...binding() });
-  append({ type: 'returned', actor: 'leader', reason: 'Please clarify the test.', spec_hash: spec, packet_hash: packet, ...binding() });
+  append({ type: 'decided', actor: 'leader', disposition: 'return_for_revision', reason_code: 'clarify_test',
+    reason: 'Please clarify the test.', metadata: { needed: 'Name the acceptance test.', next_reviewer: 'service owner' },
+    spec_hash: spec, packet_hash: packet, ...binding() });
   const current = binding();
   assert.notEqual(current.post_id, original.post_id);
   assert.equal(current.post_version, spec);

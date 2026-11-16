@@ -410,6 +410,8 @@ export class Store {
     if (Object.hasOwn(event, 'role')) throw refused('event role is forbidden');
     if (typeof event.at !== 'string' || !event.at) throw refused('event.at required');
     this.actor(event.actor, item);
+    if (!importing && this.read(item).context.rules >= 3 && ['returned', 'not_built'].includes(event.type))
+      throw refused('legacy decision type unavailable for current rules');
     if (event.type === 'credit_note') {
       const source = this.db.prepare(`SELECT e.actor,b.erased FROM events e JOIN bodies b ON b.hash=e.body_hash
         WHERE e.item=? AND e.body_hash=?`).get(item, event.source);

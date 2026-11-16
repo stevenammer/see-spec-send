@@ -61,7 +61,7 @@ test('redacted critical bodies replay, transfer, and remove original text', () =
   store.append('i', event('helped', 'helper', { artifact_hash: 'try' }), { idem: 'help' });
   assert.equal(store.verify('i').ok, true);
   const copy = new Store();
-  copy.importJsonl(store.exportJsonl());
+  copy.importJsonl(store.exportJsonl(), { keepAuthority: true });
   assert.equal(copy.read('i').state, 'TRYING');
   assert.deepEqual(copy.actor('author', 'i'), { kind: 'person', leader: false });
   assert.deepEqual(copy.actor('leader', 'i'), { kind: 'person', leader: true });

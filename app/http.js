@@ -29,7 +29,7 @@ import { searchPage, contributionsPage, recordPage, knowledgePage } from './page
 import { canRead, defaultCanRead } from '../access/read.js';
 import { challengeClaim } from '../knowledge/corrections.js';
 import { searchKnowledge } from '../knowledge/index.js';
-import { metrics as operationalMetrics, ready as operationalReady } from './ops.js';
+import { bump, metrics as operationalMetrics, ready as operationalReady } from './ops.js';
 
 // Object key order does not change a retry identity. Array order is meaningful.
 const canonical = value => JSON.stringify(value, (_key, entry) =>
@@ -45,16 +45,19 @@ const pageAfter = url => {
   return typeof after === 'string' && after.length <= 128 ? after : '';
 };
 
-// The route pattern for a request, so the log never carries item IDs, artifact hashes or query strings.
+// The route pattern for a request, so the log and the counters never carry item IDs, hashes, attacker-chosen paths or
+// query strings. Only fixed route words survive; every other segment becomes :id, and an over-long path is one label.
+const ROUTE_WORDS = new Set(['api', 'items', 'new', 'events', 'send', 'fork', 'renew', 'steer', 'erase', 'artifact', 'spec-draft', 'spec', 'updates', 'reconciliation',
+  'transfer-request', 'closeout', 'history', 'record', 'related', 'intelligence', 'package', 'review', 'run', 'receipts', 'knowledge', 'correction', 'annexes', 'response',
+  'digest', 'mentoring', 'optin', 'requests', 'evidence', 'decision', 'checkin', 'people', 'quest', 'model', 'draft', 'preflight', 'login', 'logout', 'me', 'password',
+  'stepup', 'invite', 'redeem', 'oidc', 'start', 'callback', 'integrations', 'inbound', 'assets', 'app.css', 'app.js', 'intelligence.js', 'mentoring.js', 'reflection.js',
+  'healthz', 'readyz', 'metrics-lite', 'search', 'signin', 'contributions']);
 const routeOf = raw => {
   let path;
   try { path = new URL(raw, 'http://localhost').pathname; } catch { return '/'; }
-  return path
-    .replace(/^\/api\/items\/[^/]+\/artifact\/[a-f0-9]{64}$/, '/api/items/:id/artifact/:hash')
-    .replace(/^\/api\/items\/[^/]+/, '/api/items/:id')
-    .replace(/^\/items\/[^/]+$/, '/items/:id')
-    .replace(/^\/api\/integrations\/inbound\/[^/]+$/, '/api/integrations/inbound/:source')
-    .slice(0, 120);
+  const parts = path.split('/').filter(Boolean);
+  if (parts.length > 7) return '/:unknown';
+  return `/${parts.map(part => (ROUTE_WORDS.has(part) ? part : ':id')).join('/')}`;
 };
 
 // A try a model wrote runs no script at all. A hand-delivered try keeps its existing frame.
@@ -253,7 +256,8 @@ export function createHandler({ auth, store, integrations, questModel = null, an
   // never IDs, addresses, query strings, or people.
   const requestCounts = Object.create(null), signInCounts = Object.create(null);
   const startedAt = clock();
-  const count = (bucket, key) => { bucket[key] = (bucket[key] || 0) + 1; };
+  // A hard ceiling on distinct keys, so no traffic pattern can grow this map without bound.
+  const count = (bucket, key) => { bump(bucket, key); };
   const spend = (person, now) => {
     const window = writes.get(person);
     if (!window || now - window.start >= 60_000) { writes.set(person, { start: now, count: 1 }); return true; }
@@ -341,6 +345,9 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       let input = change ? await body(req) : {};
       const readable = item => session && canRead(session.person, store.readScope(item), readPolicy);
       const ip = clientAddress(req, trustedProxy);
+      // With password sign-in off, nothing that creates or changes a password account may work either: not invitations,
+      // not their page, not a password change. Otherwise an old invitation would be a way around the identity provider.
+      if (disablePasswordLogin && ['/api/invite/redeem', '/redeem', '/api/password', '/password'].includes(url.pathname)) return json(res, 404, { error: 'not found' });
       if (req.method === 'GET' && url.pathname === '/api/oidc/start') {
         if (!auth.oidc) return json(res, 404, { error: 'not found' });
         const binder = randomBytes(32).toString('base64url');

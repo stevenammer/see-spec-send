@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Store } from './core/store.js';
 import { restoreBackup, verifyBackup, writeBackup } from './core/backup.js';
 import { Worker } from './worker/runner.js';
@@ -15,7 +15,7 @@ import { EffortWorker } from './app/effort.js';
 import { SPEC_INSTRUCTIONS } from './effort/spec.js';
 import { EFFORT_SYSTEM, effortProviderRequest } from './effort/prompt.js';
 import { fixtureProvider, fixtureChatProvider } from './gateway/fixture.js';
-import { readFileSync, mkdirSync, statSync, unlinkSync, chmodSync, existsSync as fileExistsSync, readdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, statSync, unlinkSync, chmodSync, existsSync as fileExistsSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, join, resolve as resolvePath } from 'node:path';
 import { readProviders, saveProviders, validateProvider, providerFor, meteredProviderFor } from './provider/config.js';
 import { redact } from './provider/safe-http.js';
@@ -39,6 +39,16 @@ import { modelMessages } from './intelligence/prompt.js';
 import { doctor } from './app/ops.js';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+
+// Export signing: HMAC-SHA256 with a 32-byte key file. The same kind of key file as backup encryption.
+const readExportKey = (keyFile, create) => {
+  if (create && !fileExistsSync(keyFile)) writeFileSync(keyFile, randomBytes(32), { mode: 0o600, flag: 'wx' });
+  const key = readFileSync(keyFile);
+  if (key.length !== 32) throw new Error('export key file must hold exactly 32 bytes');
+  return key;
+};
+const signExport = (text, key) => `hmac-sha256:${createHmac('sha256', key).update(text).digest('hex')}`;
+const verifyExport = (text, signature, key) => { const expected = Buffer.from(signExport(text, key)); const given = Buffer.from(String(signature)); return expected.length === given.length && timingSafeEqual(expected, given); };
 
 const fail = message => {
   throw new Error(message);
@@ -264,14 +274,21 @@ async function run(argv, env, write) {
   if (command === 'import') {
     const source = value('--from') || fail('missing --from FILE (an export made with `export`)');
     if (existsSync(file)) fail('import needs a new database: point SSS_DB at a path that does not exist yet');
-    const text = readFileSync(source, 'utf8');
+    let text = readFileSync(source, 'utf8');
+    // A signed export ends with a signature line over everything before it. With --verify-key it must be present and correct.
+    const signed = /\n\{"signature":"hmac-sha256:[a-f0-9]{64}"\}\n?$/.exec(text);
+    if (signed) {
+      const body = text.slice(0, signed.index + 1);
+      if (args.includes('--verify-key') && !verifyExport(body, JSON.parse(signed[0]).signature, readExportKey(value('--verify-key') || fail('--verify-key needs a key file'), false))) fail('export signature does not match: refusing to import');
+      text = body;
+    } else if (args.includes('--verify-key')) fail('export is not signed: refusing to import');
     const target = new Store(file);
     try {
-      target.importJsonl(text);
+      target.importJsonl(text, { keepAuthority: args.includes('--keep-leaders') });
       const bad = target.verifyAll().filter(row => !row.ok);
       if (bad.length || !target.knowledge.verify().ok) throw new Error('imported data does not verify');
       write(JSON.stringify({ imported: source, items: target.verifyAll().length, knowledge_records: target.knowledge.entries().length, groups: target.groups().length,
-        next: 'No accounts are imported. Run `init --id <leader>` to create the first leader, then invite everyone else (or turn on single sign-on).' }));
+        next: 'No accounts are imported and nobody keeps leader authority. Run `init --id <leader>` to create the first leader, then invite everyone else (or turn on single sign-on) and promote leaders with `person promote`. Only import a file you made yourself or verified with --verify-key.' }));
       target.close();
     } catch (error) {
       try { target.close(); } catch {}
@@ -572,7 +589,9 @@ async function run(argv, env, write) {
     bad ||= !audit.ok;
     if (bad) process.exitCode = 1;
   } else if (command === 'export') {
-    write(store.exportJsonl());
+    const text = store.exportJsonl();
+    // --sign-key FILE adds a keyed signature line so the receiving side can prove the file was not altered or made up.
+    write(args.includes('--sign-key') ? `${text}${JSON.stringify({ signature: signExport(text, readExportKey(value('--sign-key') || fail('--sign-key needs a key file'), true)) })}\n` : text);
   } else if (command === 'backup') {
     const target = value('--to') || fail('missing --to');
     if (existsSync(target)) fail('backup target exists');

@@ -84,3 +84,12 @@ export function doctor(file, { backupDir = null, serveArgs = [], nodeVersion = p
 }
 
 function awaitWrite(path, bytes) { writeFileSync(path, bytes, { mode: 0o600, flag: 'wx' }); }
+
+// Counters keyed by route template. A hard ceiling on distinct keys means no traffic pattern can grow the table without
+// bound: once it is full, new keys are counted together under one overflow label.
+export function bump(bucket, key, limit = 256) {
+  const name = key in bucket || Object.keys(bucket).length < limit ? key : '(other)';
+  bucket[name] = (bucket[name] || 0) + 1;
+  return name;
+}
+

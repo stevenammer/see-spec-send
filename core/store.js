@@ -953,6 +953,9 @@ export class Store {
       });
       // Keep machine fields so an erasure cannot corrupt item history.
       this.db.prepare('UPDATE bodies SET bytes=?, erased=1 WHERE hash=?').run(tombstone, targetHash);
+      // Sent packets, closing reports and tries are stored copies. Any that contain the erased wording are replaced by a
+      // placeholder, so the text is gone from the live database, from pages, and from every export and backup made later.
+      this.redactStoredCopies(JSON.parse(body.bytes), targetHash);
       // A closeout is a derived view, never a second copy of erased content.
       this.db.prepare("UPDATE closeout_jobs SET state='pending',artifact_hash=NULL WHERE item=? AND post_id IN (SELECT post_id FROM stage_posts WHERE item=? AND opened_seq<=? AND closed_seq>=?)")
         .run(item, item, target.seq, target.seq);
@@ -1006,7 +1009,10 @@ export class Store {
     return `${lines.join('\n')}\n`;
   }
 
-  importJsonl(text) {
+  // An export is trusted data: it can name any person, any past decision and any authority snapshot, so import only a file you
+  // made yourself or have verified (see `export --sign-key`). By default imported people keep NO current authority:
+  // leaders are re-promoted deliberately with `person promote`. Past events keep the authority they were recorded with.
+  importJsonl(text, { keepAuthority = false } = {}) {
     const lines = text.trim() ? text.trim().split('\n').map(JSON.parse) : [];
     const footer = lines.pop();
     const actors = lines.filter(row => row.registry).map(row => row.registry);
@@ -1025,7 +1031,7 @@ export class Store {
     if ((footer.artifacts ?? 0) !== artifacts.length) throw new Error('incomplete artifact import');
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      for (const actor of actors) this.importActor(actor);
+      for (const actor of actors) this.importActor(actor);          // replayed with the authority each event was recorded under
       // Groups first: a restricted post names its groups, and an event naming a missing group is refused.
       this.importGroups(groupRows);
       for (const artifact of artifacts) {
@@ -1051,6 +1057,8 @@ export class Store {
       };
       for (const item of groups.keys()) importItem(item);
       this.importExtras({ knowledgeRows, tombstoneRows, derivedRows });
+      // After the history is in, nobody keeps current authority from the file unless the operator says so.
+      if (!keepAuthority) this.db.prepare("UPDATE actors SET leader=0 WHERE kind='person'").run();
       this.db.exec('COMMIT');
     } catch (error) {
       try { this.db.exec('ROLLBACK'); } catch {}
@@ -1060,6 +1068,21 @@ export class Store {
 
   // Groups, the knowledge log and delivery state, imported inside the same transaction as the events. The knowledge log
   // must be empty: its chain is one sequence, so two cannot be merged.
+  redactStoredCopies(erasedBody, exceptHash) {
+    const wording = new Set();
+    const visit = value => { if (typeof value === 'string') { if (value.length >= 8 && !/^[a-f0-9]{64}$/.test(value)) { wording.add(value); wording.add(JSON.stringify(value).slice(1, -1)); } } else if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === 'object') Object.values(value).forEach(visit); };
+    visit(erasedBody);
+    if (!wording.size) return 0;
+    const placeholder = JSON.stringify({ redacted: true, note: 'This copy contained text that was erased.' });
+    let changed = 0;
+    for (const row of this.db.prepare('SELECT hash, bytes FROM bodies WHERE erased=0 AND hash != ? AND hash NOT IN (SELECT body_hash FROM events)').all(exceptHash)) {
+      if (typeof row.bytes === 'string' && [...wording].some(text => row.bytes.includes(text))) {
+        this.db.prepare('UPDATE bodies SET bytes=?, erased=1 WHERE hash=?').run(placeholder, row.hash); changed += 1;
+      }
+    }
+    return changed;
+  }
+
   importGroups(groupRows) {
     for (const group of groupRows) {
       if (typeof group.name !== 'string' || !Array.isArray(group.members)) throw new Error('bad import group');

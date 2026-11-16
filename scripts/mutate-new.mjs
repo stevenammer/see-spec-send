@@ -78,6 +78,13 @@ const mutants = [
   ['erasure: the text of a tombstoned record is removed, not hidden', 'knowledge/corrections.js', "store.db.prepare(\"UPDATE knowledge_log SET body='' WHERE hash=?\").run(hash);", '', T(['erasure-completeness'])],
   ['erasure: the copy of the erased source is removed', 'knowledge/corrections.js', "store.db.prepare(\"UPDATE knowledge_bodies SET erased=1, bytes='' WHERE body_hash=?\").run(sourceBodyHash);", '', T(['erasure-completeness'])],
   ['erasure: the ledger projection is rebuilt', 'core/store.js', "      rebuildLedger(this);   // the ledger table is a projection of specs: rebuild it from the now-redacted body\n", '', T(['erasure-completeness'])],
+  ['review2: password sign-up is closed in single-sign-on-only mode', 'app/http.js', "if (disablePasswordLogin && ['/api/invite/redeem', '/redeem', '/api/password', '/password'].includes(url.pathname)) return json(res, 404, { error: 'not found' });", '', T(['security2-oidc-only-invite-bypass'])],
+  ['review2: import strips current leader authority', 'core/store.js', 'if (!keepAuthority) this.db.prepare("UPDATE actors SET leader=0 WHERE kind=\'person\'").run();', '', T(['security2-import-oidc-leader-escalation', 'export-portability'])],
+  ['review2: metrics labels use fixed route words only', 'app/http.js', "ROUTE_WORDS.has(part) ? part : ':id'", 'part', T(['security2-ops-route-cardinality', 'ops'])],
+  ['review2: metrics keys have a hard ceiling', 'app/ops.js', 'Object.keys(bucket).length < limit', 'true', T(['ops'])],
+  ['review2: erasing a source redacts stored copies of it', 'core/store.js', 'this.redactStoredCopies(JSON.parse(body.bytes), targetHash);', '', T(['security2-erasure-decision-packet-leak', 'security2-erasure-orphaned-closeout-artifact'])],
+  ['review2: a bad export signature is refused', 'cli.js', "&& !verifyExport(body, JSON.parse(signed[0]).signature, readExportKey(value('--verify-key') || fail('--verify-key needs a key file'), false))", '&& false', T(['export-portability'])],
+  ['review2: an unsigned export is refused when a key is given', 'cli.js', "} else if (args.includes('--verify-key')) fail('export is not signed: refusing to import');", '}', T(['export-portability'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 if (process.argv.includes('--check-sources')) {

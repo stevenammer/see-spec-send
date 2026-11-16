@@ -40,7 +40,7 @@ test('F4 forks survive export/import even when descendants sort before their par
   const first = store.events('b-child')[0];
   append('a-grandchild', { type: 'forked', actor: 'op', rules: 2, reason: 'Try another direction.', ...store.forkPoint('b-child', { kind: 'see', hash: first.body_hash }), from: { kind: 'see', hash: first.body_hash } });
   const target = new Store(); t.after(() => target.close());
-  target.importJsonl(store.exportJsonl());
+  target.importJsonl(store.exportJsonl(), { keepAuthority: true });
   assert.deepEqual(target.verifyAll().filter(result => !result.ok), []);
   assert.equal(target.exportJsonl(), store.exportJsonl());
 });

@@ -51,7 +51,7 @@ test('backup verify leaves live data alone and prune keeps newest plus invalid b
   assert.equal(readFileSync(join(dir, 'three.sqlite')).length > 0, true); assert.equal(readFileSync(join(dir, 'one.sqlite')).toString(), 'bad');
 });
 
-import { ready } from '../app/ops.js';
+import { bump, ready } from '../app/ops.js';
 import { SCHEMA_VERSION } from '../core/migrations.js';
 
 test('real readiness: ok on a current database, 503 on a schema mismatch, 503 when the database cannot be read, with nothing sensitive in the answer', async () => {
@@ -75,4 +75,27 @@ test('liveness never touches the database, so a broken database still answers 20
   const store = new Store(), auth = new Auth(store); const handler = createHandler({ store, auth, secure: false }); store.close();
   assert.equal((await call(handler, '/healthz')).status, 200);
   assert.equal((await call(handler, '/readyz')).status, 503);
+});
+
+test('metrics labels are bounded: hostile paths collapse to a placeholder and the table has a hard ceiling', async () => {
+  const store = new Store(), auth = new Auth(store); await auth.createUser('boss', 'fixture-password-123', true);
+  const handler = createHandler({ store, auth, secure: false, metricsToken: 'bound-token' });
+  for (let i = 0; i < 400; i += 1) await call(handler, `/attacker/${i}/${'x'.repeat(i % 50)}`);
+  for (const path of ['/a/b/c/d/e/f/g/h/i', `/items/${'f'.repeat(64)}`, '/api/items/abc/events', '/healthz']) await call(handler, path);
+  const requests = JSON.parse((await call(handler, '/metrics-lite', { authorization: 'Bearer bound-token' })).text).requests;
+  const keys = Object.keys(requests);
+  assert.ok(keys.length <= 257, `${keys.length} distinct labels`);
+  assert.ok(keys.every(key => !/attacker|x{5}|f{20}/.test(key)), 'no attacker-chosen text in any label');
+  assert.ok(keys.some(key => key.startsWith('/api/items/:id/events')) && keys.some(key => key.startsWith('/items/:id')), 'real routes keep readable templates');
+  assert.ok(keys.some(key => key.startsWith('/:unknown')), 'over-long paths are one label');
+  store.close();
+});
+
+test('the counter table has a hard ceiling: new keys past it are counted together, existing keys keep counting', () => {
+  const table = Object.create(null);
+  for (let i = 0; i < 1000; i += 1) bump(table, `/k${i}`, 50);
+  assert.equal(Object.keys(table).length, 51, '50 real keys plus one overflow label');
+  assert.equal(table['(other)'], 950);
+  bump(table, '/k3', 50); assert.equal(table['/k3'], 2, 'a key already in the table is still counted exactly');
+  assert.equal(Object.keys(table).length, 51);
 });

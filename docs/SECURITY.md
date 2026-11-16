@@ -11,7 +11,7 @@ Only the latest commit on `main`. There are no releases yet.
 ## What has and has not been tested
 
 - Every claim in [STATUS.md](STATUS.md) names the test that covers it.
-- An independent adversarial review (a second reader written to attack, working from the code) found three real read-scope leaks on 2026-11-16. All three were fixed and now have regression tests and mutation checks. That review was done by software, not by an outside security firm, and it is not a substitute for one.
+- An independent adversarial review (a second reader written to attack, working from the code) found three real read-scope leaks on 2026-11-16. All three were fixed and now have regression tests and mutation checks. A second independent review of the newer surfaces (sign-in, operations, import and export, backups, erasure) found five more: password invitations still worked in single-sign-on-only mode, a forged export could carry leader authority, metric labels could grow without bound, and erased text survived in stored decision packets and old closing reports. All five are fixed with regression tests, and the same pass found and fixed the erased wording surviving in saved question answers, the ledger table and source copies. Both reviews were done by software, not by an outside security firm, and are not a substitute for one.
 - A scoped mutation check breaks about forty security-relevant rules one at a time and confirms the tests catch each.
 - Load, crash and restore drills run (`scripts/drill.sh`, `scripts/load.mjs`).
 - **Not done:** an outside penetration test, a formal threat-model review with the people who would use it, fuzzing, and any real identity-provider or Teams integration.

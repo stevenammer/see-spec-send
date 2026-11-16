@@ -150,12 +150,12 @@ test('transfer verifies order, content, authority, and is idempotent', () => {
   const source = new Store(); ready(source);
   const text = source.exportJsonl();
   const target = new Store(); actors(target);
-  target.importJsonl(text);
+  target.importJsonl(text, { keepAuthority: true });
   assert.equal(target.exportJsonl(), text);
   const imported = JSON.parse(text.split('\n').find(line => line.includes('"type"')));
   imported.submitted_hash = 'different';
   assert.throws(() => target.importRow(imported), /conflicting import/);
-  target.importJsonl(text);
+  target.importJsonl(text, { keepAuthority: true });
   assert.equal(target.exportJsonl(), text);
   for (const hostile of [
     text.replace('steward', 'forged'),
@@ -163,14 +163,14 @@ test('transfer verifies order, content, authority, and is idempotent', () => {
     text.split('\n').slice(0, -2).join('\n'),
   ]) {
     const fresh = new Store();
-    assert.throws(() => fresh.importJsonl(hostile));
+    assert.throws(() => fresh.importJsonl(hostile, { keepAuthority: true }));
     assert.equal(fresh.events('i').length, 0);
   }
   const role = JSON.parse(text.split('\n').find(line => line.includes('"type"')));
   role.bytes = JSON.stringify({ role: 'leader', looked: ['x'], found: [], verdict: 'build_needed' });
   const bad = `${JSON.stringify(role)}\n`;
   const fresh = new Store(); actors(fresh);
-  assert.throws(() => fresh.importJsonl(bad));
+  assert.throws(() => fresh.importJsonl(bad, { keepAuthority: true }));
 });
 
 function child(file, code, args = []) {

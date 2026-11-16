@@ -98,7 +98,7 @@ test('imports refuse a tampered record, a missing line, and a destination that a
 });
 
 import { main as cli } from '../cli.js';
-import { mkdtempSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -113,4 +113,27 @@ test('the import command loads an export into a new database, refuses an existin
   await assert.rejects(cli(['import', '--from', bad], { SSS_DB: half }, () => {}), /incomplete import/);
   assert.equal(existsSync(half), false, 'a failed import leaves no database behind');
   await assert.rejects(cli(['import'], { SSS_DB: join(dir, 'x.db') }, () => {}), /missing --from/);
+});
+
+test('import resets leader authority by default, keeps it only when asked, and a signed export is verified before anything is loaded', async t => {
+  const { s } = organization(t); assert.equal(s.actor('lee', '').leader, true);
+  const plain = new Store(); t.after(() => plain.close()); plain.importJsonl(s.exportJsonl());
+  assert.equal(plain.actor('lee', '').leader, false, 'nobody imports current leader authority');
+  assert.ok(plain.verifyAll().every(row => row.ok), 'past decisions by a leader still verify and replay');
+  const kept = new Store(); t.after(() => kept.close()); kept.importJsonl(s.exportJsonl(), { keepAuthority: true });
+  assert.equal(kept.actor('lee', '').leader, true);
+  // Signing, through the real commands.
+  const dir = mkdtempSync(join(tmpdir(), 'sss-sign-')); const key = join(dir, 'export.key'); const file = join(dir, 'org.db'); const source = new Store(file); source.importJsonl(s.exportJsonl(), { keepAuthority: true }); source.close();
+  const out = []; await cli(['export', '--sign-key', key], { SSS_DB: file }, line => out.push(line)); const signed = out.join('\n');
+  assert.match(signed, /\n\{"signature":"hmac-sha256:[a-f0-9]{64}"\}\n?$/); writeFileSync(join(dir, 'signed.jsonl'), signed.endsWith('\n') ? signed : `${signed}\n`);
+  const ok = join(dir, 'ok.db'); const summary = []; await cli(['import', '--from', join(dir, 'signed.jsonl'), '--verify-key', key], { SSS_DB: ok }, line => summary.push(line));
+  assert.match(summary[0], /"items"/); assert.equal(new Store(ok).actor('lee', '').leader, false);
+  const tampered = join(dir, 'tampered.jsonl'); writeFileSync(tampered, readFileSync(join(dir, 'signed.jsonl'), 'utf8').replace('"leader":1', '"leader":0').replace('Restricted night shift', 'Changed text here'));
+  await assert.rejects(cli(['import', '--from', tampered, '--verify-key', key], { SSS_DB: join(dir, 't.db') }, () => {}), /signature does not match/);
+  assert.equal(existsSync(join(dir, 't.db')), false, 'nothing is created for a file that fails verification');
+  const unsigned = join(dir, 'unsigned.jsonl'); writeFileSync(unsigned, s.exportJsonl());
+  await assert.rejects(cli(['import', '--from', unsigned, '--verify-key', key], { SSS_DB: join(dir, 'u.db') }, () => {}), /not signed/);
+  const other = join(dir, 'other.key'); writeFileSync(other, Buffer.alloc(32, 7));
+  await assert.rejects(cli(['import', '--from', join(dir, 'signed.jsonl'), '--verify-key', other], { SSS_DB: join(dir, 'w.db') }, () => {}), /signature does not match/, 'the wrong key');
+  const fresh = join(dir, 'k.db'); await cli(['import', '--from', join(dir, 'signed.jsonl'), '--keep-leaders'], { SSS_DB: fresh }, () => {}); assert.equal(new Store(fresh).actor('lee', '').leader, true);
 });

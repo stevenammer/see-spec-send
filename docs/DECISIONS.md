@@ -26,3 +26,6 @@ Settled choices and the reason in one line. Newer rows replace older ones where 
 | 2026-11 | A model answer that is malformed, invents a citation, or only repeats the template is refused and the person sees the sources with a note saying why. The question, objectives and constraints always come from the human's request. | The model must never restate or drop what the person asked. | |
 | 2026-11 | Sign-in through an identity provider proves who someone is and nothing more. People are provisioned as members only if an operator turns that on, and leaders are made only by the admin CLI. | Authentication must not become authority. | |
 | 2026-11 | Content may flow from one case into another's audience (updates, comments, digests) only if everyone who can read the target can read the source. | A summary must not become a leak. | |
+| 2026-11 | An import never carries current leader authority; leaders are promoted again on purpose. Exports can be signed and an import can require the signature. | A file is not an authority: it can name anyone. | |
+| 2026-11 | Erasing text removes it from stored packets, closing reports, saved answers, the ledger and source copies, not only from the page. | Erased means gone from this database, with older backups the one stated exception. | |
+

@@ -104,7 +104,7 @@ test('generation above 2 is held, never delivered', t => {
 test('the read gate is applied before delivery: no read access means held, not announced', t => {
   const { s, decideSam } = org(t);
   decideSam();
-  const out = runReanalysis(s, { now: later, canRead: (_viewer, item) => item !== 'dana' });
+  const out = runReanalysis(s, { now: later, canRead: (_viewer, scope) => scope.id !== 'dana' });
   assert.equal(out.annexes.length, 0);
   assert.equal(s.knowledge.entries('annex').length, 0);
 });

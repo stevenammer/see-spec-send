@@ -10,6 +10,7 @@ import { emptyScope, validScope, withinScope } from './scope.js';
 import { initializeMemory, syncMemory, rebuildMemory, verifyMemory, searchMemory, contributionMemory } from './memory.js';
 import { initializeMentoring } from './mentoring.js';
 import { reconciliation, stewardInactivity, transferEligibility } from './reconcile.js';
+import { buildCloseout } from './closeout.js';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 // Fixed page size for the feed and the item API. There is no setting for it.
@@ -80,9 +81,13 @@ export class Store {
       successor_post_id TEXT, PRIMARY KEY(item,post_id));
       CREATE UNIQUE INDEX stage_one_active ON stage_posts(item) WHERE closed_seq IS NULL;
       CREATE TABLE closeout_jobs(item TEXT NOT NULL, post_id TEXT NOT NULL, snapshot_hash TEXT NOT NULL,
-        state TEXT NOT NULL DEFAULT 'pending', PRIMARY KEY(item,post_id,snapshot_hash));
+        state TEXT NOT NULL DEFAULT 'pending', artifact_hash TEXT, PRIMARY KEY(item,post_id,snapshot_hash));
       ALTER TABLE effort_jobs ADD COLUMN post_id TEXT;
       ALTER TABLE effort_jobs ADD COLUMN post_version TEXT;`);
+  }
+  migrateCloseoutReports() {
+    const columns = this.db.prepare('PRAGMA table_info(closeout_jobs)').all().map(row => row.name);
+    if (!columns.includes('artifact_hash')) this.db.exec('ALTER TABLE closeout_jobs ADD COLUMN artifact_hash TEXT');
   }
   stageProjection(item) {
     let context = initial();
@@ -747,6 +752,17 @@ export class Store {
         const posts = this.db.prepare('SELECT * FROM stage_posts WHERE item=? ORDER BY post_id').all(item);
         const jobs = this.db.prepare('SELECT item,post_id,snapshot_hash FROM closeout_jobs WHERE item=? ORDER BY post_id').all(item);
         if (stable(posts) !== stable(expected.posts) || stable(jobs) !== stable(expected.jobs)) return { item, ok: false, reason: 'stage-projection' };
+        for (const job of this.db.prepare('SELECT * FROM closeout_jobs WHERE item=?').all(item)) {
+          if (job.state === 'pending' && job.artifact_hash === null) continue;
+          if (job.state !== 'done' || typeof job.artifact_hash !== 'string') return { item, ok: false, reason: 'closeout-state' };
+          const post = posts.find(value => value.post_id === job.post_id && value.snapshot_hash === job.snapshot_hash);
+          const closing = this.eventRows(item).find(row => row.hash === job.snapshot_hash);
+          const events = this.eventRows(item).map(row => ({ ...this.eventFromRow(row), seq: row.seq,
+            erased: this.db.prepare('SELECT erased FROM bodies WHERE hash=?').get(row.body_hash)?.erased === 1 }));
+          let expectedReport;
+          try { expectedReport = post && closing && buildCloseout(events, post, { hash: job.snapshot_hash, body_hash: closing.body_hash }); } catch {}
+          if (!expectedReport || this.artifact(item, job.artifact_hash) !== JSON.stringify(expectedReport)) return { item, ok: false, reason: 'closeout-report' };
+        }
       }
       return { item, ok: true };
     });
@@ -793,6 +809,9 @@ export class Store {
       });
       // Keep machine fields so an erasure cannot corrupt item history.
       this.db.prepare('UPDATE bodies SET bytes=?, erased=1 WHERE hash=?').run(tombstone, targetHash);
+      // A closeout is a derived view, never a second copy of erased content.
+      this.db.prepare("UPDATE closeout_jobs SET state='pending',artifact_hash=NULL WHERE item=? AND post_id IN (SELECT post_id FROM stage_posts WHERE item=? AND opened_seq<=? AND closed_seq>=?)")
+        .run(item, item, target.seq, target.seq);
       syncMemory(this, item);
       this.db.exec('COMMIT');
     } catch (error) {

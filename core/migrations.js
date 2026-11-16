@@ -17,6 +17,7 @@ export const MIGRATIONS = Object.freeze([
   { name: 'F5 workspace search and contribution memory', up: store => store.migrateF5() },
   { name: 'F6 participant-only opt-in mentoring', up: store => store.migrateF6() },
   { name: 'rules 3 stage post projections and pending closeouts', up: store => store.migrateStagePosts() },
+  { name: 'closeout report artifact pointers', up: store => store.migrateCloseoutReports() },
 ]);
 export const SCHEMA_VERSION = MIGRATIONS.length;
 

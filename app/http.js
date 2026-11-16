@@ -680,6 +680,14 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         });
         return res.end(html);
       }
+      const closeout = url.pathname.match(/^\/api\/items\/([^/]+)\/closeout\/([^/]+)$/);
+      if (req.method === 'GET' && closeout) {
+        const job = store.db.prepare("SELECT artifact_hash FROM closeout_jobs WHERE item=? AND post_id=? AND state='done'")
+          .get(closeout[1], decodeURIComponent(closeout[2]));
+        const bytes = job?.artifact_hash && store.artifact(closeout[1], job.artifact_hash);
+        if (!bytes) return json(res, 404, { error: 'not found' });
+        return json(res, 200, JSON.parse(bytes));
+      }
       const deliver = url.pathname.match(/^\/api\/items\/([^/]+)\/artifact$/);
       if (req.method === 'POST' && deliver) {
         const state = store.read(deliver[1]);

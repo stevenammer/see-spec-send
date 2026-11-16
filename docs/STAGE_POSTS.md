@@ -18,7 +18,7 @@ When an event advances a rules 3 item, the store transaction updates the event l
 3. Queue an idempotently keyed close-out row for the frozen post and snapshot hash.
 4. Commit all of the above atomically. If projection or close-out insertion fails, the event append and transition roll back, leaving the prior post active.
 
-The close-out row records pending work only. This repository does not yet provide the full post-freeze E.F.F.O.R.T. extraction, citation review, searchable knowledge record, or human correction workflow described in the broader product proposal. A pending job is not evidence that a report was produced.
+The close-out row starts as pending work. The deterministic close-out consumer can produce a hash-addressed, source-linked frozen-post report and mark that row done. It does not provide model extraction, citation review, a searchable knowledge record, or a human correction workflow. A pending job is not evidence that a report was produced.
 
 The current decision projection follows existing event types and workflow. It does not yet implement the complete proposed NO disposition/reason taxonomy. Likewise, SEE/SPEC/SEND and TRY lifecycle protection does not itself authorize a build, grant spend, or define a production deployment permission.
 

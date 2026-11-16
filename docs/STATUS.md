@@ -14,7 +14,8 @@ An honest table. A row says **Shipped and tested** only when a named test in thi
 | Metered model gateway and chat proxy | Shipped and tested | `test/gateway.test.mjs`, `test/proxy-chat.test.mjs` | Dollar caps, plus optional per-run call and token ceilings (`test/gateway-run-limits.test.mjs`) so a free model is bounded too |
 | Static-page builder in a locked container | Built (fixture only) | `test/builder.test.mjs`, `test/container.test.mjs` | One-shot static HTML, verified against a local mock |
 | Real coding agent as a builder | Planned | none | No agent connected yet |
-| Working ledger and sourced estimates | Planned | none | Today only free text |
+| Working ledger and sourced estimates | Shipped and tested | `test/ledger.test.mjs`, `test/estimate.test.mjs` | Estimates come from the gateway policy, prior builds and author judgment, labeled as such; they never set the approved cap. Statuses change only when the steward revises the SPEC |
+| Private reflection after decisions | Shipped and tested | `test/reflection.test.mjs` | Notes stay in the person's browser only; they do not follow the person across devices |
 | Continuous reanalysis | Planned | none | Not started |
 | Departments and read scopes | Planned | none | Every workspace member can read work posts today |
 | Opportunity propagation | Planned | none | Not started |

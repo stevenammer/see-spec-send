@@ -156,7 +156,7 @@ export function itemPage(item, events, person, leader) {
   const current = events.at(-1);
   const decisionActors = events.filter(event => ['approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew'].includes(event.type)).map(event => event.actor);
   const canReflect = decisionActors.includes(person) || [context.steward, context.originator, ...(context.authors || [])].includes(person);
-  const reflection = canReflect && decisionActors.length ? `<section id="private-reflection" data-record="${escape(JSON.stringify(reflectionRecord(item, events, person)))}"></section><script type="module" src="/assets/reflection.js"></script>` : '';
+  const reflection = canReflect && decisionActors.length ? `<section id="private-reflection" data-record="${escape(JSON.stringify(reflectionRecord(item, events, person)))}"></section><script src="/assets/reflection.js" type="module"></script>` : '';
   const questEvent = events.find(event => event.type === 'checked' || (event.type === 'posted' && event.questMemo));
   let questMemo = '';
   let questDraft;

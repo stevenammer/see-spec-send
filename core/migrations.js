@@ -28,6 +28,9 @@ export const MIGRATIONS = Object.freeze([
   { name: 'S5 correctable derived memory and source dependencies', up: store => store.migrateS5() },
   { name: 'S7 analysis receipts and metered analysis gateway', up: store => store.migrateAnalysis() },
   { name: 'Teams-shaped channel receipts, mappings, and replay nonces', up: store => store.migrateChannels() },
+  // No data rewrite: this stamp lets readiness distinguish code that knows the
+  // operational schema from an older binary before it serves normal traffic.
+  { name: 'operations readiness and recovery controls', up: () => {} },
 ]);
 export const SCHEMA_VERSION = MIGRATIONS.length;
 

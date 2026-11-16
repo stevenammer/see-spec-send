@@ -29,6 +29,7 @@ import { searchPage, contributionsPage, recordPage } from './pages-memory.js';
 import { canRead, defaultCanRead } from '../access/read.js';
 import { challengeClaim } from '../knowledge/corrections.js';
 import { searchKnowledge } from '../knowledge/index.js';
+import { metrics as operationalMetrics, ready as operationalReady } from './ops.js';
 
 // Object key order does not change a retry identity. Array order is meaningful.
 const canonical = value => JSON.stringify(value, (_key, entry) =>
@@ -241,12 +242,17 @@ const validEvent = input => {
 
 const postBinding = req => ({ post_id: req.headers['x-post-id'], post_version: req.headers['x-post-version'] });
 
-export function createHandler({ auth, store, integrations, questModel = null, analysisAskModel = null, analysisGateway = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, trustedProxy = false, canRead: readPolicy = defaultCanRead, bundleServer = null }) {
+export function createHandler({ auth, store, integrations, questModel = null, analysisAskModel = null, analysisGateway = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, trustedProxy = false, canRead: readPolicy = defaultCanRead, bundleServer = null, metricsToken = null, databaseSize = () => 0, readiness = null }) {
   if (bundleServer && (!bundleServer.hostSuffix || typeof bundleServer.bundleUrl !== 'function')) throw new Error('invalid bundle server configuration');
   integrations ||= new Integrations(store, { origin });
   const mentoring = new Mentoring(store, { clock });
   // Fixed one-minute windows per signed-in member. Memory holds one entry per member.
   const writes = new Map();
+  // Operations counters deliberately use route templates and outcome classes,
+  // never IDs, addresses, query strings, or people.
+  const requestCounts = Object.create(null), signInCounts = Object.create(null);
+  const startedAt = clock();
+  const count = (bucket, key) => { bucket[key] = (bucket[key] || 0) + 1; };
   const spend = (person, now) => {
     const window = writes.get(person);
     if (!window || now - window.start >= 60_000) { writes.set(person, { start: now, count: 1 }); return true; }
@@ -269,9 +275,11 @@ export function createHandler({ auth, store, integrations, questModel = null, an
   const outcome = async (context, event, attempt, { person = null, account = null } = {}) => {
     try {
       const result = await attempt();
+      if (event === 'sign_in') count(signInCounts, 'ok');
       emit({ event, rid: context.rid, outcome: 'ok', person });
       return result;
     } catch (error) {
+      if (event === 'sign_in') count(signInCounts, 'refused');
       emit({ event, rid: context.rid, outcome: 'refused', account });
       throw error;
     }
@@ -282,6 +290,14 @@ export function createHandler({ auth, store, integrations, questModel = null, an
     try {
       const url = new URL(req.url, origin);
       const change = req.method === 'POST';
+      // Liveness intentionally touches neither authentication nor SQLite.
+      if (req.method === 'GET' && url.pathname === '/healthz') {
+        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }); return res.end('ok\n');
+      }
+      if (req.method === 'GET' && url.pathname === '/readyz') {
+        const report = readiness ? readiness() : operationalReady(store);
+        return json(res, report.ok ? 200 : 503, report);
+      }
       const inbound = url.pathname.match(/^\/api\/integrations\/inbound\/([A-Za-z0-9._-]{1,64})$/);
       if (req.method === 'POST' && inbound) {
         if (req.headers['content-type'] !== 'application/json') return json(res, 415, { error: 'request refused' });
@@ -304,6 +320,14 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       const sessionToken = cookies(req)[cookieName];
       const session = sessionToken && auth.session(sessionToken);
       if (session) context.person = session.person;
+      if (req.method === 'GET' && url.pathname === '/metrics-lite') {
+        const authorization = req.headers.authorization;
+        const bearer = typeof authorization === 'string' && authorization.startsWith('Bearer ') && authorization.slice(7);
+        let leader = false;
+        try { leader = Boolean(session && store.actor(session.person, '').leader); } catch {}
+        if (!leader && (!metricsToken || bearer !== metricsToken)) return json(res, 403, { error: 'request refused' });
+        return json(res, 200, operationalMetrics(store, { requests: requestCounts, signIns: signInCounts, startedAt, now: clock, databaseSize }));
+      }
       if (change && req.headers['content-type'] !== 'application/json')
         return json(res, 415, { error: 'request refused' });
       if (
@@ -904,14 +928,17 @@ export function createHandler({ auth, store, integrations, questModel = null, an
     try {
       await serve(req, res, context);
     } finally {
+      count(requestCounts, `${routeOf(req.url)} ${Math.floor((res.statusCode ?? res.status ?? 500) / 100)}xx`);
       emit({ event: 'request', rid: context.rid, route: routeOf(req.url), status: res.statusCode ?? res.status,
         person: context.person, ms: Math.round(performance.now() - started) });
     }
   };
 }
-export function createServerFor({ tls = null, ...deps }) {
+export function createServerFor({ tls = null, env = process.env, databasePath = null, ...deps }) {
   // The product server writes its request and sign-in lines to stderr. Tests pass their own sink.
-  const handler = createHandler({ log: line => process.stderr.write(`${line}\n`), ...deps });
+  const metricsEnv = env.SSS_METRICS_TOKEN_ENV;
+  const handler = createHandler({ log: line => process.stderr.write(`${line}\n`), metricsToken: metricsEnv ? env[metricsEnv] : null,
+    databaseSize: () => { try { return databasePath ? (readFileSync(databasePath).length) : 0; } catch { return 0; } }, ...deps });
   // Direct HTTPS uses the certificate pair from serveSettings. Without it the listener is plain HTTP.
   const server = tls ? createTlsServer({ cert: tls.cert, key: tls.key }, handler) : createServer(handler);
   server.headersTimeout = 10_000;

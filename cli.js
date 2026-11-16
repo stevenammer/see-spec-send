@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { Store } from './core/store.js';
-import { restoreBackup, writeBackup } from './core/backup.js';
+import { restoreBackup, verifyBackup, writeBackup } from './core/backup.js';
 import { Worker } from './worker/runner.js';
 import { killed, setKill } from './worker/control.js';
 import { watchdog } from './worker/watchdog.js';
@@ -15,7 +15,7 @@ import { EffortWorker } from './app/effort.js';
 import { SPEC_INSTRUCTIONS } from './effort/spec.js';
 import { EFFORT_SYSTEM, effortProviderRequest } from './effort/prompt.js';
 import { fixtureProvider, fixtureChatProvider } from './gateway/fixture.js';
-import { readFileSync, mkdirSync, statSync, unlinkSync, chmodSync } from 'node:fs';
+import { readFileSync, mkdirSync, statSync, unlinkSync, chmodSync, existsSync as fileExistsSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, join, resolve as resolvePath } from 'node:path';
 import { readProviders, saveProviders, validateProvider, providerFor, meteredProviderFor } from './provider/config.js';
 import { redact } from './provider/safe-http.js';
@@ -34,6 +34,9 @@ import { runReanalysis } from './reanalysis/run.js';
 import { startReanalysisSchedule } from './reanalysis/schedule.js';
 import { AnalysisGateway } from './gateway/analysis.js';
 import { modelMessages } from './intelligence/prompt.js';
+import { doctor } from './app/ops.js';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 const fail = message => {
   throw new Error(message);
@@ -167,16 +170,27 @@ export function serveSettings(args, env = {}) {
 
 // SIGTERM (and SIGINT) closes the listener first, so no request is mid-write when the database closes.
 // A second signal does nothing; the first one decides the exit code.
-export function stopOnSignal(server, store, { proc = process, exit = code => process.exit(code), write = message => console.error(message) } = {}) {
+export function stopOnSignal(server, store, { proc = process, exit = code => process.exit(code), write = message => console.error(message),
+  timers = [], stops = [], bundleServer = null, timeoutMs = 15_000, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
   let stopping = false;
   const stop = signal => {
-    if (stopping) return;
+    if (stopping) return exit(1);
     stopping = true;
+    for (const timer of timers) clearInterval(timer);
+    for (const close of stops) { try { close(); } catch (error) { write(`shutdown cleanup failed: ${error.message}`); } }
+    try { bundleServer?.close(); } catch (error) { write(`bundle listener did not close cleanly: ${error.message}`); }
     server.closeIdleConnections?.();
-    server.close(error => {
+    let finished = false;
+    const finish = error => {
+      if (finished) return; finished = true; clearTimer(deadline);
       if (error) write(`listener did not close cleanly: ${error.message}`);
       try { store.close(); } catch (closeError) { write(`database did not close cleanly: ${closeError.message}`); }
       exit(error ? 1 : 0);
+    };
+    const deadline = setTimer(() => finish(new Error(`shutdown exceeded ${timeoutMs}ms`)), timeoutMs);
+    deadline.unref?.();
+    server.close(error => {
+      finish(error);
     });
   };
   proc.on('SIGTERM', stop);
@@ -192,6 +206,42 @@ async function run(argv, env, write) {
   };
   const served = command === 'serve' ? serveSettings(args, env) : null;
   const file = env.SSS_DB || 'sss.db';
+  if (command === 'doctor') {
+    const report = doctor(file, { backupDir: value('--backup-dir') || null, serveArgs: args, nodeVersion: process.versions.node });
+    const bad = !report.database.present || !report.database.readable || report.database.schema_version !== SCHEMA_VERSION
+      || report.chains.audit?.ok === false || report.chains.items?.some(row => !row.ok) || report.chains.knowledge?.ok === false
+      || report.permissions.database?.owner_only === false || report.permissions.key_files?.some(row => !row.owner_only)
+      || report.backup?.fresh === false || !report.serve.ok || !report.node.ok;
+    if (args.includes('--json')) write(JSON.stringify(report));
+    else {
+      write(`database: ${report.database.present ? (report.database.readable ? 'readable' : 'unreadable') : 'missing'}`);
+      write(`schema: ${report.database.schema_version ?? 'unknown'} (code ${SCHEMA_VERSION})`);
+      write(`chains: items=${report.chains.items?.every(row => row.ok) ? 'ok' : 'failed'} knowledge=${report.chains.knowledge?.ok ? 'ok' : 'failed'} audit=${report.chains.audit?.ok ? 'ok' : 'failed'}`);
+      write(`kill latch: ${report.kill_latch}; database permissions: ${report.permissions.database?.owner_only ? 'owner-only' : 'unsafe'}`);
+      if (report.backup) write(`newest backup: ${report.backup.fresh ? 'fresh' : 'stale or unreadable'}`);
+    }
+    return bad ? 1 : 0;
+  }
+  if (command === 'backup' && args[0] === 'verify') {
+    const source = value('--from') || fail('missing --from'); const dir = mkdtempSync(join(tmpdir(), 'sss-backup-verify-'));
+    try { const result = verifyBackup(source, join(dir, 'restored.sqlite'), { keyFile: value('--key-file') || null }); write(`backup verified: ${result.manifest.events} events`); }
+    finally { rmSync(dir, { recursive: true, force: true }); }
+    return;
+  }
+  if (command === 'backup' && args[0] === 'prune') {
+    const dir = value('--dir') || fail('missing --dir'); const keep = Number(value('--keep') || fail('missing --keep'));
+    if (!Number.isInteger(keep) || keep < 1 || !existsSync(dir)) fail('--keep must be a positive whole number and --dir must exist');
+    const backups = readdirSync(dir).map(name => join(dir, name)).filter(path => !path.endsWith('.manifest.json') && existsSync(`${path}.manifest.json`)).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+    let retained = 0, removed = 0;
+    for (let index = 0; index < backups.length; index += 1) {
+      const source = backups[index]; let valid = false; const scratchDir = mkdtempSync(join(tmpdir(), 'sss-backup-prune-'));
+      try { valid = verifyBackup(source, join(scratchDir, 'restore.sqlite'), { keyFile: value('--key-file') || null }).ok; } catch {} finally { rmSync(scratchDir, { recursive: true, force: true }); }
+      // Newest is immutable. Corrupt backups are evidence, not candidates for deletion.
+      if (index === 0 || !valid || retained < keep) { retained += valid ? 1 : 0; continue; }
+      rmSync(source, { force: true }); rmSync(`${source}.manifest.json`, { force: true }); removed += 1;
+    }
+    write(`backup prune: removed=${removed} retained=${backups.length - removed}`); return;
+  }
   // Restore must run before opening SQLite. Opening a missing target would create it.
   if (command === 'restore') {
     const source = value('--from') || fail('missing --from');
@@ -558,15 +608,13 @@ async function run(argv, env, write) {
     if (value('--reanalysis-interval-minutes') !== undefined) {
       const minutes = Number(value('--reanalysis-interval-minutes'));
       reanalysisSchedule = startReanalysisSchedule(store, { intervalMinutes: minutes, lockFile: `${file}.reanalysis.lock`, log: write });
-      if (reanalysisSchedule) { process.once('SIGTERM', () => reanalysisSchedule.stop()); process.once('SIGINT', () => reanalysisSchedule.stop()); write(`Reanalysis runs every ${minutes} minutes.`); }
+      if (reanalysisSchedule) write(`Reanalysis runs every ${minutes} minutes.`);
     }
     const bundleServer = bundlePort === null ? null : createBundleServer({ store, secret: randomBytes(32), hostSuffix: bundleHostSuffix, appOrigin: origin });
     if (bundleServer) await new Promise(resolve => bundleServer.listen(bundlePort, host, resolve));
-    const server = createServerFor({ store, auth, integrations, questModel, analysisGateway, secure, origin, trustedProxy, tls, bundleServer });
+    const server = createServerFor({ store, auth, integrations, questModel, analysisGateway, secure, origin, trustedProxy, tls, bundleServer, env, databasePath: file });
     await new Promise(resolve => server.listen(port, host, resolve));
-    stopOnSignal(server, store);
-    if (bundleServer) { process.once('SIGTERM', () => bundleServer.close()); process.once('SIGINT', () => bundleServer.close()); }
-    if (effortTimer) { process.once('SIGTERM', () => clearInterval(effortTimer)); process.once('SIGINT', () => clearInterval(effortTimer)); }
+    stopOnSignal(server, store, { timers: [effortTimer].filter(Boolean), stops: [() => reanalysisSchedule?.stop()], bundleServer });
     write(`Serving ${origin}${tls ? ' over direct HTTPS' : ''}${trustedProxy ? ' behind one trusted loopback proxy' : ''}`);
     if (!secure) write('WARNING: insecure cookies are enabled for local HTTP development only.');
     return;

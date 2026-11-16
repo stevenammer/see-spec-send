@@ -142,3 +142,14 @@ export function restoreBackup(source, file, { keyFile = null } = {}) {
   store.close();
   return manifest;
 }
+
+// A drill always restores to an operator-provided empty scratch path. It never
+// opens, replaces, or changes the live database.
+export function verifyBackup(source, scratch, { keyFile = null } = {}) {
+  try {
+    const manifest = restoreBackup(source, scratch, { keyFile });
+    return { ok: true, manifest };
+  } finally {
+    remove(scratch);
+  }
+}

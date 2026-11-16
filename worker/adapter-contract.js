@@ -38,8 +38,9 @@ function requestCopy(request) {
   return freeze(JSON.parse(JSON.stringify({ ...request, instructions: instructions.map(row => ({ instruction: row.instruction })) })));
 }
 
-// The host supplies a trusted synchronous bridge transport. It cannot grant
-// itself authority or bypass the worker, sandbox, gateway and delivery checks.
+// The host supplies trusted synchronous transport code with host privileges.
+// This wrapper validates the contract; it does not confine the transport or
+// prevent it from bypassing sandbox, gateway or other external controls.
 export function createBridgeAdapter(transport, manifest, requirements = {}) {
   const selected = negotiateBuilder(manifest, { ...requirements, capabilities: ['static_html', 'approved_spec', ...(requirements.capabilities || [])] });
   if (!plain(transport) || ['start', 'status', 'stop'].some(key => typeof transport[key] !== 'function')) fail('transport requires start, status and stop');

@@ -119,8 +119,10 @@ manifest with `createBuilderRegistry()`, providing a factory for a synchronous
 transport implementing `start(request)`, `status(id)`, and `stop(id)`. Selection
 wraps the transport in `createBridgeAdapter`. It checks run identity and input
 shape, removes instruction author/source metadata, freezes the approved request,
-and validates status shape and ready HTML. The worker still independently owns
-approval checks, run lifecycle, stopping, and delivery. The bridge may hand the
+and validates status shape and ready HTML. The worker still independently checks approval and controls its run lifecycle,
+stop requests, and delivery. Registered in-process code has host privileges and
+can bypass these checks or call providers directly; this wrapper does not confine
+it, enforce its spending, or prove that a stop request terminated its work. The bridge may hand the
 request to a separately managed CLI or agent, but **the transport and that
 execution environment must be deployed and reviewed by the organization**.
 This registry is trusted host configuration, not a browser API, dynamic module
@@ -142,3 +144,30 @@ They are potential integration targets, not supported profiles or benchmarked
 winners. Multi-file/code artifacts, shell tools, and network capabilities are
 not supported by version 1. A richer profile requires a separately reviewed
 contract and external enforcement.
+
+
+## Proposed next slice, not implemented
+
+A future offline prototype can connect a fixed, operator-configured fixture
+process through private local IPC. The trusted controller would derive and
+journal an immutable run envelope from the existing approval, spec, packet,
+scope, policy and deadline, bind each run ID to its request digest, and retain
+stop tombstones across restarts. The protocol would use bounded versioned
+`start`, `status` and `stop` messages. It would accept no browser-supplied
+command, network endpoint, model key or package installation.
+
+A deterministic fixture could return a synthetic multi-file source bundle with
+a manifest of relative paths, byte counts and digests. Before storage, trusted
+code would independently recompute hashes and enforce file-count and byte
+limits, reject path traversal, duplicate paths, symlinks and unexpected
+executables, and recheck current authorization. The review surface would show
+the validated manifest; the existing static HTML artifact and preview would
+remain unchanged. An isolated interactive preview, real harness execution,
+tool-capable model proxy, comprehensive per-call accounting and any new
+permissions require separate design and verification.
+
+Acceptance would include duplicate and changed-payload starts, stop before
+start, crash and reconnect, malformed and oversized messages, unsafe paths and
+links, file changes during validation, stale approval and late completion. An
+IPC protocol alone is not isolation or proof that a process stopped. This is a
+proposal, not an implemented bridge or support for any named coding harness.

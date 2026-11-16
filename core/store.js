@@ -168,11 +168,14 @@ export class Store {
   groupAdd(name, person) { this.actor(person); if (!this.db.prepare('SELECT 1 FROM groups WHERE name=?').get(name)) throw invalid('unknown group'); this.db.prepare('INSERT OR IGNORE INTO group_members VALUES(?,?)').run(name, person); }
   groupRemove(name, person) { this.db.prepare('DELETE FROM group_members WHERE group_name=? AND person=?').run(name, person); }
   groups() { return this.db.prepare("SELECT g.name,g.description,COALESCE(json_group_array(m.person) FILTER (WHERE m.person IS NOT NULL),'[]') AS members FROM groups g LEFT JOIN group_members m ON m.group_name=g.name GROUP BY g.name,g.description ORDER BY g.name").all().map(row => ({ ...row, members: JSON.parse(row.members) })); }
+  // Scope checks run for every item in a listing or search, so they read only the first event (where the audience
+  // is fixed) and the cached steward, never the whole history.
+  firstEventRow(item) { return this.db.prepare('SELECT * FROM events WHERE item=? ORDER BY seq LIMIT 1').get(item); }
   readScope(item) {
-    const first = this.eventRows(item)[0]; if (!first) return null;
+    const first = this.firstEventRow(item); if (!first) return null;
     const event = this.eventFromRow(first); const audience = Array.isArray(event.audience) ? event.audience : [];
     const members = audience.length ? this.db.prepare(`SELECT person FROM group_members WHERE group_name IN (${audience.map(() => '?').join(',')})`).all(...audience).map(row => row.person) : [];
-    return { id: item, audience, members, steward: this.read(item).context.steward };
+    return { id: item, audience, members, steward: this.cache(item).steward };
   }
   canRead(viewer, item) { return canRead(viewer, this.readScope(item)); }
   stageProjection(item) {
@@ -488,7 +491,7 @@ export class Store {
       .all(String(after), PAGE_SIZE + 1);
     const items = rows.slice(0, PAGE_SIZE).map(row => {
       const context = JSON.parse(row.context);
-      const first = this.eventFromRow(this.eventRows(row.item)[0]);
+      const first = this.eventFromRow(this.firstEventRow(row.item));
       return { id: row.item, state: row.state, problem: first?.original || first?.problem || '', steward: context.steward,
         spent: context.spentMicros / 1_000_000, quorum: context.quorum, helpers: context.helpers.length };
     });

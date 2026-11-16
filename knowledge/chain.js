@@ -34,13 +34,11 @@ export class KnowledgeLog {
     return { seq, hash, body_hash, duplicate: false };
   }
   entries(kind) {
-    const rows = kind ? this.store.db.prepare('SELECT * FROM knowledge_log WHERE kind=? ORDER BY seq').all(kind)
-      : this.store.db.prepare('SELECT * FROM knowledge_log ORDER BY seq').all();
-    return rows.map(row => {
-      const erased = this.store.db.prepare("SELECT 1 FROM knowledge_tombstones WHERE target_hash=?").get(row.hash)
-        || this.store.db.prepare("SELECT erased FROM knowledge_bodies WHERE body_hash=?").get(row.body_hash)?.erased === 1;
-      return { ...row, body: erased ? { notice: 'This derived record was retracted or redacted because a source was erased.' } : JSON.parse(row.body), erased: Boolean(erased) };
-    });
+    // One query: erasure state comes from joins, not two lookups per row (this is read on hot paths).
+    const sql = `SELECT l.*, (t.target_hash IS NOT NULL OR COALESCE(k.erased, 0) = 1) AS gone FROM knowledge_log l
+      LEFT JOIN knowledge_tombstones t ON t.target_hash = l.hash LEFT JOIN knowledge_bodies k ON k.body_hash = l.body_hash`;
+    const rows = kind ? this.store.db.prepare(`${sql} WHERE l.kind=? ORDER BY l.seq`).all(kind) : this.store.db.prepare(`${sql} ORDER BY l.seq`).all();
+    return rows.map(({ gone, ...row }) => ({ ...row, body: gone ? { notice: 'This derived record was retracted or redacted because a source was erased.' } : JSON.parse(row.body), erased: Boolean(gone) }));
   }
   verify() {
     let previous = '';

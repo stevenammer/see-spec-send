@@ -22,11 +22,11 @@ function openTargets(store) {
   return found;
 }
 
-export function deliverToOpenThreads(store, delta, { now, canRead: policy } = {}) {
+export function deliverToOpenThreads(store, delta, { now, canRead: policy, ctx = {} } = {}) {
   const posted = [], text = sourceText(delta);
-  for (const target of openTargets(store)) {
+  for (const target of (ctx.open ??= openTargets(store))) {
     if (target.item === delta.source.item) continue;                                 // never its own case
-    if ((delta.provenance_roots || []).some(root => store.eventRows(target.item).some(row => row.hash === root))) continue;
+    if ((delta.provenance_roots || []).some(root => (ctx.hashes ??= new Map(), ctx.hashes.has(target.item) ? ctx.hashes : ctx.hashes.set(target.item, new Set(store.eventRows(target.item).map(row => row.hash)))).get(target.item).has(root))) continue;
     const viewer = target.state.context.steward;
     if (!canRead(viewer, store.readScope(delta.source.item), policy) || !canRead(viewer, store.readScope(target.item), policy)) continue;
     const common = shared(text, target.entry.text);

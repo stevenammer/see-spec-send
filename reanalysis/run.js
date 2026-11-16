@@ -1,7 +1,7 @@
 import { parseAt } from '../core/reconcile.js';
 import { defaultCanRead, canRead } from '../access/read.js';
 import { extractDeltas } from '../knowledge/delta.js';
-import { findImpacts } from './match.js';
+import { findImpacts, newContext } from './match.js';
 import { deliverToOpenThreads } from './open.js';
 import { buildAnnex, recordAnnex } from './annex.js';
 import { deliverAnnexes } from '../notifications/digest.js';
@@ -12,28 +12,44 @@ import { createHash } from 'node:crypto';
 
 const DAY = 7 * 24 * 60 * 60 * 1000;
 
-function cooled(store, impact, delta, now) {
-  const rows = store.knowledge.entries('impact');
-  return rows.some(row => row.body.target.item === impact.target.item && row.body.target.post_id === impact.target.post_id
-    && parseAt(now) - parseAt(row.at) < DAY && row.body.provenance !== (delta.provenance_roots || []).join(','));
+// One context per pass: the shared lookups from match.js plus the recent impacts the cooldown consults.
+function passContext(store) {
+  const ctx = newContext(); ctx.recent = new Map();
+  for (const row of store.knowledge.entries('impact')) {
+    const key = `${row.body.target.item}|${row.body.target.post_id}`;
+    (ctx.recent.get(key) || ctx.recent.set(key, []).get(key)).push({ at: row.at, provenance: row.body.provenance });
+  }
+  return ctx;
+}
+const noteImpact = (ctx, impact, delta, now) => {
+  const key = `${impact.target.item}|${impact.target.post_id}`;
+  (ctx.recent.get(key) || ctx.recent.set(key, []).get(key)).push({ at: now, provenance: (delta.provenance_roots || []).join(',') });
+};
+
+function cooled(ctx, impact, delta, now) {
+  const key = `${impact.target.item}|${impact.target.post_id}`;
+  const provenance = (delta.provenance_roots || []).join(',');
+  return (ctx.recent.get(key) || []).some(row => parseAt(now) - parseAt(row.at) < DAY && row.provenance !== provenance);
 }
 
 function deterministicReanalysis(store, { now, limit = 20, canRead: policy = defaultCanRead } = {}) {
   if (!Number.isFinite(parseAt(now))) throw new Error('now timestamp required');
   if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('limit must be a positive integer');
   const deltas = extractDeltas(store, { now, limit });
+  const ctx = passContext(store);
   const annexes = [], held = [], receipts = [], skipped = [], openThreads = [];
   for (const delta of deltas) {
-    const match = findImpacts(store, delta, { canRead: policy });
+    const match = findImpacts(store, delta, { canRead: policy, ctx });
     held.push(...match.held);
-    openThreads.push(...deliverToOpenThreads(store, delta, { now, canRead: policy }));
+    openThreads.push(...deliverToOpenThreads(store, delta, { now, canRead: policy, ctx }));
     for (const impact of match.checked) {
       const viewer = store.read(delta.source.item).context.steward;
       if (!canRead(viewer, store.readScope(delta.source.item), policy) || !canRead(viewer, store.readScope(impact.target.item), policy)) { held.push(impact); continue; }
       const pair = store.db.prepare('SELECT 1 FROM reanalysis_pairs WHERE delta_hash=? AND item=? AND decision_hash=?')
         .get(delta.body_hash, impact.target.item, impact.target.decision_hash || '');
-      if (pair || cooled(store, impact, delta, now)) { skipped.push(impact); continue; }
+      if (pair || cooled(ctx, impact, delta, now)) { skipped.push(impact); continue; }
       const impactEntry = store.knowledge.append('impact', { ...impact, provenance: (delta.provenance_roots || []).join(',') }, { at: now });
+      noteImpact(ctx, impact, delta, now);
       const annex = recordAnnex(store, buildAnnex(delta, impact), { at: now });
       store.db.prepare('INSERT OR IGNORE INTO reanalysis_pairs(delta_hash,item,decision_hash,provenance,created_at) VALUES(?,?,?,?,?)')
         .run(delta.body_hash, impact.target.item, impact.target.decision_hash || '', (delta.provenance_roots || []).join(','), now);
@@ -63,13 +79,14 @@ async function verifiedReanalysis(store, { now, limit = 20, canRead: policy = de
   if (!Number.isFinite(parseAt(now))) throw new Error('now timestamp required');
   if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('limit must be a positive integer');
   const deltas = extractDeltas(store, { now, limit }), annexes = [], held = [], receipts = [], skipped = [];
+  const ctx = passContext(store);
   for (const delta of deltas) {
-    const match = findImpacts(store, delta, { canRead: policy }); held.push(...match.held);
+    const match = findImpacts(store, delta, { canRead: policy, ctx }); held.push(...match.held);
     for (const impact of match.checked) {
       const viewer = store.read(delta.source.item).context.steward;
       if (!canRead(viewer, store.readScope(delta.source.item), policy) || !canRead(viewer, store.readScope(impact.target.item), policy)) { held.push(impact); continue; }
       const pair = store.db.prepare('SELECT 1 FROM reanalysis_pairs WHERE delta_hash=? AND item=? AND decision_hash=?').get(delta.body_hash, impact.target.item, impact.target.decision_hash || '');
-      if (pair || cooled(store, impact, delta, now)) { skipped.push(impact); continue; }
+      if (pair || cooled(ctx, impact, delta, now)) { skipped.push(impact); continue; }
       let advisory = null;
       try {
         const idem = `reanalysis:${createHash('sha256').update(JSON.stringify([delta.body_hash, impact.target])).digest('hex')}`;
@@ -77,6 +94,7 @@ async function verifiedReanalysis(store, { now, limit = 20, canRead: policy = de
       } catch { /* a failed advisory pass leaves the deterministic result unchanged */ }
       if (advisory?.material === false) { held.push(impact); continue; }
       const impactEntry = store.knowledge.append('impact', { ...impact, provenance: (delta.provenance_roots || []).join(',') }, { at: now });
+      noteImpact(ctx, impact, delta, now);
       const annex = recordAnnex(store, buildAnnex(delta, impact, advisory), { at: now });
       store.db.prepare('INSERT OR IGNORE INTO reanalysis_pairs(delta_hash,item,decision_hash,provenance,created_at) VALUES(?,?,?,?,?)').run(delta.body_hash, impact.target.item, impact.target.decision_hash || '', (delta.provenance_roots || []).join(','), now);
       annexes.push({ ...annex, impact: impactEntry.hash });

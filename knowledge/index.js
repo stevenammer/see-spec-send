@@ -14,14 +14,15 @@ const typed = event => {
 // recorded human/system events, not a semantic summary or a people ranking.
 export function searchKnowledge(store, viewer, query = '', { canRead: policy = defaultCanRead } = {}) {
   const needle = String(query).trim().toLowerCase();
-  const rows = [];
-  for (const { item } of store.db.prepare('SELECT item FROM items ORDER BY item').all()) {
-    if (!canRead(viewer, store.readScope(item), policy)) continue;
-    for (const event of store.events(item)) {
-      const erased = store.db.prepare('SELECT erased FROM bodies WHERE hash=?').get(event.body_hash)?.erased === 1;
-      if (erased) continue;
-      for (const entry of typed(event)) if (!needle || entry.text.toLowerCase().includes(needle)) rows.push({ item, hash: event.body_hash, at: event.at, ...entry });
-    }
+  const rows = [], allowed = new Map();
+  // Only the three event types the index understands are read, in one query, with erasure checked in the same row.
+  const events = store.db.prepare(`SELECT e.item, e.type, e.actor, e.body_hash, e.at, b.bytes FROM events e JOIN bodies b ON b.hash = e.body_hash
+    WHERE e.type IN ('decided', 'specced', 'researched') AND COALESCE(b.erased, 0) = 0 ORDER BY e.item, e.seq`).all();
+  for (const row of events) {
+    if (!allowed.has(row.item)) allowed.set(row.item, canRead(viewer, store.readScope(row.item), policy));
+    if (!allowed.get(row.item)) continue;
+    const event = { ...JSON.parse(row.bytes), type: row.type, actor: row.actor, body_hash: row.body_hash, at: row.at };
+    for (const entry of typed(event)) if (!needle || entry.text.toLowerCase().includes(needle)) rows.push({ item: row.item, hash: event.body_hash, at: event.at, ...entry });
   }
   return rows;
 }

@@ -145,7 +145,7 @@ const mutants = [
   ['R2 Effort prompt bounded by bytes', 'while (thread.length > 0 && Buffer.byteLength(build()) > maxBytes) thread = thread.slice(1);', ''],
   ['F3 erase needs a ground for others content on every path', "if (!['privacy', 'legal', 'safety', 'customer or employee personal data'].includes(event.ground)) throw refused('erase ground required');", ''],
   ['R Effort prompt bounded', 'let thread = comments.slice(-MAX_ENTRIES);', 'let thread = comments;'],
-  ['R reassignment requires consent or inactivity', "if (!consented && !inactiveForFourteenDays) throw refused('steward consent or fourteen days of inactivity required');", 'if (false) throw refused(\'steward consent or fourteen days of inactivity required\');'],
+  ["R reassignment requires consent or inactivity", "if (!consented && !inactivity.inactive) throw refused(", "if (false) throw refused("],
   ['R2 tagged Effort reply keeps its parent', "...(job.kind === 'tag' ? { parent: triggerBody.body_hash } : {})", ''],
   ['R2 separate mention quota ignores automatic replies', "mine.filter(sameClass).length < (automatic ? EFFORT_LIMITS.automatic_calls_per_person_day : EFFORT_LIMITS.calls_per_person_day)", 'mine.length < EFFORT_LIMITS.calls_per_person_day'],
   ['R2 sequence diff preserves duplicates and order', 'lengths[oldAt][newAt] = oldLines[oldAt] === newLines[newAt]', 'lengths[oldAt][newAt] = false'],
@@ -240,8 +240,8 @@ const mutants = [
   ['artifact sandbox header', '"sandbox allow-scripts; default-src \'none\'; style-src', '"default-src \'none\'; style-src'],
   ['viewer opaque origin', 'sandbox=\"allow-scripts\"', 'sandbox=\"allow-scripts allow-same-origin\"'],
   ['member deliver', 'if (!(leader || state.context.steward === session.person))', 'if (false)'],
-  ['artifact size limit', "Buffer.byteLength(html, 'utf8') > 256 * 1024", 'false'],
-  ['HTML CSP', "'content-security-policy': htmlHeaders", "'content-security-policy': \"default-src *\""],
+  ["artifact size limit", "Buffer.byteLength(html, 'utf8') > (bundle ? 1536 * 1024 : 256 * 1024)", "false"],
+  ["HTML CSP", "'content-security-policy': csp,", "'content-security-policy': \"default-src *\","],
   ['helper count privacy', 'quorum: context.quorum, helpers: context.helpers.length };', 'quorum: context.quorum, helpers: context.helpers.length, helper_names: context.helpers };'],
   ['history shows token hash', "event.type === 'tried' && event.delivered_by ? event.delivered_by : event.actor", "event.delivered_by ? event.delivered_by : event.actor"],
   ['approver and steward can vote', 'const canVote = !context.ineligibleHelpers.includes(person);', 'const canVote = true;'],
@@ -294,7 +294,7 @@ const mutants = [
   ['account id bound on redeem', "async redeem(value, id, password, ip = 'local') {\n    if (!validAccountId(id)) throw invalid('invalid account id');", "async redeem(value, id, password, ip = 'local') {"],
   ['oidc audience check', '!audience.includes(this.clientId)', 'false'],
   ['oidc nonce check', 'claims.nonce !== nonce', 'false'],
-  ['oidc token expiry', 'claims.exp <= now', 'false'],
+  ["oidc token expiry", "|| !Number.isInteger(claims.exp) || claims.exp < now - this.clockSkewSeconds", "|| !Number.isInteger(claims.exp)"],
   ['draft explicit approval', "if (approved !== true) throw refused('explicit approval required');", ''],
   ['Quest model opt-in flag', "if (!questModel) return json(res, 404, { error: 'not found' });", "if (false) return json(res, 404, { error: 'not found' });"],
   ['Quest gateway kill latch', "demand(!killed(this.store), 'stopped run');", "demand(true, 'stopped run');"],
@@ -307,7 +307,7 @@ const mutants = [
   ['temporary password redirects to the change screen', "res.writeHead(302, { location: '/password', 'cache-control': 'no-store' }); return res.end(); }", "return json(res, 403, { error: 'request refused' }); }"],
   ['password screen asks step-up then change', "await post('/api/stepup', { password: input.current });", "await post('/api/stepup', { password: input.password });"],
   ['F2 every Quest result posts a SEE', 'const questAsSee = Boolean(input.quest);', "const questAsSee = input.quest && eventBody.questMemo.recommendation === 'CONFIGURE';"],
-  ['F1 caps count Effort spend', 'this.receipts().concat(this.questReceipts(), this.effortReceipts())', 'this.receipts().concat(this.questReceipts())'],
+  ["F1 caps count Effort spend", "this.receipts().concat(this.questReceipts(), this.effortReceipts(), this.analysisReceipts())", "this.receipts().concat(this.questReceipts(), this.analysisReceipts())"],
   ['gateway policy version history', "this.db.prepare('INSERT INTO gateway_policy_versions VALUES(?,?,?)').run(version, bytes, seal);", ''],
   ['Quest hold release audit', 'audit.seal = digest(canonical(audit));', "audit.seal = '';"],
   ['provider command env isolation', "env: { PATH: process.env.PATH || '/usr/bin:/bin' }", 'env: process.env'],
@@ -322,8 +322,7 @@ const mutants = [
   ['builder egress enforcement', "if (!denied) return { allowed: true };", "if (true) return { allowed: true };"],
   ['comment artifact anchor binding', "if (event.anchor_kind === 'artifact') return event.anchor_hash === state.artifact;",
     "if (event.anchor_kind === 'artifact') return true;"],
-  ['OIDC redirect URI validation', "this.redirectUri = validUrl(config.redirectUri, 'redirect URI');",
-    'this.redirectUri = config.redirectUri;'],
+  ["OIDC redirect URI validation", "this.redirectUri = validUrl(config.redirectUri, 'redirect URI', config.allowInsecureLoopbackForDevelopment);", "this.redirectUri = config.redirectUri;"],
   ['integration signature', "!this.secrets(row.secret).map(candidate => equal(signature(candidate, timestamp, bytes), String(supplied || '').replace(/^sha256=/, ''))).includes(true)", 'false'],
   ['integration timestamp window', 'Math.abs(this.clock() - time) > WINDOW', 'false'],
   ['integration replay protection', "if (accepted.changes !== 1) throw refused('inbound refused');", 'if (false) throw refused(\'inbound refused\');'],
@@ -422,7 +421,7 @@ const mutants = [
   ["slice19 forwarded address is used for lockout", "return isIP(rightmost) ? rightmost : peer;", "return peer;"],
   ["slice19 HSTS only with secure cookies", "if (secure) res.setHeader('strict-transport-security'", "if (false) res.setHeader('strict-transport-security'"],
   ["slice19 direct HTTPS listener built from the pair", "const server = tls ? createTlsServer({ cert: tls.cert, key: tls.key }, handler) : createServer(handler);", "const server = createServer(handler);"],
-  ["slice19 SIGTERM closes the database before the listener", "    server.closeIdleConnections?.();\n    server.close(error => {", "    store.close();\n    server.closeIdleConnections?.();\n    server.close(error => {"],
+  ["slice19 SIGTERM closes the database before the listener", "    server.closeIdleConnections?.();\n    let finished = false;", "    store.close();\n    server.closeIdleConnections?.();\n    let finished = false;"],
   ["slice19 SIGTERM does not close the database", "      try { store.close(); } catch (closeError)", "      try { void 0; } catch (closeError)"],
   ["slice19 second signal ignored", "    if (stopping) return;", "    if (false) return;"],
   ["slice19 compose publishes only on loopback", "\"127.0.0.1:8443:8443\"", "\"8443:8443\""],
@@ -463,8 +462,8 @@ const mutants = [
   ['slice27 deadline runs in the container', "'--init', this.image, 'timeout', '-s', 'KILL', String(seconds), ...args.slice(at + 1)", "'--init', this.image, ...args.slice(at + 1)"],
   ['slice27 container uses an init process', "'--init', this.image, 'timeout'", "this.image, 'timeout'"],
   ['slice27 docker calls time out', "timeout: this.timeoutMs, ", ""],
-  ['slice27 container builder needs the socket', "|| fail('--builder container needs --gateway-socket PATH')", "|| ''"],
-  ['slice27 builder kind is checked', "else fail('--builder must be container or fixture');", "else adapter = builtInBuilderRegistry(store).select('fixture');"],
+  ["slice27 container builder needs the socket", "|| fail(`--builder ${profile} needs --gateway-socket PATH`)", "|| ''"],
+  ["slice27 builder kind is checked", "else fail('--builder must be fixture, container, or opencode');", "else adapter = builtInBuilderRegistry(store).select('fixture');"],
   ['slice27 gateway socket directory is private', "if (statSync(parent).mode & 0o022) fail(", "if (false) fail("],
 ];
 
@@ -491,9 +490,14 @@ if (process.argv.includes('--check-sources')) {
   console.log(`OK ${mutants.length} mutant find strings found`);
   process.exit(0);
 }
-const selected = mutants.filter(([name]) => (!only || name.includes(only)) &&
+// --shard K/N runs every Nth mutant starting at K, so a long campaign can rotate through the whole set over N nights.
+const shardAt = process.argv.indexOf('--shard');
+const shard = shardAt < 0 ? null : String(process.argv[shardAt + 1]).split('/').map(Number);
+if (shard && (shard.length !== 2 || !Number.isInteger(shard[0]) || !Number.isInteger(shard[1]) || shard[1] < 1 || shard[0] < 0 || shard[0] >= shard[1])) throw new Error('--shard needs K/N with 0 <= K < N');
+const selected = mutants.filter(([name], index) => (!shard || index % shard[1] === shard[0]) && (!only || name.includes(only)) &&
   (!workerOnly || name.startsWith('worker ') || name.startsWith('fake ') || name.startsWith('container ')));
 if (!selected.length) throw new Error('no mutant matches the requested name');
+console.log(`running ${selected.length} of ${mutants.length} mutants${shard ? ` (shard ${shard[0]}/${shard[1]})` : ''}`);
 
 const baseline = run(root, [...suite, 'test/check-public.test.mjs']);
 if (baseline.status !== 0 || /# skipped [^0]/.test(baseline.stdout)) {

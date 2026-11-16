@@ -81,3 +81,13 @@ Measured with `scripts/load.mjs` on one machine, SQLite, one server process:
 - Sign-in is rate limited per address, so a burst of sign-ins from one place is refused.
 
 Limits you should know: one SQLite writer on one machine, no clustering, no replication. Measure your own hardware with `node scripts/load.mjs` before growing, and look at the 99th percentile and the 429 rate, not only the average.
+
+## 9. Nightly mutation checks
+
+Mutation checks break one rule at a time in a throwaway copy and confirm a test catches it. A survivor means a rule has no test that would notice it being removed.
+
+- `scripts/mutate-new.mjs` runs the scoped mutants for the newest modules (about an hour).
+- `scripts/mutate-check.mjs` is the long campaign (419 mutants, more than a day end to end), so it runs one tenth a night: `--shard K/N` runs every Nth mutant starting at K.
+- `scripts/nightly-mutants.sh` does both from a clean export of the newest pushed `main`, at low priority, under a lock, and writes `~/.local/state/see-spec-send/mutation/YYYY-MM-DD.log`, `latest.txt` (one line: commit, shard, killed, survived) and `survivors.txt` (every survivor, dated). Install it with the cron line in the script header, read `latest.txt` each morning, and treat any survivor as a missing test.
+- `node scripts/mutate-check.mjs --check-sources` (and the same flag on `mutate-new.mjs`) confirms every mutant still matches real source, so a refactor cannot silently turn a mutant into a no-op.
+

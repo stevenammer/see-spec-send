@@ -50,3 +50,29 @@ test('backup verify leaves live data alone and prune keeps newest plus invalid b
   await cli(['backup', 'prune', '--dir', dir, '--keep', '1'], { SSS_DB: file }, () => {});
   assert.equal(readFileSync(join(dir, 'three.sqlite')).length > 0, true); assert.equal(readFileSync(join(dir, 'one.sqlite')).toString(), 'bad');
 });
+
+import { ready } from '../app/ops.js';
+import { SCHEMA_VERSION } from '../core/migrations.js';
+
+test('real readiness: ok on a current database, 503 on a schema mismatch, 503 when the database cannot be read, with nothing sensitive in the answer', async () => {
+  const store = new Store(), auth = new Auth(store);
+  const handler = createHandler({ store, auth, secure: false });
+  const okay = await call(handler, '/readyz');
+  assert.equal(okay.status, 200); const good = JSON.parse(okay.text);
+  assert.equal(good.ok, true); assert.equal(good.schema_version, SCHEMA_VERSION); assert.equal(good.kill_latch, 'clear');
+  store.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION - 1}`);                      // an older binary's view of a newer or older schema
+  const mismatch = await call(handler, '/readyz');
+  assert.equal(mismatch.status, 503); assert.equal(JSON.parse(mismatch.text).ok, false); assert.equal(JSON.parse(mismatch.text).expected_schema_version, SCHEMA_VERSION);
+  store.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  store.close();                                                                       // the database is no longer readable
+  const gone = await call(handler, '/readyz');
+  assert.equal(gone.status, 503); assert.equal(JSON.parse(gone.text).kill_latch, 'unavailable');
+  assert.ok(!/\/|password|token|secret/i.test(gone.text.replace(/"expected_schema_version"/, '')), 'no paths or secrets in the readiness answer');
+  assert.equal(ready({ db: { prepare() { throw new Error('boom'); } } }).ok, false, 'any failure fails closed');
+});
+
+test('liveness never touches the database, so a broken database still answers 200 there while readiness says 503', async () => {
+  const store = new Store(), auth = new Auth(store); const handler = createHandler({ store, auth, secure: false }); store.close();
+  assert.equal((await call(handler, '/healthz')).status, 200);
+  assert.equal((await call(handler, '/readyz')).status, 503);
+});

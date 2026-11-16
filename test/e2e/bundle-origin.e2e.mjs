@@ -10,7 +10,6 @@ import { createServerFor } from '../../app/http.js';
 import { createBundleServer } from '../../app/bundle-origin.js';
 import { fixture } from '../helpers/gateway-fixture.mjs';
 
-if (!process.env.NODE_TEST_CONTEXT) await main();
 const digest = value => createHash('sha256').update(value).digest('hex');
 const bundle = files => JSON.stringify({ sss_bundle: 1, manifest: { version: 1, files: Object.entries(files).map(([path, text]) => ({ path, bytes: Buffer.byteLength(text), sha256: digest(text) })) }, files: Object.fromEntries(Object.entries(files).map(([path, text]) => [path, Buffer.from(text).toString('base64')])) });
 
@@ -43,3 +42,5 @@ async function main() {
     await frame.locator('#note').fill('persists'); await page.reload(); const refreshed = await (await (await page.locator('iframe[title="Playable try"]').elementHandle()).contentFrame()).locator('#note'); await assert.equal(await refreshed.inputValue(), 'persists');
   } finally { await browser.close(); await new Promise(resolve => app.close(resolve)); await new Promise(resolve => bundleServer.close(resolve)); store.close(); }
 }
+
+if (!process.env.NODE_TEST_CONTEXT) { await main(); console.log('PASS: bundle origin in a real browser: the build ran with its script and styles, kept its own storage, and could not reach the app.'); }

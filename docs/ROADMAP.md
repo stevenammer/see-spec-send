@@ -14,7 +14,7 @@ No dates. Status words are defined in [STATUS.md](STATUS.md). Items under Next a
 
 ## Next, in order
 
-1. A real coding agent as a registered builder in the locked container. A live container run worked and testers see the result as a script-free page. A reviewed way to run a build's scripts is a later decision.
+1. A real coding agent as a registered builder in the locked container. A live container run worked and testers see the result running on a separate, isolated origin.
 2. One end-to-end synthetic walkthrough in a real browser, and a matching demo.
 
 ## Later

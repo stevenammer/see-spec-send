@@ -104,6 +104,8 @@ document.addEventListener('submit', async event => {
       return;
     } else if (form.dataset.annexResponse) {
       await post(`/api/annexes/${form.dataset.annexResponse}/response`, { kind: event.submitter?.value });
+    } else if (form.dataset.correction) {
+      await post(`/api/knowledge/${form.dataset.correction}/correction`, { note: input.note });
     } else if (form.dataset.renew) {
       const out = await post(`/api/items/${id}/renew`, { annex: form.dataset.renew, what_is_new: input.what_is_new, reason: input.reason });
       location.href = `/items/${out.id}`;

@@ -41,7 +41,7 @@ export function extractDeltas(store, { now, limit = Infinity } = {}) {
           .filter(value => store.authorityFromRow(value.row).kind !== 'agent').reverse().find(value => claimsFor(value.event, epistemic).length)?.event;
         const claims = direct.concat(direct.length ? [] : claimsFor(prior || {}, epistemic));
         if (claims.length) {
-          const body = { v: 1, source: { item, seq: row.seq, event_hash: row.hash }, trigger, claims,
+          const body = { v: 1, source: { item, seq: row.seq, event_hash: row.hash, body_hash: row.body_hash }, trigger, claims,
             provenance_roots: [row.hash], generation: 0 };
           const entry = store.knowledge.append('delta', body, { at: now });
           deltas.push({ ...body, hash: entry.hash, body_hash: entry.body_hash, duplicate: entry.duplicate });

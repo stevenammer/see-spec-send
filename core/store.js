@@ -15,6 +15,7 @@ import { normalizeLedger, rebuildLedger, validLedger } from '../knowledge/ledger
 import { normalizeEstimates, validEstimates } from '../knowledge/estimate.js';
 import { KnowledgeLog } from '../knowledge/chain.js';
 import { canRead } from '../access/read.js';
+import { propagateErasure } from '../knowledge/corrections.js';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 // Fixed page size for the feed and the item API. There is no setting for it.
@@ -119,6 +120,13 @@ export class Store {
     this.db.exec(`CREATE TABLE groups(name TEXT PRIMARY KEY, description TEXT NOT NULL DEFAULT '');
       CREATE TABLE group_members(group_name TEXT NOT NULL, person TEXT NOT NULL, PRIMARY KEY(group_name,person));
       CREATE TABLE capability_catalog(id TEXT PRIMARY KEY, tags TEXT NOT NULL, summary TEXT NOT NULL, source_item TEXT, source_hash TEXT, created_at TEXT NOT NULL);`);
+  }
+  migrateS5() {
+    this.db.exec(`CREATE TABLE knowledge_bodies(body_hash TEXT PRIMARY KEY, bytes TEXT NOT NULL, erased INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE knowledge_dependencies(source_body_hash TEXT NOT NULL, derived_hash TEXT NOT NULL, kind TEXT NOT NULL,
+        PRIMARY KEY(source_body_hash,derived_hash));
+      CREATE TABLE knowledge_tombstones(target_hash TEXT PRIMARY KEY, reason TEXT NOT NULL, source_body_hash TEXT, at TEXT NOT NULL);
+      INSERT OR IGNORE INTO knowledge_bodies(body_hash,bytes) SELECT body_hash,body FROM knowledge_log;`);
   }
   groupCreate(name, description = '') {
     if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$/.test(name) || typeof description !== 'string' || description.length > 1000) throw invalid('invalid group');
@@ -899,6 +907,9 @@ export class Store {
       // A closeout is a derived view, never a second copy of erased content.
       this.db.prepare("UPDATE closeout_jobs SET state='pending',artifact_hash=NULL WHERE item=? AND post_id IN (SELECT post_id FROM stage_posts WHERE item=? AND opened_seq<=? AND closed_seq>=?)")
         .run(item, item, target.seq, target.seq);
+      // Derived records are a separate append-only chain. Their tombstones and
+      // digest cleanup are committed with this source erasure, never later.
+      propagateErasure(this, targetHash, { reason: ground || 'author erased own content', at });
       syncMemory(this, item);
       this.db.exec('COMMIT');
     } catch (error) {

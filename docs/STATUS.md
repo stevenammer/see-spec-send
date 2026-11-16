@@ -19,7 +19,7 @@ An honest table. A row says **Shipped and tested** only when a named test in thi
 | Private reflection after decisions | Shipped and tested | `test/reflection.test.mjs` | Notes stay in the person's browser only; they do not follow the person across devices |
 | Departments and read scopes | Built (not verified live) | `test/read-scope.test.mjs` | Groups are admin-CLI managed; restricted work exposes existence and steward contact outside its audience |
 | Opportunity propagation | Built (not verified live) | `test/propagation-s3.test.mjs` | Deterministic catalog/tag matching only; every edge remains a candidate until a person acts |
-| Correctable derived memory | Planned | none | Source erasure exists; derived records do not yet exist |
+| Correctable derived memory | Shipped and tested | `test/corrections.test.mjs`, `test/knowledge-index.test.mjs` | Frozen packet copies, exports and backups can outlive an erasure; the live store tombstones dependent derived views and delivery |
 | Microsoft Teams and other channels | Planned | none | Nothing shipped |
 | Customer-owned storage, enterprise sign-in | Planned | none | Seams only |
 | Scoring or ranking people | Not planned | none | |

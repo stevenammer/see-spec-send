@@ -1,4 +1,5 @@
 import { canRead } from '../access/read.js';
+import { isChallenged } from '../knowledge/corrections.js';
 
 const stop = new Set(['the', 'and', 'for', 'with', 'that', 'this', 'from', 'into', 'have', 'has', 'was', 'were', 'are', 'not', 'new', 'old', 'our', 'their', 'your', 'will', 'can', 'need', 'needs', 'using']);
 const terms = text => new Set(String(text || '').toLowerCase().match(/[a-z0-9_]+/g)?.filter(word => word.length > 1 && !stop.has(word)) || []);
@@ -20,6 +21,7 @@ function targets(store) {
 }
 
 export function findImpacts(store, delta, { canRead: policy } = {}) {
+  if (isChallenged(store, delta.hash, delta.source?.body_hash)) return { checked: [], held: [] };
   const checked = [], held = [], deltaText = sourceText(delta);
   for (const candidate of targets(store)) {
     const target = candidate.post, decision_hash = candidate.decision?.row.body_hash || null;

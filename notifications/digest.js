@@ -16,6 +16,7 @@ export function deliverAnnexes(store, { now, canRead: policy = defaultCanRead } 
   if (typeof now !== 'string' || !now) throw new Error('now timestamp required');
   let entries = 0, pinged = 0;
   for (const row of store.knowledge.entries('annex')) {
+    if (row.erased) continue;
     for (const person of recipients(store, row.body)) {
       if (!canRead(person, store.readScope(row.body.parent.item), policy)) continue;
       const prior = store.db.prepare('SELECT 1 FROM digest_entries WHERE person=? AND annex_hash=?').get(person, row.hash);

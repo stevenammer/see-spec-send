@@ -9,7 +9,7 @@ const canonical = value => {
   }).join(',')}}`;
 };
 const sha = value => createHash('sha256').update(value).digest('hex');
-const kinds = new Set(['delta', 'impact', 'receipt', 'annex', 'annex_response', 'edge', 'capability']);
+const kinds = new Set(['delta', 'impact', 'receipt', 'annex', 'annex_response', 'edge', 'capability', 'correction', 'retraction']);
 
 export class KnowledgeLog {
   constructor(store) { this.store = store; }
@@ -22,12 +22,24 @@ export class KnowledgeLog {
     const seq = (previous?.seq || 0) + 1, prev_hash = previous?.hash || '', hash = sha(`${prev_hash}${kind}${body_hash}`);
     this.store.db.prepare('INSERT INTO knowledge_log(seq,kind,body,body_hash,prev_hash,hash,at) VALUES(?,?,?,?,?,?,?)')
       .run(seq, kind, bytes, body_hash, prev_hash, hash, at);
+    if (this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='knowledge_bodies'").get()) {
+      this.store.db.prepare('INSERT OR IGNORE INTO knowledge_bodies(body_hash,bytes) VALUES(?,?)').run(body_hash, bytes);
+      for (const source of sourceHashes(body)) {
+        const sourceBody = this.store.db.prepare('SELECT bytes FROM bodies WHERE hash=?').get(source);
+        if (sourceBody) this.store.db.prepare('INSERT OR IGNORE INTO knowledge_bodies(body_hash,bytes) VALUES(?,?)').run(source, sourceBody.bytes);
+        this.store.db.prepare('INSERT OR IGNORE INTO knowledge_dependencies(source_body_hash,derived_hash,kind) VALUES(?,?,?)').run(source, hash, kind);
+      }
+    }
     return { seq, hash, body_hash, duplicate: false };
   }
   entries(kind) {
     const rows = kind ? this.store.db.prepare('SELECT * FROM knowledge_log WHERE kind=? ORDER BY seq').all(kind)
       : this.store.db.prepare('SELECT * FROM knowledge_log ORDER BY seq').all();
-    return rows.map(row => ({ ...row, body: JSON.parse(row.body) }));
+    return rows.map(row => {
+      const erased = this.store.db.prepare("SELECT 1 FROM knowledge_tombstones WHERE target_hash=?").get(row.hash)
+        || this.store.db.prepare("SELECT erased FROM knowledge_bodies WHERE body_hash=?").get(row.body_hash)?.erased === 1;
+      return { ...row, body: erased ? { notice: 'This derived record was retracted or redacted because a source was erased.' } : JSON.parse(row.body), erased: Boolean(erased) };
+    });
   }
   verify() {
     let previous = '';
@@ -38,6 +50,22 @@ export class KnowledgeLog {
     }
     return { ok: true };
   }
+}
+
+// Only recorded source event body hashes become dependencies. Model text and
+// free-form claim strings are deliberately never treated as sources.
+function sourceHashes(body) {
+  const found = new Set();
+  const visit = (value, key = '') => {
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)) return value.forEach(entry => visit(entry));
+    for (const [name, entry] of Object.entries(value)) {
+      if ((name === 'body_hash' || name === 'source_body_hash' || name === 'delta' || name === 'impact' || name === 'annex') && typeof entry === 'string' && /^[a-f0-9]{64}$/.test(entry)) found.add(entry);
+      if (name === 'source' && entry && typeof entry === 'object' && typeof entry.body_hash === 'string') found.add(entry.body_hash);
+      visit(entry, name);
+    }
+  };
+  visit(body); return found;
 }
 
 export { canonical };

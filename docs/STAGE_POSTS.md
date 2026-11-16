@@ -28,6 +28,7 @@ The current decision projection follows existing event types and workflow. It do
 - A fork from a frozen stage must identify both the exact `post_id` and `snapshot_hash`, plus a reason. This prevents a shared event hash from ambiguously selecting a different post identity.
 - Fork history stops at that selected snapshot. The child is a new item/branch with independent authority: prior approval, spend, HELPS eligibility, or permission is not inherited.
 - History export/import and projection rebuild preserve the post IDs, parent/successor links, exact frozen hashes, and queued close-out state. Erasure changes the source representation under the existing audited erasure behavior; it is not ordinary editing of frozen history.
+- A frozen packet copy, an exported copy, and an operator backup can outlive an erasure. The trace identifies that limit; erasure tombstones derived views and future delivery, but it doesn't claim to rewrite copies outside the live store.
 
 ## Stewardship transfer on inactivity
 

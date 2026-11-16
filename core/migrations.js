@@ -25,6 +25,7 @@ export const MIGRATIONS = Object.freeze([
     id TEXT PRIMARY KEY, input TEXT NOT NULL, state TEXT NOT NULL, container_name TEXT NOT NULL,
     token_digest TEXT, deadline INTEGER NOT NULL, bundle_root TEXT NOT NULL, error TEXT)` ) },
   { name: 'S3 groups, read scopes, and opportunity propagation', up: store => store.migrateS3() },
+  { name: 'S5 correctable derived memory and source dependencies', up: store => store.migrateS5() },
 ]);
 export const SCHEMA_VERSION = MIGRATIONS.length;
 

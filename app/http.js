@@ -8,7 +8,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Integrations } from './integrations.js';
-import { feedPage, frozenPostPage, htmlHeaders, itemPage, newItemPage, passwordPage, questPage, redeemPage, signInPage } from './pages.js';
+import { closeoutPage, feedPage, frozenPostPage, htmlHeaders, itemPage, newItemPage, passwordPage, questPage, redeemPage, signInPage } from './pages.js';
 import { invalid, kindOf, refused, tooLarge as tooLargeError } from '../core/errors.js';
 import { redact } from '../provider/safe-http.js';
 import { CURRENT_RULES, validDateOnly } from '../core/machine.js';
@@ -26,6 +26,8 @@ import { emptyScope, validScope } from '../core/scope.js';
 import { reconciliation, forkEligibility, stewardInactivity, transferEligibility } from '../core/reconcile.js';
 import { searchPage, contributionsPage, recordPage } from './pages-memory.js';
 import { canRead, defaultCanRead } from '../access/read.js';
+import { challengeClaim } from '../knowledge/corrections.js';
+import { searchKnowledge } from '../knowledge/index.js';
 
 // Object key order does not change a retry identity. Array order is meaningful.
 const canonical = value => JSON.stringify(value, (_key, entry) =>
@@ -440,6 +442,11 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         const query = url.searchParams.get('q') || '';
         return page(res, searchPage(query, store.search(session.person, query)));
       }
+      if (req.method === 'GET' && url.pathname === '/knowledge') {
+        const query = url.searchParams.get('q') || '';
+        const rows = searchKnowledge(store, session.person, query);
+        return page(res, `<main><h1>Knowledge</h1><form method="get"><label>Search typed records<input name="q" value="${query.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;')}"></label><button>Search</button></form><ul>${rows.map(row => `<li>${row.type}: <a href="/items/${encodeURIComponent(row.item)}/record/${encodeURIComponent(row.hash)}">${row.text.replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</a>${row.connected === false ? ' (not connected)' : ''}</li>`).join('')}</ul></main>`);
+      }
       const personView = url.pathname.match(/^\/people\/([^/]+)$/);
       if (req.method === 'GET' && personView) {
         const subject = decodeURIComponent(personView[1]);
@@ -742,6 +749,25 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         const bytes = job?.artifact_hash && store.artifact(closeout[1], job.artifact_hash);
         if (!bytes) return json(res, 404, { error: 'not found' });
         return json(res, 200, JSON.parse(bytes));
+      }
+      const closeoutPageRoute = url.pathname.match(/^\/items\/([^/]+)\/closeout\/([^/]+)$/);
+      if (req.method === 'GET' && closeoutPageRoute) {
+        if (!readable(closeoutPageRoute[1])) return json(res, 403, { error: 'request refused' });
+        const job = store.db.prepare("SELECT artifact_hash FROM closeout_jobs WHERE item=? AND post_id=? AND state='done'").get(closeoutPageRoute[1], decodeURIComponent(closeoutPageRoute[2]));
+        const bytes = job?.artifact_hash && store.artifact(closeoutPageRoute[1], job.artifact_hash);
+        if (!bytes) return json(res, 404, { error: 'not found' });
+        const report = JSON.parse(bytes);
+        const source = [...(report.facts || []), ...(report.reported_claims || []), ...(report.assumptions || []), ...(report.discussion || []), ...(report.decisions || [])].find(row => typeof row.body_hash === 'string');
+        return page(res, closeoutPage(closeoutPageRoute[1], decodeURIComponent(closeoutPageRoute[2]), { ...report, _source_hash: source?.body_hash || '' }));
+      }
+      const correction = url.pathname.match(/^\/api\/knowledge\/([a-f0-9]{64})\/correction$/);
+      if (req.method === 'POST' && correction) {
+        if (!exactKeys(input, ['note'])) return json(res, 409, { error: 'request refused' });
+        const target = store.knowledge.entries().find(row => row.hash === correction[1]);
+        const source = store.db.prepare('SELECT item FROM events WHERE body_hash=?').get(correction[1]);
+        const item = target?.body?.item || target?.body?.parent?.item || source?.item;
+        if (!target || !item || !readable(item)) return json(res, 403, { error: 'request refused' });
+        return json(res, 201, challengeClaim(store, { target: correction[1], actor: session.person, note: input.note, at: new Date(clock()).toISOString() }));
       }
       const deliver = url.pathname.match(/^\/api\/items\/([^/]+)\/artifact$/);
       if (req.method === 'POST' && deliver) {

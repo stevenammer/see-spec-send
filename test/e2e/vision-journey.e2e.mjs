@@ -225,6 +225,11 @@ async function main() {
     assert.equal(await maya.locator('form[data-include]').count(), 0, 'a member sees no Include control');
     await ben.goto(itemUrl);
     assert.equal(await ben.locator('form[data-include]').count(), 0, 'another member sees no Include control');
+    // Ben disagrees about the approach. A fork later needs exactly this: an alternative the steward did not take up.
+    await ben.locator('form[data-event=commented] [name=kind]').first().selectOption('alternative');
+    await ben.locator('form[data-event=commented] [name=comment]').first().fill('Pass the note through the transfer screen instead.');
+    await ben.locator('form[data-event=commented]').first().getByRole('button', { name: 'Post comment' }).click();
+    await ben.getByText('Pass the note through the transfer screen instead.').first().waitFor();
     const mayaHash = await olive.reload().then(() => olive.locator('li:has-text("Does the caller repeat") form[data-include] [name=comment]').first().inputValue());
     const baseHash = await olive.locator('form[data-event=revised] [name=base_hash]').inputValue();
     const refused = await rawPost(maya, `/api/items/${itemId}/events`, {

@@ -41,6 +41,7 @@ test('F4 fork API binds historical versions, retries once, and refuses arbitrary
   const op = await login('op'), member = await login('member'), leader = await login('leader');
   const id = (await boundCall(handler, 'POST', '/api/items', { original: 'Transfer drops the note.' }, op)).body.id;
   const see = store.read(id).context.seeHash;
+  assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/events`, { type: 'commented', comment: 'A different note layout would work better.', kind: 'alternative', anchor_kind: 'see', anchor_hash: see }, member)).status, 201);
   assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/events`, { type: 'specced', see_hash: see, must: ['Keep the note'], how_we_know: ['Transfer retains it'], out_of_scope: [] }, op)).status, 201);
   const spec = store.read(id).context.specHash;
   assert.deepEqual(store.events(id).at(-1).scope, { data_sources: [], audiences: [] });

@@ -23,6 +23,7 @@ import { effortAllowance } from '../gateway/effort.js';
 import { Mentoring } from '../core/mentoring.js';
 import { mentoringHome, mentoringRequest, mentoringEvidence } from './pages-mentoring.js';
 import { emptyScope, validScope } from '../core/scope.js';
+import { reconciliation, forkEligibility } from '../core/reconcile.js';
 import { searchPage, contributionsPage, recordPage } from './pages-memory.js';
 
 // Object key order does not change a retry identity. Array order is meaningful.
@@ -223,7 +224,7 @@ const validEvent = input => {
       && text(input.comment, 4000) && ((input.anchor_kind === undefined && input.anchor_hash === undefined)
         || (['see', 'spec', 'artifact', 'send'].includes(input.anchor_kind) && hex(input.anchor_hash)))
       && (input.parent === undefined || hex(input.parent))
-      && (input.kind === undefined || ['comment', 'question', 'concern'].includes(input.kind));
+      && (input.kind === undefined || ['comment', 'question', 'concern', 'alternative'].includes(input.kind));
     case 'sent': case 'forked': case 'steered': return false;
     default: return false;
   }
@@ -589,6 +590,20 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           at: new Date().toISOString() }, { idem: req.headers['idempotency-key'] || randomUUID() });
         return json(res, 201, { ...result, packet_hash });
       }
+      const reconcileFor = itemId => {
+        const events = store.events(itemId);
+        if (!events.length) throw refused('item not found');
+        const state = store.read(itemId);
+        const posts = store.db.prepare('SELECT post_id, closed_seq FROM stage_posts WHERE item=?').all(itemId);
+        const terminal = !['SEEN', 'CHECKED', 'SPECCED', 'SUBMITTED', 'SENDING', 'TRYING'].includes(state.state);
+        return { events, state, report: reconciliation(events, { posts, steward: state.context.steward, now: clock(), terminal }) };
+      };
+      const recon = url.pathname.match(/^\/api\/items\/([^/]+)\/reconciliation$/);
+      if (req.method === 'GET' && recon) {
+        const { report, state } = reconcileFor(recon[1]);
+        return json(res, 200, { ...report, steward: state.context.steward,
+          you: forkEligibility(report, { person: session.person, steward: state.context.steward }) });
+      }
       const fork = url.pathname.match(/^\/api\/items\/([^/]+)\/fork$/);
       if (req.method === 'POST' && fork) {
         if (!exactKeys(input, ['reason', 'from']) || !text(input.reason, 2000)
@@ -603,6 +618,9 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           return json(res, 200, { id, ...store.read(id), idempotent: true });
         }
         const point = store.forkPoint(fork[1], input.from, undefined, { extended: true });
+        const { report, state: parentState } = reconcileFor(fork[1]);
+        const eligibility = forkEligibility(report, { person: session.person, steward: parentState.context.steward });
+        if (!eligibility.allowed) return json(res, 409, { error: 'request refused', reason: eligibility.reason, ...(eligibility.not_before ? { not_before: eligibility.not_before } : {}) });
         const result = store.append(id, { type: 'forked', actor: session.person, ...point, seed_policy: 2, rules: CURRENT_RULES, reason: input.reason,
           ...(input.from ? { from: input.from } : {}), at: new Date(clock()).toISOString() }, { idem: key });
         return json(res, 201, { id, ...result });

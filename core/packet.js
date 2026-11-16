@@ -4,7 +4,7 @@ import { RESEARCH_SOURCES } from '../research/connectors.js';
 // Deterministic, deliberately plain decision packet. It describes unavailable
 // research instead of pretending that a connector checked it.
 export function buildPacket({ original, see, spec, credits = [], comments = [], gatewayPolicy = {}, sandboxLimits = {}, researched, userEvidence = [], estimate, lineage = null } = {}) {
-  const openConcerns = comments.filter(comment => comment.kind === 'concern' && !comment.erased)
+  const openConcerns = comments.filter(comment => ['concern', 'alternative'].includes(comment.kind) && !comment.erased)
     .map(comment => ({ author: comment.actor, text: comment.comment }));
   const included = new Set(credits.map(credit => credit.comment));
   const acceptedCredits = credits.map(credit => {

@@ -46,7 +46,7 @@ test('F1 HTTP journey has server-built send, fork, and steer routes, then expose
   assert.match(page.text, /Original/); assert.match(page.text, /Current SEE v1/); assert.match(page.text, /SPEC IT!/);
   const seeHash = store.read(id).context.seeHash;
   const comment = await boundCall(handler, 'POST', `/api/items/${id}/events`, {
-    type: 'commented', comment: 'Show the last caller note before transfer.', kind: 'concern', anchor_kind: 'see', anchor_hash: seeHash,
+    type: 'commented', comment: 'Show the last caller note before transfer.', kind: 'alternative', anchor_kind: 'see', anchor_hash: seeHash,
   }, member);
   assert.equal(comment.status, 201);
   page = await boundCall(handler, 'GET', `/items/${id}`, null, op);

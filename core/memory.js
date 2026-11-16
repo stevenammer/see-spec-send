@@ -103,6 +103,10 @@ export function searchMemory(store, person, text, { limit = 20 } = {}) {
     WHERE search_docs MATCH ? AND COALESCE(ps.disabled,0)=0
       AND NOT EXISTS(SELECT 1 FROM events er JOIN bodies eb ON eb.hash=er.body_hash
         WHERE er.item=e.item AND er.type='erased' AND json_extract(eb.bytes,'$.body_hash')=e.body_hash)
+    AND (NOT EXISTS(SELECT 1 FROM events first JOIN bodies fb ON fb.hash=first.body_hash
+      WHERE first.item=d.item AND first.seq=1 AND json_array_length(json_extract(fb.bytes,'$.audience')) > 0)
+      OR EXISTS(SELECT 1 FROM events first JOIN bodies fb ON fb.hash=first.body_hash JOIN group_members gm ON gm.person=viewer.id
+        WHERE first.item=d.item AND first.seq=1 AND gm.group_name IN (SELECT value FROM json_each(json_extract(fb.bytes,'$.audience')))))
     ORDER BY e.at DESC,d.item,d.seq LIMIT ?`).all(person, query, size);
 }
 

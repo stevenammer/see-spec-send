@@ -9,7 +9,7 @@ const canonical = value => {
   }).join(',')}}`;
 };
 const sha = value => createHash('sha256').update(value).digest('hex');
-const kinds = new Set(['delta', 'impact', 'receipt', 'annex', 'annex_response']);
+const kinds = new Set(['delta', 'impact', 'receipt', 'annex', 'annex_response', 'edge', 'capability']);
 
 export class KnowledgeLog {
   constructor(store) { this.store = store; }

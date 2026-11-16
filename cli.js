@@ -66,6 +66,7 @@ const ADMIN = {
   migrate: args => (args.includes('--check') ? null : 'migrate'),
   invite: args => (['create', 'revoke'].includes(args[0]) ? `invite ${args[0]}` : null),
   person: args => (['disable', 'enable', 'promote', 'demote', 'reset'].includes(args[0]) ? `person ${args[0]}` : null),
+  group: args => (['create', 'add', 'remove'].includes(args[0]) ? `group ${args[0]}` : null),
   session: args => (args[0] === 'revoke' ? 'session revoke' : null),
   token: args => (args[0] === 'create' ? 'token create' : null),
   kill: args => (['set', 'clear'].includes(args[0]) ? `kill ${args[0]}` : null),
@@ -438,6 +439,13 @@ async function run(argv, env, write) {
       const code = await auth.resetPerson(who());
       write(`single-use code: ${code}`);
     } else fail('expected person list, disable, enable, promote, demote, or reset');
+  } else if (command === 'group') {
+    const action = args[0]; const name = value('--name') || fail('missing --name');
+    if (action === 'create') { store.groupCreate(name, value('--description') || ''); write(`group ${name} created`); }
+    else if (action === 'add') { store.groupAdd(name, value('--person') || fail('missing --person')); write(`person added to ${name}`); }
+    else if (action === 'remove') { store.groupRemove(name, value('--person') || fail('missing --person')); write(`person removed from ${name}`); }
+    else if (action === 'list') { for (const group of store.groups()) write(JSON.stringify(group)); }
+    else fail('expected group create, add, remove, or list');
   } else if (command === 'session' && args[0] === 'revoke') {
     auth.revokePerson(value('--person') || fail('missing --person'));
   } else if (command === 'token' && args[0] === 'create') {

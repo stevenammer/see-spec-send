@@ -17,7 +17,7 @@ export function deliverAnnexes(store, { now, canRead: policy = defaultCanRead } 
   let entries = 0, pinged = 0;
   for (const row of store.knowledge.entries('annex')) {
     for (const person of recipients(store, row.body)) {
-      if (!canRead(person, row.body.parent.item, policy)) continue;
+      if (!canRead(person, store.readScope(row.body.parent.item), policy)) continue;
       const prior = store.db.prepare('SELECT 1 FROM digest_entries WHERE person=? AND annex_hash=?').get(person, row.hash);
       if (prior) continue;
       const muted = store.db.prepare('SELECT 1 FROM reanalysis_mute WHERE person=?').get(person);

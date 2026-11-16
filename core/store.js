@@ -14,6 +14,7 @@ import { buildCloseout } from './closeout.js';
 import { normalizeLedger, rebuildLedger, validLedger } from '../knowledge/ledger.js';
 import { normalizeEstimates, validEstimates } from '../knowledge/estimate.js';
 import { KnowledgeLog } from '../knowledge/chain.js';
+import { canRead } from '../access/read.js';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 // Fixed page size for the feed and the item API. There is no setting for it.
@@ -114,6 +115,25 @@ export class Store {
       CREATE TABLE lineage_relations(child TEXT PRIMARY KEY, relation TEXT NOT NULL);`);
     this.rebuildLineage();
   }
+  migrateS3() {
+    this.db.exec(`CREATE TABLE groups(name TEXT PRIMARY KEY, description TEXT NOT NULL DEFAULT '');
+      CREATE TABLE group_members(group_name TEXT NOT NULL, person TEXT NOT NULL, PRIMARY KEY(group_name,person));
+      CREATE TABLE capability_catalog(id TEXT PRIMARY KEY, tags TEXT NOT NULL, summary TEXT NOT NULL, source_item TEXT, source_hash TEXT, created_at TEXT NOT NULL);`);
+  }
+  groupCreate(name, description = '') {
+    if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$/.test(name) || typeof description !== 'string' || description.length > 1000) throw invalid('invalid group');
+    this.db.prepare('INSERT INTO groups(name,description) VALUES(?,?)').run(name, description);
+  }
+  groupAdd(name, person) { this.actor(person); if (!this.db.prepare('SELECT 1 FROM groups WHERE name=?').get(name)) throw invalid('unknown group'); this.db.prepare('INSERT OR IGNORE INTO group_members VALUES(?,?)').run(name, person); }
+  groupRemove(name, person) { this.db.prepare('DELETE FROM group_members WHERE group_name=? AND person=?').run(name, person); }
+  groups() { return this.db.prepare("SELECT g.name,g.description,COALESCE(json_group_array(m.person) FILTER (WHERE m.person IS NOT NULL),'[]') AS members FROM groups g LEFT JOIN group_members m ON m.group_name=g.name GROUP BY g.name,g.description ORDER BY g.name").all().map(row => ({ ...row, members: JSON.parse(row.members) })); }
+  readScope(item) {
+    const first = this.eventRows(item)[0]; if (!first) return null;
+    const event = this.eventFromRow(first); const audience = Array.isArray(event.audience) ? event.audience : [];
+    const members = audience.length ? this.db.prepare(`SELECT person FROM group_members WHERE group_name IN (${audience.map(() => '?').join(',')})`).all(...audience).map(row => row.person) : [];
+    return { id: item, audience, members, steward: this.read(item).context.steward };
+  }
+  canRead(viewer, item) { return canRead(viewer, this.readScope(item)); }
   stageProjection(item) {
     let context = initial();
     const posts = [], jobs = [], byId = new Map();
@@ -450,6 +470,15 @@ export class Store {
     if (!item || !event?.type || !event.actor) throw refused('item, event, and actor required');
     if (Object.hasOwn(event, 'role')) throw refused('event role is forbidden');
     if (typeof event.at !== 'string' || !event.at) throw refused('event.at required');
+    if (Object.hasOwn(event, 'audience')) {
+      if (event.type !== 'posted' || event.rules !== 3 || !Array.isArray(event.audience) || new Set(event.audience).size !== event.audience.length
+        || !event.audience.every(name => typeof name === 'string' && this.db.prepare('SELECT 1 FROM groups WHERE name=?').get(name))) throw refused('audience is only allowed on a rules 3 posted event and must name existing groups');
+    }
+    if (Object.hasOwn(event, 'related')) {
+      if (event.type !== 'posted' || event.rules !== 3 || !Array.isArray(event.related) || !event.related.every(ref => ref && Object.keys(ref).length === 4
+        && typeof ref.item === 'string' && Number.isSafeInteger(ref.seq) && typeof ref.hash === 'string' && typeof ref.edge === 'string'
+        && this.eventRows(ref.item).some(row => row.seq === ref.seq && row.hash === ref.hash))) throw refused('related must contain exact recorded item, sequence, hash, and edge references');
+    }
     this.actor(event.actor, item);
     if (!importing && this.read(item).context.rules >= 3 && ['returned', 'not_built'].includes(event.type))
       throw refused('legacy decision type unavailable for current rules');

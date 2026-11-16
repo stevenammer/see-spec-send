@@ -310,7 +310,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       )
         return json(res, 403, { error: 'request refused' });
       let input = change ? await body(req) : {};
-      const readable = item => session && canRead(session.person, item, readPolicy);
+      const readable = item => session && canRead(session.person, store.readScope(item), readPolicy);
       const ip = clientAddress(req, trustedProxy);
       if (req.method === 'GET' && url.pathname === '/api/oidc/start') {
         if (!auth.oidc) return json(res, 404, { error: 'not found' });
@@ -447,6 +447,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       }
       const recordView = url.pathname.match(/^\/items\/([^/]+)\/record\/([a-f0-9]{64})$/);
       if (req.method === 'GET' && recordView) {
+        if (!readable(recordView[1])) return json(res, 403, { error: 'request refused' });
         const event = store.events(recordView[1]).find(entry => entry.body_hash === recordView[2]);
         if (!event) return json(res, 404, { error: 'not found' });
         const erased = store.db.prepare('SELECT erased FROM bodies WHERE hash=?').get(recordView[2])?.erased === 1
@@ -474,6 +475,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       }
       const specView = url.pathname.match(/^\/items\/([^/]+)\/spec$/);
       if (req.method === 'GET' && specView) {
+        if (!readable(specView[1])) return json(res, 403, { error: 'request refused' });
         const state = store.read(specView[1]);
         const sourceHash = url.searchParams.get('source_comment');
         const source = state.context.activePost?.kind === 'spec' && state.context.steward === session.person && /^[a-f0-9]{64}$/.test(sourceHash || '')
@@ -486,7 +488,11 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       }
       const view = url.pathname.match(/^\/items\/([^/]+)$/);
       if (req.method === 'GET' && view) {
-        if (!readable(view[1])) return json(res, 403, { error: 'request refused' });
+        if (!readable(view[1])) {
+          const scope = store.readScope(view[1]);
+          if (!scope) return json(res, 404, { error: 'not found' });
+          return page(res, `<main><h1>Restricted related case</h1><p>A restricted related case exists. Ask ${String(scope.steward || 'its steward').replace(/[&<>]/g, '')} for details.</p></main>`);
+        }
         const state = store.read(view[1]);
         const events = store.events(view[1]);
         if (state.state === 'SPECCED' && leader && state.context.steward !== session.person)
@@ -540,13 +546,14 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         const listing = store.listPage(pageAfter(url));
         // One receipt verification pass covers the whole page.
         const budgets = meteringSummaries(store, listing.items.map(item => item.id));
-        return json(res, 200, { items: listing.items.map(item => ({ ...item,
+        return json(res, 200, { items: listing.items.filter(item => readable(item.id)).map(item => ({ ...item,
           spent_basis: 'legacy charged events only', gateway_budget: budgets.get(item.id) })), next: listing.next });
       }
       if (req.method === 'POST' && url.pathname === '/api/items') {
         if (!input.quest && tooLarge(input)) return json(res, 413, { error: 'request too large' });
         if (Object.hasOwn(input, 'original')) {
-          if (!exactKeys(input, ['original']) || !text(input.original, 4000))
+          if (!exactKeys(input, ['original', 'audience', 'related']) || !text(input.original, 4000)
+            || (input.audience !== undefined && (!Array.isArray(input.audience) || !input.audience.every(value => typeof value === 'string'))))
             return json(res, 409, { error: 'request refused' });
           const idem = req.headers['idempotency-key'] || randomUUID();
           // A retry must point at the same fresh item, so idempotency can run before
@@ -554,9 +561,9 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           const id = createHash('sha256').update(`posted\0${session.person}\0${idem}`).digest('base64url');
           const prior = store.events(id).find(event => event.type === 'posted' && event.actor === session.person);
           const retry = prior?.original === input.original && { type: prior.type, actor: prior.actor,
-            original: prior.original, rules: prior.rules, at: prior.at };
+            original: prior.original, rules: prior.rules, audience: prior.audience, related: prior.related, at: prior.at };
           store.append(id, retry || { type: 'posted', actor: session.person, original: input.original,
-            rules: CURRENT_RULES, at: new Date(clock()).toISOString() }, { idem });
+            rules: CURRENT_RULES, ...(input.audience ? { audience: input.audience } : {}), ...(input.related ? { related: input.related } : {}), at: new Date(clock()).toISOString() }, { idem });
           return json(res, 201, { id, state: store.read(id) });
         }
         // Derive and validate before looking up a receipt, including the signed-in owner.
@@ -711,6 +718,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       }
       const artifact = url.pathname.match(/^\/api\/items\/([^/]+)\/artifact\/([a-f0-9]{64})$/);
       if (req.method === 'GET' && artifact) {
+        if (!readable(artifact[1])) return json(res, 403, { error: 'request refused' });
         // A try is shown only inside the item page's sandboxed frame. Opened as a page, it would run on this hostname.
         if (req.headers['sec-fetch-dest'] !== 'iframe') return json(res, 403, { error: 'request refused' });
         const html = store.artifact(artifact[1], artifact[2]);
@@ -728,6 +736,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       }
       const closeout = url.pathname.match(/^\/api\/items\/([^/]+)\/closeout\/([^/]+)$/);
       if (req.method === 'GET' && closeout) {
+        if (!readable(closeout[1])) return json(res, 403, { error: 'request refused' });
         const job = store.db.prepare("SELECT artifact_hash FROM closeout_jobs WHERE item=? AND post_id=? AND state='done'")
           .get(closeout[1], decodeURIComponent(closeout[2]));
         const bytes = job?.artifact_hash && store.artifact(closeout[1], job.artifact_hash);

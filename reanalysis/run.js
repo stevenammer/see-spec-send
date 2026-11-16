@@ -4,6 +4,8 @@ import { extractDeltas } from '../knowledge/delta.js';
 import { findImpacts } from './match.js';
 import { buildAnnex, recordAnnex } from './annex.js';
 import { deliverAnnexes } from '../notifications/digest.js';
+import { catalogCapabilities } from '../knowledge/catalog.js';
+import { propagateOpportunities } from './propagate.js';
 
 const DAY = 7 * 24 * 60 * 60 * 1000;
 
@@ -22,7 +24,8 @@ export function runReanalysis(store, { now, limit = 20, canRead: policy = defaul
     const match = findImpacts(store, delta, { canRead: policy });
     held.push(...match.held);
     for (const impact of match.checked) {
-      if (!canRead(null, delta.source.item, policy) || !canRead(null, impact.target.item, policy)) { held.push(impact); continue; }
+      const viewer = store.read(delta.source.item).context.steward;
+      if (!canRead(viewer, store.readScope(delta.source.item), policy) || !canRead(viewer, store.readScope(impact.target.item), policy)) { held.push(impact); continue; }
       const pair = store.db.prepare('SELECT 1 FROM reanalysis_pairs WHERE delta_hash=? AND item=? AND decision_hash=?')
         .get(delta.body_hash, impact.target.item, impact.target.decision_hash || '');
       if (pair || cooled(store, impact, delta, now)) { skipped.push(impact); continue; }
@@ -38,6 +41,8 @@ export function runReanalysis(store, { now, limit = 20, canRead: policy = defaul
       components: ['deterministic_overlap', 'access_read'], counts: { checked: match.checked.length, held: match.held.length } }, { at: now });
     receipts.push(receipt);
   }
+  const capabilities = catalogCapabilities(store, { at: now });
+  const edges = propagateOpportunities(store, { at: now });
   const delivery = deliverAnnexes(store, { now, canRead: policy });
-  return { deltas, annexes, held, receipts, skipped, delivery };
+  return { deltas, annexes, held, receipts, skipped, capabilities, edges, delivery };
 }

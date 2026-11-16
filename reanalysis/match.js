@@ -31,7 +31,10 @@ export function findImpacts(store, delta, { canRead: policy } = {}) {
       snapshot_hash: target.snapshot_hash, decision_hash }, cites: [candidate.cite], shared_terms: common,
       why_this_case: `Recorded terms overlap: ${common.join(', ') || 'none'}.`,
       overlap_with_stated_reason: candidate.cite.kind === 'decision_reason' ? common.length >= 3 : Boolean(common.length >= 3 && candidate.decision?.event.reason && shared(deltaText, candidate.decision.event.reason).length >= 3) };
-    const allowed = canRead(null, delta.source.item, policy) && canRead(null, target.item, policy);
+    const sourceViewer = store.read(delta.source.item).context.steward;
+    const targetViewer = store.read(target.item).context.steward;
+    const allowed = canRead(sourceViewer, store.readScope(delta.source.item), policy) && canRead(targetViewer, store.readScope(target.item), policy)
+      && canRead(sourceViewer, store.readScope(target.item), policy);
     // A result never reanalyzes the case it came from (or any case in its own provenance).
     const ownSource = delta.source.item === target.item || provenance.some(root => store.eventRows(target.item).some(row => row.hash === root));
     const qualifies = common.length >= 3 && allowed && !duplicate && !ownSource && delta.generation <= 2;

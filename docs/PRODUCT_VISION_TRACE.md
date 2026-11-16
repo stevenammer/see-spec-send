@@ -12,7 +12,7 @@ Current limits: no Teams, Graph, Entra, Slack or SMS integration is shipped. SQL
 
 ## Current implementation
 
-The conversation is visible within this workspace. It is not an instruction to publish organizational or personal data on the public internet. Proposed audience identifiers do not create a per-item access partition: every enabled workspace member can currently read work posts.
+The conversation is visible within this workspace. It is not an instruction to publish organizational or personal data on the public internet. Rules-3 posts may carry a creation-time group audience; empty audience remains workspace-wide. A restricted post is not disclosed outside that group beyond its existence and steward contact.
 
 | Requirement | Implementation | Evidence and limits |
 | --- | --- | --- |

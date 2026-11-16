@@ -17,8 +17,8 @@ An honest table. A row says **Shipped and tested** only when a named test in thi
 | Continuous reanalysis (new internal results checked against earlier work; linked updates; new-decision path) | Shipped and tested | `test/reanalysis-scenarios.test.mjs`, `test/reanalysis-delivery.test.mjs`, `test/e2e/reanalysis-journey.e2e.mjs` | Internal results only, deterministic matching (no model). Updates appear on frozen cases; an open discussion does not receive them yet. Run from the CLI; no scheduler
 | Working ledger and sourced estimates | Shipped and tested | `test/ledger.test.mjs`, `test/estimate.test.mjs` | Estimates come from the gateway policy, prior builds and author judgment, labeled as such; they never set the approved cap. Statuses change only when the steward revises the SPEC |
 | Private reflection after decisions | Shipped and tested | `test/reflection.test.mjs` | Notes stay in the person's browser only; they do not follow the person across devices |
-| Departments and read scopes | Planned | none | Every workspace member can read work posts today |
-| Opportunity propagation | Planned | none | Not started |
+| Departments and read scopes | Built (not verified live) | `test/read-scope.test.mjs` | Groups are admin-CLI managed; restricted work exposes existence and steward contact outside its audience |
+| Opportunity propagation | Built (not verified live) | `test/propagation-s3.test.mjs` | Deterministic catalog/tag matching only; every edge remains a candidate until a person acts |
 | Correctable derived memory | Planned | none | Source erasure exists; derived records do not yet exist |
 | Microsoft Teams and other channels | Planned | none | Nothing shipped |
 | Customer-owned storage, enterprise sign-in | Planned | none | Seams only |

@@ -24,6 +24,7 @@ export const MIGRATIONS = Object.freeze([
   { name: 'S4 OpenCode bundle adapter jobs', up: store => store.db.exec(`CREATE TABLE IF NOT EXISTS opencode_jobs(
     id TEXT PRIMARY KEY, input TEXT NOT NULL, state TEXT NOT NULL, container_name TEXT NOT NULL,
     token_digest TEXT, deadline INTEGER NOT NULL, bundle_root TEXT NOT NULL, error TEXT)` ) },
+  { name: 'S3 groups, read scopes, and opportunity propagation', up: store => store.migrateS3() },
 ]);
 export const SCHEMA_VERSION = MIGRATIONS.length;
 

@@ -40,6 +40,7 @@ export function evidencePackage(store, viewer, request, { clock = Date.now } = {
   if (!enabled) throw refused('enabled workspace person required');
   const sources = [], selected = [], missing = [];
   for (const item of request.items) {
+    if (!store.canRead(viewer, item)) throw refused('a selected work item is unavailable or failed verification');
     const rows = store.db.prepare(`SELECT e.*,b.erased FROM events e JOIN bodies b ON b.hash=e.body_hash
       JOIN actors viewer ON viewer.id=? AND viewer.kind='person'
       LEFT JOIN person_state ps ON ps.id=viewer.id

@@ -25,7 +25,7 @@ import { Mentoring } from '../core/mentoring.js';
 import { mentoringHome, mentoringRequest, mentoringEvidence } from './pages-mentoring.js';
 import { emptyScope, validScope } from '../core/scope.js';
 import { reconciliation, forkEligibility, stewardInactivity, transferEligibility } from '../core/reconcile.js';
-import { searchPage, contributionsPage, recordPage } from './pages-memory.js';
+import { searchPage, contributionsPage, recordPage, knowledgePage } from './pages-memory.js';
 import { canRead, defaultCanRead } from '../access/read.js';
 import { challengeClaim } from '../knowledge/corrections.js';
 import { searchKnowledge } from '../knowledge/index.js';
@@ -484,7 +484,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       if (req.method === 'GET' && url.pathname === '/knowledge') {
         const query = url.searchParams.get('q') || '';
         const rows = searchKnowledge(store, session.person, query);
-        return page(res, `<main><h1>Knowledge</h1><form method="get"><label>Search typed records<input name="q" value="${query.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;')}"></label><button>Search</button></form><ul>${rows.map(row => `<li>${row.type}: <a href="/items/${encodeURIComponent(row.item)}/record/${encodeURIComponent(row.hash)}">${row.text.replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</a>${row.connected === false ? ' (not connected)' : ''}</li>`).join('')}</ul></main>`);
+        return page(res, knowledgePage(query, rows));
       }
       const personView = url.pathname.match(/^\/people\/([^/]+)$/);
       if (req.method === 'GET' && personView) {

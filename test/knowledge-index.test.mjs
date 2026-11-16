@@ -47,3 +47,12 @@ test('restore from an older backup does not revive retracted annexes or old appr
     } finally { recovered.close(); }
   } finally { try { store.close(); } catch {} rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('the knowledge page is a complete document with a title, a language and the shared navigation, and escapes everything', async () => {
+  const { knowledgePage } = await import('../app/pages-memory.js');
+  const html = knowledgePage('"><script>x</script>', [{ type: 'decision', item: 'a/b', hash: 'h1', text: '<img src=x onerror=alert(1)> & more' }, { type: 'research', item: 'c', hash: 'h2', text: 'ok', connected: false }]);
+  assert.match(html, /^<!doctype html><html lang="en">/); assert.match(html, /<title>Knowledge<\/title>/); assert.match(html, /<header>/);
+  assert.doesNotMatch(html, /<script>x|<img src=x/); assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt; &amp; more/);
+  assert.match(html, /a%2Fb\/record\/h1/); assert.match(html, /\(not connected\)/);
+  assert.match(knowledgePage('zzz', []), /No typed records match/);
+});

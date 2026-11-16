@@ -13,3 +13,9 @@ export function recordPage(item, event, erased = false, canAcknowledge = true) {
   const acknowledge = !erased && canAcknowledge ? `<form data-event="credit_note"><h2>Acknowledge this contribution</h2><input type="hidden" name="person" value="${escape(event.actor)}"><input type="hidden" name="source" value="${escape(event.body_hash)}"><label>What did it contribute?<textarea name="note" required maxlength="2000"></textarea></label><button>Record acknowledgement</button></form><script src="/assets/app.js" defer></script>` : '';
   return shell('Work record', `<p><a href="/items/${encodeURIComponent(item)}">Back to SEE</a></p><h1>Work record</h1><p>${escape(event.type)} by <a href="/people/${encodeURIComponent(event.actor)}">${escape(event.actor)}</a> on ${escape(event.at)}.</p><p>Version identity: ${escape(event.body_hash)}.</p>${erased ? '<p>This content was erased. Its existence and attribution remain recorded.</p>' : `<pre>${escape(text)}</pre>${acknowledge}`}`);
 }
+
+// The typed Knowledge index. It uses the same page shell as every other page, so it has a title, a language and the shared navigation.
+export function knowledgePage(query, rows) {
+  const list = rows.map(row => `<li>${escape(row.type)}: <a href="/items/${encodeURIComponent(row.item)}/record/${encodeURIComponent(row.hash)}">${escape(row.text)}</a>${row.connected === false ? ' (not connected)' : ''}</li>`).join('');
+  return shell('Knowledge', `<h1>Knowledge</h1><form method="get"><label>Search typed records<input name="q" value="${escape(query)}"></label><button>Search</button></form>${rows.length ? `<ul>${list}</ul>` : '<p>No typed records match.</p>'}`);
+}

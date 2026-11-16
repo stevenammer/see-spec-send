@@ -117,7 +117,8 @@ const body = async (req, limit) => {
     throw invalid('bad json');
   });
   try { const value = JSON.parse(raw.toString('utf8') || '{}');
-    if (!safeObject(value)) throw invalid('bad json'); return value;
+    // Every route takes a JSON object. null, a bare string, a number or an array is never a valid request.
+    if (!safeObject(value) || value === null || typeof value !== 'object' || Array.isArray(value)) throw invalid('bad json'); return value;
   } catch { throw invalid('bad json'); }
 };
 const cookies = req =>

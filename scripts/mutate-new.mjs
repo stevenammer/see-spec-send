@@ -64,6 +64,10 @@ const mutants = [
   ['oidc: nobody is provisioned by default', 'app/auth.js', "if (!this.oidc.autoProvision) throw new Error('OIDC person is not provisioned');", '', T(['oidc-provider'])],
   ['oidc: a state can be used once', 'app/oidc.js', 'this.pending.delete(state);', '', T(['oidc-provider'])],
   ['oidc: the browser binding is checked', 'app/oidc.js', '|| pending.binderHash !== sha256(binder)', '', T(['oidc-provider'])],
+  ['fuzz: a JSON null or array body is refused', 'app/http.js', "|| value === null || typeof value !== 'object' || Array.isArray(value)) throw invalid('bad json'); return value;", ") throw invalid('bad json'); return value;", T(['fuzz-routes'])],
+  ['fuzz: a missing password never reaches the hash function', 'app/auth.js', "if (typeof password !== 'string') return false;          // a missing or non-text password never reaches the hash function", '', T(['fuzz-routes'])],
+  ['fuzz: a malformed analysis request is a refusal', 'intelligence/run.js', "|| !Array.isArray(request.objectives) || !request.objectives.every(value => typeof value === 'string'))", ')', T(['fuzz-routes'])],
+  ['fuzz: redeem with missing fields is a refusal', 'app/auth.js', "if (typeof value !== 'string' || typeof password !== 'string') throw invalid('invite unavailable');", '', T(['fuzz-routes'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 if (process.argv.includes('--check-sources')) {

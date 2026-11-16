@@ -58,6 +58,7 @@ export class Auth {
   }
 
   async matches(password, record) {
+    if (typeof password !== 'string') return false;          // a missing or non-text password never reaches the hash function
     const [kind, n, r, p, salt, expected] = String(record).split('$');
     if (kind !== 'scrypt') return false;
     const value = await scrypt(password, salt, 64, {
@@ -123,6 +124,8 @@ export class Auth {
   }
 
   async redeem(value, id, password, ip = 'local') {
+    // Missing or non-text inputs are an ordinary refusal, never a crash inside hashing.
+    if (typeof value !== 'string' || typeof password !== 'string') throw invalid('invite unavailable');
     if (!validAccountId(id)) throw invalid('invalid account id');
     const existing = this.db.prepare('SELECT id FROM users WHERE lower(id)=lower(?)').get(id);
     // Leave an exact duplicate to the INSERT below. That preserves the no-transaction-during-

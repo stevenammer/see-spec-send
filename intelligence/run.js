@@ -54,6 +54,9 @@ function refusal(packet, original) {
 }
 
 export async function runAnalysis({ store, viewer, request, askModel = null, now = new Date().toISOString(), clock = Date.now }) {
+  // Shape first: a malformed request is a refusal, never a crash while testing it against the prohibited list.
+  if (!request || typeof request !== 'object' || Array.isArray(request) || typeof request.question !== 'string' || !Array.isArray(request.objectives) || !request.objectives.every(value => typeof value === 'string'))
+    throw refused('a question and a list of objectives are required');
   const reframe = prohibited.test([request?.question, ...(request?.objectives || [])].join('\n'));
   const packet = reframe ? reframedPacket(store, viewer, request, { clock }) : evidencePackage(store, viewer, request, { clock });
   let checked, configuration;

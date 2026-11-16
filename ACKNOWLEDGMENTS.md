@@ -16,6 +16,12 @@ Only things this repository actually uses, tests against or documents are listed
 
 - **Playwright** and **Google Chrome**: the optional end-to-end and artifact-origin tests drive a real browser. Neither is bundled; you point the tests at your own install.
 
+## Optional components you provide or enable
+
+- **OpenCode** (MIT licensed): the optional coding agent the opt-in builder runs inside the locked container. It is installed into its own image at build time, pinned to a release in `worker/opencode/Dockerfile`, and is not part of this repository.
+- **axe-core** (Deque Systems, MPL-2.0): used only by the optional accessibility audit (`scripts/a11y-audit.mjs`). Not bundled; you provide it.
+- **Amazon Bedrock**: an optional model provider kind. The adapter signs requests itself and uses no AWS SDK. Nothing is sent unless an operator configures a provider.
+
 ## Mentioned, not integrated
 
 - **OpenHands** and **Docker**: the builder adapter is designed around that kind of sandboxed agent runner, but no OpenHands code or Docker image is used or proven here (see docs/ADAPTER.md).

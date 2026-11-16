@@ -52,6 +52,18 @@ const mutants = [
   ['security: restricted items do not leak through the related route', 'app/http.js', "if (store.readScope(relatedView[1]) && !readable(relatedView[1])) return json(res, 403, { error: 'request refused' });", '', T(['security-restricted-related-route-idor'])],
   ['security: annex target readers must be able to read the source', 'reanalysis/match.js', '&& audienceCovers(scopeOf(delta.source.item), scopeOf(target.item));', ';', T(['security-reanalysis-cross-scope-annex'])],
   ['security: open-thread readers must be able to read the source', 'reanalysis/open.js', 'if (!audienceCovers(store.readScope(delta.source.item), store.readScope(target.item))) continue;', '', T(['reanalysis-open'])],
+  ['oidc: the signature is verified', 'app/oidc-provider.js', "if (!valid) throw new Error('OIDC token refused');", '', T(['oidc-provider'])],
+  ['oidc: the audience is checked', 'app/oidc-provider.js', '!audience.includes(this.config.clientId)', 'false', T(['oidc-provider'])],
+  ['oidc: the nonce is checked', 'app/oidc-provider.js', '!equal(claims.nonce, nonce)', 'false', T(['oidc-provider'])],
+  ['oidc: unknown key ids cannot flood the provider', 'app/oidc-provider.js', 'this.clock() - this.lastUnknownKidRefresh >= UNKNOWN_KID_REFRESH_MS', 'true', T(['oidc-provider'])],
+  ['oidc: keys named in a header are refused', 'app/oidc-provider.js', 'header.jku !== undefined || header.x5u !== undefined || header.jwk !== undefined || header.key !== undefined', 'false', T(['oidc-provider'])],
+  ['oidc: a domain rule needs an email', 'app/oidc-provider.js', "if (this.config.allowedEmailDomains && claims.email === undefined) throw new Error('OIDC token refused');", '', T(['oidc-provider'])],
+  ['oidc: the tenant is pinned', 'app/oidc-provider.js', '(this.config.tenantId && claims.tid !== this.config.tenantId)', 'false', T(['oidc-provider'])],
+  ['oidc: discovery issuer must match exactly', 'app/oidc-provider.js', 'metadata.issuer !== this.config.issuer', 'false', T(['oidc-provider'])],
+  ['oidc: password login really disabled', 'app/http.js', "if (disablePasswordLogin) return json(res, 404, { error: 'not found' });", '', T(['oidc-provider'])],
+  ['oidc: nobody is provisioned by default', 'app/auth.js', "if (!this.oidc.autoProvision) throw new Error('OIDC person is not provisioned');", '', T(['oidc-provider'])],
+  ['oidc: a state can be used once', 'app/oidc.js', 'this.pending.delete(state);', '', T(['oidc-provider'])],
+  ['oidc: the browser binding is checked', 'app/oidc.js', '|| pending.binderHash !== sha256(binder)', '', T(['oidc-provider'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 if (process.argv.includes('--check-sources')) {

@@ -252,7 +252,7 @@ test('OIDC refuses wrong audience, wrong nonce, and a replayed state even with a
   s = await start();
   await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: 'wrong-nonce' }), binder: s.binder }), /refused/);
   s = await start();
-  await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce, iat: 999_000 / 1000 - 100, exp: 999_000 / 1000 - 10 }), binder: s.binder }), /refused/);
+  await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce, iat: 400, exp: 700 }), binder: s.binder }), /refused/);
   s = await start();
   await oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce }), binder: s.binder });
   await assert.rejects(oidc.complete({ state: s.state, code: provider.issue({ codeChallenge: s.challenge, nonce: s.nonce }), binder: s.binder }), /refused/);

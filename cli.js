@@ -177,7 +177,8 @@ export function stopOnSignal(server, store, { proc = process, exit = code => pro
   timers = [], stops = [], bundleServer = null, timeoutMs = 15_000, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
   let stopping = false;
   const stop = signal => {
-    if (stopping) return exit(1);
+    // A second signal changes nothing: the deadline below already guarantees the process exits.
+    if (stopping) return;
     stopping = true;
     for (const timer of timers) clearTimer(timer);   // clearTimeout also clears intervals
     for (const close of stops) { try { close(); } catch (error) { write(`shutdown cleanup failed: ${error.message}`); } }

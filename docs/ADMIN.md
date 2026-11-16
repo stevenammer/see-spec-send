@@ -129,3 +129,29 @@ Erasure removes the target from the active search index and leaves a contributio
 ## Checking a model lane
 
 `node scripts/eval-model-lanes.mjs` runs a small labeled evaluation of the two optional model lanes against a configured Bedrock model (AWS credentials come from the environment; `EVAL_MODEL_ID` selects the model). It prints agreement with the labels, how often the reply was valid and grounded, whether prohibited questions are refused before any model call, and the approximate cost. A run costs a few cents at most. It is a sanity check on a small synthetic set. Re-run it after changing a prompt or switching models.
+
+## Single sign-on (OpenID Connect)
+
+`node cli.js serve --oidc-config FILE` turns on sign-in through any standards-compliant identity provider. Authentication only proves who someone is: workflow authority still comes from the state machine, and a leader is never made from a claim in a token.
+
+```json
+{
+  "issuer": "https://idp.example.org",
+  "clientId": "your-client-id",
+  "clientSecretEnv": "SSS_OIDC_CLIENT_SECRET",
+  "redirectUri": "https://sss.example.org/api/oidc/callback",
+  "hosts": ["idp.example.org", "sss.example.org"],
+  "allowedEmailDomains": ["example.org"],
+  "autoProvision": false
+}
+```
+
+- The client secret is read from the environment variable named in `clientSecretEnv`. It is never written in the file.
+- `hosts` is an allowlist: discovery, token and key endpoints must be https on one of those hosts. Redirects are never followed and response sizes are bounded.
+- Startup fetches discovery and the signing keys and refuses to start if either fails or the issuer does not match exactly.
+- Tokens must be RS256 or ES256, signed by a key from the provider's key set, with the exact issuer, your client id as audience, the nonce we issued, and a valid time window (default leeway 60 seconds, set `clockSkewSeconds` 0 to 300). Keys named in a token header are refused. A new key id triggers at most one key refetch a minute.
+- `tenantId` pins the tenant claim (useful with Microsoft Entra, whose issuer is `https://login.microsoftonline.com/<tenant>/v2.0`). `allowedEmailDomains` requires a verified email in one of those domains; a token with no email cannot satisfy it.
+- People who have not signed in before are created only if `autoProvision` is true, always as ordinary members. Make leaders with the admin CLI.
+- `--disable-password-login` (requires `--oidc-config`) makes the server itself refuse password sign-in, not just hide the form. Keep one working administrator path before using it, and test sign-in first.
+- Tested against an in-process fake provider that signs real tokens (`test/oidc-provider.test.mjs`), not against a real provider or a real Microsoft tenant. Try it with a test registration before relying on it.
+

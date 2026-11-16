@@ -82,6 +82,9 @@ export class OidcProvider {
     const config = validateOidcConfig(input, options);
     const provider = new OidcProvider(config, { ...options, secret: options.env?.[config.clientSecretEnv] ?? process.env[config.clientSecretEnv] });
     await provider.discover(true);
+    // Load the signing keys now, so a bad key endpoint stops startup and the first sign-in does not spend the
+    // once-a-minute allowance meant for unknown key ids.
+    await provider.refreshKeys();
     return provider;
   }
 
@@ -157,6 +160,8 @@ export class OidcProvider {
       || typeof claims.sub !== 'string' || !claims.sub || !Number.isInteger(claims.exp) || claims.exp < now - skew
       || !Number.isInteger(claims.nbf ?? now) || claims.nbf > now + skew || !Number.isInteger(claims.iat) || claims.iat > now + skew
       || claims.exp - claims.iat > 60 * 60 || (this.config.tenantId && claims.tid !== this.config.tenantId)) throw new Error('OIDC token refused');
+    // A configured domain allowlist cannot be satisfied by a token that carries no email at all.
+    if (this.config.allowedEmailDomains && claims.email === undefined) throw new Error('OIDC token refused');
     if (claims.email !== undefined) {
       if (typeof claims.email !== 'string' || claims.email.length > 320 || claims.email_verified !== true) throw new Error('OIDC token refused');
       const domain = claims.email.split('@').at(-1).toLowerCase();

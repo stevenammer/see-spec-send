@@ -27,12 +27,12 @@ test('health is database-free, readiness fails closed, and metrics omit people',
 });
 const readFileSafe = value => String(value);
 
-test('shutdown stops resources, closes after listener, and second signal exits immediately', () => {
+test('shutdown stops resources, closes after listener, and a second signal changes nothing', () => {
   const events = [], signals = {}; const proc = { on: (name, fn) => { signals[name] = fn; } };
   const server = { closeIdleConnections() { events.push('idle'); }, close(done) { events.push('close'); done(); } };
   const store = { close() { events.push('store'); } }; const timer = {};
   stopOnSignal(server, store, { proc, timers: [timer], stops: [() => events.push('schedule')], bundleServer: { close() { events.push('bundle'); } }, clearTimer: value => { if (value === timer) events.push('timer'); }, setTimer: () => ({ unref() {} }), exit: code => events.push(`exit:${code}`) });
-  signals.SIGTERM(); assert.deepEqual(events, ['timer', 'schedule', 'bundle', 'idle', 'close', 'store', 'exit:0']); signals.SIGINT(); assert.equal(events.at(-1), 'exit:1');
+  signals.SIGTERM(); assert.deepEqual(events, ['timer', 'schedule', 'bundle', 'idle', 'close', 'store', 'exit:0']); const length = events.length; signals.SIGINT(); assert.equal(events.length, length, 'a second signal changes nothing');
 });
 
 test('doctor detects tampered chain, unsafe database permissions, and stale backup', () => {

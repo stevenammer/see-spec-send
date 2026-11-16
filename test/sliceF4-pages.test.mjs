@@ -56,7 +56,7 @@ async function submit(dataset, fields, scopeFields) {
   const form = { dataset, fields, matches: () => true, hasAttribute: () => false, closest: () => ({ querySelector: () => scopeFields ? { fields: scopeFields } : null }) };
   runInNewContext(readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), {
     FormData: class { constructor(target) { return Object.entries(target.fields); } },
-    document: { addEventListener(_name, callback) { handler = callback; } },
+    document: { querySelector: () => null, addEventListener(_name, callback) { handler = callback; } },
     crypto: { randomUUID: () => 'fixture-request-key' },
     location: { pathname: '/items/parent/spec', reload() {} },
     fetch: async (path, options) => { if (options) { if (path.endsWith('/fork')) assert.equal(options.headers['idempotency-key'], 'fixture-request-key'); calls.push({ path, data: JSON.parse(options.body) }); } return { ok: true, status: 200, json: async () => ({ csrf: 'fixture', id: 'child' }) }; },

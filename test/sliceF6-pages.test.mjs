@@ -58,7 +58,7 @@ test('F6 SPEC publishing and inclusion preserve typed assumptions and unanswered
  const source=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
  const draft={assumptions:'The note can be shown.\nA person owns edits.',open_questions:'Who maintains it?',scope_data_sources:'',scope_audiences:''};
  async function submit(dataset,fields){let handler;const calls=[];const form={dataset,fields,matches:()=>true,hasAttribute:()=>false,closest:()=>({querySelector:()=>({fields:draft})})};
-  runInNewContext(source,{FormData:class{constructor(target){return Object.entries(target.fields);}},document:{addEventListener(_name,callback){handler=callback;}},location:{pathname:'/items/i/spec',reload(){}},fetch:async(path,options)=>{if(options)calls.push(JSON.parse(options.body));return{ok:true,status:200,json:async()=>({csrf:'fixture'})};}});
+  runInNewContext(source,{FormData:class{constructor(target){return Object.entries(target.fields);}},document:{querySelector:()=>null,addEventListener(_name,callback){handler=callback;}},location:{pathname:'/items/i/spec',reload(){}},fetch:async(path,options)=>{if(options)calls.push(JSON.parse(options.body));return{ok:true,status:200,json:async()=>({csrf:'fixture'})};}});
   await handler({preventDefault(){},target:form,submitter:{value:'quoted'}});return calls.at(-1);
  }
  const fields={see_hash:'a'.repeat(64),must:'Keep note',how_we_know:'It persists',out_of_scope:'',...draft};

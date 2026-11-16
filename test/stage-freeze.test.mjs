@@ -207,3 +207,36 @@ test('same-head decision and returned SPEC snapshots retain distinct fork source
   }
   assert.ok(s.verifyAll().every(row=>row.ok));
 });
+
+test('snapshot fork selection requires the matching hash and post identity', t => {
+  const { s, append, binding } = setup(t), see = s.read('item').context.seeHash, old = binding();
+  append({ type: 'specced', actor: 'op', see_hash: see, must: ['Keep the note'], how_we_know: ['Find it'], out_of_scope: [], ...old });
+  const snapshot = s.db.prepare('SELECT snapshot_hash FROM stage_posts WHERE post_id=?').get(old.post_id).snapshot_hash;
+  assert.ok(s.forkPoint('item', { kind: 'snapshot', hash: snapshot, post_id: old.post_id }));
+  assert.throws(() => s.forkPoint('item', { kind: 'snapshot', hash: snapshot, post_id: binding().post_id }), /fork selection/);
+});
+
+test('current SPEC identity cannot authorize a comment on a frozen SEE anchor', t => {
+  const { s, append, binding } = setup(t), see = s.read('item').context.seeHash, old = binding();
+  append({ type: 'specced', actor: 'op', see_hash: see, must: ['Keep the note'], how_we_know: ['Find it'], out_of_scope: [], ...old });
+  const current = binding();
+  assert.throws(() => append({ type: 'commented', actor: 'peer', kind: 'comment', anchor_kind: 'see', anchor_hash: see,
+    comment: 'Attempt to reopen frozen SEE.', ...current }), /frozen or superseded/);
+  assert.equal(s.events('item').filter(event => event.type === 'commented').length, 0);
+});
+
+test('a returned SPEC with the same content hash cannot reply to the old SPEC post', t => {
+  const { s, append, binding } = setup(t), see = s.read('item').context.seeHash;
+  append({ type: 'specced', actor: 'op', see_hash: see, must: ['Keep the note'], how_we_know: ['Find it'], out_of_scope: [], ...binding() });
+  const spec = s.read('item').context.specHash, original = binding();
+  append({ type: 'commented', actor: 'peer', kind: 'comment', anchor_kind: 'spec', anchor_hash: spec, comment: 'Original SPEC discussion.', ...original });
+  const parent = s.events('item').at(-1).body_hash;
+  const packet = s.putArtifact('item', JSON.stringify({ specHash: spec }));
+  append({ type: 'sent', actor: 'op', spec_hash: spec, packet_hash: packet, ...binding() });
+  append({ type: 'returned', actor: 'leader', reason: 'Please clarify the test.', spec_hash: spec, packet_hash: packet, ...binding() });
+  const current = binding();
+  assert.notEqual(current.post_id, original.post_id);
+  assert.equal(current.post_version, spec);
+  assert.throws(() => append({ type: 'commented', actor: 'peer', kind: 'comment', anchor_kind: 'spec', anchor_hash: spec,
+    parent, comment: 'Reply to frozen discussion.', ...current }), /parent belongs to a frozen post/);
+});

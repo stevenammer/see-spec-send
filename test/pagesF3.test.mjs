@@ -88,7 +88,7 @@ async function submit(dataset, fields) {
   const calls = [];
   const context = {
     FormData: class { constructor() { return Object.entries(fields); } },
-    document: { addEventListener: (_name, callback) => { handler = callback; } },
+    document: { querySelector: () => null, addEventListener: (_name, callback) => { handler = callback; } },
     location: { pathname: '/items/pages', reload() {} },
     fetch: async (path, options) => {
       if (options) calls.push({ path, data: JSON.parse(options.body) });

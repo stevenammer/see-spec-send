@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Store } from '../core/store.js';
+import { CURRENT_RULES } from '../core/machine.js';
 import { Auth } from '../app/auth.js';
 import { createHandler } from '../app/http.js';
 import { Readable } from 'node:stream';
@@ -69,7 +70,10 @@ test('V1 erasure preserves anchors and comments have their own 1,000-event cap',
   append(store, 'see', { type: 'revised', actor: 'op', text: 'A state event still works', base_hash: seeHash }, 5);
   // The cap is a SQL count. Seed the remaining rows directly so this boundary test
   // does not spend seconds replaying an intentionally oversized thread.
+  const validState = store.read('see');
   store.db.exec("WITH RECURSIVE n(x) AS (SELECT 10 UNION ALL SELECT x+1 FROM n WHERE x<1007) INSERT INTO events(item,seq,type,actor) SELECT 'see',x,'commented','member' FROM n");
+  // Seeded count-only rows are not replayable events; preserve the real state fixture.
+  store.read = () => validState;
   assert.throws(() => append(store, 'see', { type: 'commented', actor: 'member', comment: '1001', kind: 'comment', anchor_kind: 'see', anchor_hash: seeHash }, 2000), /item is full/);
 });
 
@@ -98,11 +102,11 @@ test('V1 post route stamps rules and the page escapes a nested thread', async ()
   const headers = { cookie: login.headers['set-cookie'].split(';')[0], origin: 'http://localhost', 'x-csrf-token': login.body.csrf };
   assert.equal((await call('/api/items', { original: 'Words <stay> mine.' }, headers)).status, 201);
   const [item] = store.listItems();
-  assert.equal(store.read(item.id).context.rules, 2);
+  assert.equal(store.read(item.id).context.rules, CURRENT_RULES);
   assert.equal((await call('/api/items', { original: 'forged', rules: 2 }, headers)).status, 409);
   const state = store.read(item.id); const hash = state.context.seeHash;
   store.registerPerson('member');
-  append(store, item.id, { type: 'commented', actor: 'member', comment: '<script>alert(1)</script>', kind: 'concern', anchor_kind: 'see', anchor_hash: hash }, 20);
+  append(store, item.id, { type: 'commented', actor: 'member', comment: '<script>alert(1)</script>', kind: 'concern', anchor_kind: 'see', anchor_hash: hash, post_id: state.context.activePost.id, post_version: state.context.activePost.version }, 20);
   const page = itemPage({ id: item.id, ...store.read(item.id) }, store.events(item.id), 'op', false);
   assert.match(page, /Original/); assert.match(page, /Current SEE v1/); assert.match(page, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(page, /<script>alert\(1\)<\/script>/);

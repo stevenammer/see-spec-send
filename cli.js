@@ -176,7 +176,7 @@ export function stopOnSignal(server, store, { proc = process, exit = code => pro
   const stop = signal => {
     if (stopping) return exit(1);
     stopping = true;
-    for (const timer of timers) clearInterval(timer);
+    for (const timer of timers) clearTimer(timer);   // clearTimeout also clears intervals
     for (const close of stops) { try { close(); } catch (error) { write(`shutdown cleanup failed: ${error.message}`); } }
     try { bundleServer?.close(); } catch (error) { write(`bundle listener did not close cleanly: ${error.message}`); }
     server.closeIdleConnections?.();

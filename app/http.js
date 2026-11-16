@@ -4,8 +4,8 @@ import { preflightQuestModel, draftQuestModel } from '../provider/vision-quest.j
 import { createServer } from 'node:http';
 import { createServer as createTlsServer } from 'node:https';
 import { isIP } from 'node:net';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { Integrations } from './integrations.js';
 import { closeoutPage, feedPage, frozenPostPage, htmlHeaders, itemPage, newItemPage, passwordPage, questPage, redeemPage, signInPage } from './pages.js';
@@ -325,7 +325,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         const bearer = typeof authorization === 'string' && authorization.startsWith('Bearer ') && authorization.slice(7);
         let leader = false;
         try { leader = Boolean(session && store.actor(session.person, '').leader); } catch {}
-        if (!leader && (!metricsToken || bearer !== metricsToken)) return json(res, 403, { error: 'request refused' });
+        if (!leader && !(metricsToken && typeof bearer === 'string' && bearer.length === metricsToken.length && timingSafeEqual(Buffer.from(bearer), Buffer.from(metricsToken)))) return json(res, 403, { error: 'request refused' });
         return json(res, 200, operationalMetrics(store, { requests: requestCounts, signIns: signInCounts, startedAt, now: clock, databaseSize }));
       }
       if (change && req.headers['content-type'] !== 'application/json')
@@ -938,7 +938,7 @@ export function createServerFor({ tls = null, env = process.env, databasePath = 
   // The product server writes its request and sign-in lines to stderr. Tests pass their own sink.
   const metricsEnv = env.SSS_METRICS_TOKEN_ENV;
   const handler = createHandler({ log: line => process.stderr.write(`${line}\n`), metricsToken: metricsEnv ? env[metricsEnv] : null,
-    databaseSize: () => { try { return databasePath ? (readFileSync(databasePath).length) : 0; } catch { return 0; } }, ...deps });
+    databaseSize: () => { try { return databasePath ? statSync(databasePath).size : 0; } catch { return 0; } }, ...deps });
   // Direct HTTPS uses the certificate pair from serveSettings. Without it the listener is plain HTTP.
   const server = tls ? createTlsServer({ cert: tls.cert, key: tls.key }, handler) : createServer(handler);
   server.headersTimeout = 10_000;

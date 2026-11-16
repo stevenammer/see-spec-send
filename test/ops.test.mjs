@@ -38,7 +38,7 @@ test('shutdown stops resources, closes after listener, and second signal exits i
 test('doctor detects tampered chain, unsafe database permissions, and stale backup', () => {
   const file = temp(); const store = new Store(file); store.registerPerson('writer'); store.append('item', { type: 'checked', actor: 'writer', problem: 'Synthetic issue', looked: ['none'], found: [], verdict: 'build_needed', at: new Date().toISOString() }, { idem: 'one' });
   const dir = mkdtempSync(join(tmpdir(), 'sss-backup-dir-')); const backup = join(dir, 'old.sqlite'); writeBackup(store, backup); const manifest = JSON.parse(readFileSync(`${backup}.manifest.json`, 'utf8')); manifest.created_at = '2000-01-01T00:00:00.000Z'; writeFileSync(`${backup}.manifest.json`, JSON.stringify(manifest));
-  store.db.prepare("UPDATE events SET prev='tampered' WHERE item='item' AND seq=1").run(); store.close(); chmodSync(file, 0o644);
+  store.db.prepare("UPDATE events SET prev_hash='tampered' WHERE item='item' AND seq=1").run(); store.close(); chmodSync(file, 0o644);
   const lines = []; return cli(['doctor', '--json', '--backup-dir', dir], { SSS_DB: file }, line => lines.push(line)).then(code => { const report = JSON.parse(lines[0]); assert.equal(code, 1); assert.equal(report.permissions.database.owner_only, false); assert.equal(report.backup.fresh, false); assert.equal(report.chains.items[0].ok, false); });
 });
 

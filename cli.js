@@ -5,7 +5,8 @@ import { restoreBackup, writeBackup } from './core/backup.js';
 import { Worker } from './worker/runner.js';
 import { killed, setKill } from './worker/control.js';
 import { watchdog } from './worker/watchdog.js';
-import { ContainerAdapter, DockerCli } from './worker/container.js';
+import { DockerCli } from './worker/container.js';
+import { builtInBuilderRegistry } from './worker/adapter-contract.js';
 import { Ledger, fixturePolicy, rateWithSystemText } from './gateway/ledger.js';
 import { Gateway, createGatewayServer, providerGateway } from './gateway/http.js';
 import { QuestGateway } from './gateway/quest.js';
@@ -380,13 +381,16 @@ async function run(argv, env, write) {
       write(killed(store) ? 'stopped' : 'clear');
     }
   } else if (command === 'worker') {
+    const registry = builtInBuilderRegistry(store);
+    const profile = value('--builder') || 'fixture';
     let adapter;
-    if (value('--builder') === 'container') {
+    if (profile === 'container') {
       // The worker starts containers through the Docker socket, which is root on this host. See docs/ADMIN.md.
       const socket = value('--gateway-socket') || fail('--builder container needs --gateway-socket PATH');
       if (!existsSync(socket)) fail(`gateway socket missing: ${socket}`);
-      adapter = new ContainerAdapter(store, { gatewaySocket: resolvePath(socket), root: value('--builder-root') || join(dirname(resolvePath(file)), 'builds'), providerEnv: env });
-    } else if (value('--builder')) fail('--builder must be container');
+      adapter = registry.select('container', { capabilities: ['static_html', 'approved_spec'] }, { gatewaySocket: resolvePath(socket), root: value('--builder-root') || join(dirname(resolvePath(file)), 'builds'), providerEnv: env });
+    } else if (profile === 'fixture') adapter = registry.select('fixture', { capabilities: ['static_html', 'approved_spec'] });
+    else fail('--builder must be container or fixture');
     const worker = new Worker(store, adapter);
     do {
       worker.reconcile();

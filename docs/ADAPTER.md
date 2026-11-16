@@ -103,3 +103,42 @@ seccomp/AppArmor, DNS/rebinding protection, redirect/IP validation, real network
 interception, or process termination on a host. No OpenHands or Docker image was
 used. A real-container acceptance test remains required before an external builder
 is trusted.
+
+## Versioned organization adapter seam
+
+The executable contract in `worker/adapter-contract.js` offers version 1 of a
+**static HTML profile**, with `static_html`, `approved_spec`, and optional
+`adopted_instructions` capabilities. Selection refuses unknown versions,
+capabilities, and profile names before constructing an adapter. The existing
+worker CLI uses the built-in `fixture` and `container` profiles. The fixture is
+the existing default for local demonstrations, not a claim that it is the best
+builder. No general-purpose default has been selected or benchmarked.
+
+A trusted application integrator can register a name and versioned capability
+manifest with `createBuilderRegistry()`, providing a factory for a synchronous
+transport implementing `start(request)`, `status(id)`, and `stop(id)`. Selection
+wraps the transport in `createBridgeAdapter`. It checks run identity and input
+shape, removes instruction author/source metadata, freezes the approved request,
+and validates status shape and ready HTML. The worker still independently owns
+approval checks, run lifecycle, stopping, and delivery. The bridge may hand the
+request to a separately managed CLI or agent, but **the transport and that
+execution environment must be deployed and reviewed by the organization**.
+This registry is trusted host configuration, not a browser API, dynamic module
+loader, command runner, network endpoint, or installer.
+
+The bridge must durably bind each ID to one immutable request, recover status
+after restart, fence stop-before-start and late completion, and return promptly. `test/helpers/builder-bridge-conformance.mjs` provides a
+reusable baseline against a persistent synthetic transport; it cannot establish
+security or accounting guarantees.
+The organization must enforce the approved spec and scope, time and aggregate
+budget, sandbox and all model-call metering independently of the agent. Declared
+capabilities are compatibility claims, not proof or permission grants; the
+static HTML validator does not sandbox agent execution. The existing gateway is
+a narrow completion protocol, not a general tool-calling agent proxy. A separate
+integration must demonstrate that every model call passes the authorized budget
+and that the agent cannot bypass the sandbox or access unapproved tools. No
+Claude Code, Codex, OpenCode, or other general agent bridge is implemented here.
+They are potential integration targets, not supported profiles or benchmarked
+winners. Multi-file/code artifacts, shell tools, and network capabilities are
+not supported by version 1. A richer profile requires a separately reviewed
+contract and external enforcement.

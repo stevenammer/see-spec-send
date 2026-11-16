@@ -504,9 +504,13 @@ export class Store {
       if (credit.mode === 'quoted' && (!event.text.includes(body.comment) || !body.comment.includes(credit.quote || body.comment)))
         throw refused('quoted credit must be verbatim in the comment and revision');
     }
-    if (this.read(item).context.rules === 3 && ['revised', 'specced'].includes(event.type) && Array.isArray(event.credits)) for (const credit of event.credits) {
+    if (this.read(item).context.rules === 3 && event.type === 'specced' && Array.isArray(event.credits)) for (const credit of event.credits) {
       const row = comment(credit.comment);
-      if (!row || JSON.parse(row.bytes).post_id !== event.post_id) throw refused('credit belongs to a frozen post');
+      if (!row || (row.erased && !importing)) throw refused('credit must reference an unerased comment in this item');
+      const body = JSON.parse(row.bytes);
+      if (!row.erased && credit.mode === 'quoted' && ![...(event.must || []), ...(event.how_we_know || []), ...(event.out_of_scope || []),
+        ...(event.assumptions || []), ...(event.open_questions || [])].some(text => text.includes(body.comment)))
+        throw refused('quoted credit must be verbatim in the comment and spec');
     }
     if (event.type === 'steered' && event.source) {
       const row = comment(event.source);

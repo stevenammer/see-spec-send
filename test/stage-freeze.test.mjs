@@ -240,3 +240,49 @@ test('a returned SPEC with the same content hash cannot reply to the old SPEC po
   assert.throws(() => append({ type: 'commented', actor: 'peer', kind: 'comment', anchor_kind: 'spec', anchor_hash: spec,
     parent, comment: 'Reply to frozen discussion.', ...current }), /parent belongs to a frozen post/);
 });
+
+test('steward can credit a frozen SEE comment in the active SPEC without changing its snapshot', async t => {
+  const { Readable } = await import('node:stream');
+  const { Auth } = await import('../app/auth.js');
+  const { createHandler } = await import('../app/http.js');
+  const s = new Store(); t.after(() => s.close()); const auth = new Auth(s);
+  for (const id of ['op', 'peer']) await auth.createUser(id, 'synthetic-long-password-9', false);
+  const handler = createHandler({ store: s, auth, secure: false, origin: 'http://localhost' });
+  const call = async (path, input, headers = {}) => {
+    const req = Readable.from([JSON.stringify(input)]); req.method = 'POST'; req.url = path;
+    req.headers = { 'content-type': 'application/json', ...headers }; req.socket = { remoteAddress: '127.0.0.1' };
+    const res = { headers: {}, status: 200, text: '', setHeader(k,v) { this.headers[k.toLowerCase()] = v; }, writeHead(code,h={}) { this.status=code; Object.assign(this.headers,h); }, end(v='') { this.text+=v; } };
+    await handler(req,res); return res;
+  };
+  const login = async id => { const r = await call('/api/login', { id, password: 'synthetic-long-password-9' });
+    return { cookie: r.headers['set-cookie'].split(';')[0], origin: 'http://localhost', 'x-csrf-token': JSON.parse(r.text).csrf }; };
+  const op = await login('op'), peer = await login('peer');
+  const created = await call('/api/items', { original: 'The handoff loses context.' }, op);
+  assert.equal(created.status, 201); const id = JSON.parse(created.text).id;
+  const initial = s.read(id).context;
+  const bind = (headers, post) => ({ ...headers, 'x-post-id': post.id, 'x-post-version': post.version });
+  const peerSee = bind(peer, initial.activePost), opSee = bind(op, initial.activePost);
+  const quote = 'Keep the caller note visible.';
+  assert.equal((await call(`/api/items/${id}/events`, { type: 'commented', kind: 'comment', anchor_kind: 'see', anchor_hash: initial.seeHash, comment: quote }, peerSee)).status, 201);
+  const source = s.events(id).at(-1).body_hash;
+  assert.equal((await call(`/api/items/${id}/events`, { type: 'specced', see_hash: initial.seeHash, must: ['Keep the handoff'], how_we_know: ['Review it'], out_of_scope: [] }, opSee)).status, 201);
+  const frozen = s.db.prepare('SELECT * FROM stage_posts WHERE post_id=?').get(initial.activePost.id);
+  const snapshotEvents = s.events(id).slice(0, frozen.closed_seq);
+  const current = s.read(id).context, opSpec = bind(op, current.activePost), peerSpec = bind(peer, current.activePost);
+  const update = { type: 'specced', see_hash: initial.seeHash, base_spec_hash: current.specHash, must: ['Keep the handoff', quote], how_we_know: ['Review it'], out_of_scope: [], credits: [{ comment: source, mode: 'quoted' }] };
+  assert.equal((await call(`/api/items/${id}/events`, update, opSee)).status, 409, 'the old target is still frozen');
+  assert.equal((await call(`/api/items/${id}/events`, update, peerSpec)).status, 409, 'only the steward can adopt');
+  assert.equal((await call(`/api/items/${id}/events`, { ...update, must: ['A different sentence'] }, opSpec)).status, 409, 'quoted credit must be verbatim');
+  assert.equal((await call(`/api/items/${id}/events`, { ...update, credits: [{ comment: 'a'.repeat(64), mode: 'paraphrased' }] }, opSpec)).status, 409, 'credit must name a comment in this item');
+  assert.equal((await call(`/api/items/${id}/events`, update, opSpec)).status, 201);
+  const event = s.events(id).at(-1); assert.deepEqual(event.credits, [{ comment: source, mode: 'quoted' }]);
+  assert.deepEqual(s.db.prepare('SELECT * FROM stage_posts WHERE post_id=?').get(initial.activePost.id), frozen);
+  assert.deepEqual(s.events(id).slice(0, frozen.closed_seq), snapshotEvents);
+  s.erase(id, source, 'peer', stamp);
+  const after = s.read(id).context;
+  const erased = { ...update, base_spec_hash: after.specHash };
+  assert.equal((await call(`/api/items/${id}/events`, erased, bind(op, after.activePost))).status, 409, 'erased sources cannot be credited');
+  const restored = new Store(); t.after(() => restored.close());
+  restored.importJsonl(s.exportJsonl());
+  assert.ok(restored.verifyAll().every(row => row.ok), 'historical adopted credit remains replayable after erasure');
+});

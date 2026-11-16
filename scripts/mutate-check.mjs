@@ -79,7 +79,6 @@ const mutants = [
   ['Stage snapshot fork binds post identity', "snapshot_hash=? AND post_id=?').get(item, selection.hash, selection.post_id)", "snapshot_hash=? AND ? IS NOT NULL').get(item, selection.hash, selection.post_id)"],
   ['Stage active post identity and version', "(!context.activePost || event.post_id !== context.activePost.id || event.post_version !== context.activePost.version)", 'false'],
   ['Stage comment kind must match active post', "event.anchor_kind !== context.activePost?.kind", 'false'],
-  ['Stage credit remains within the active post', "JSON.parse(row.bytes).post_id !== event.post_id) throw refused('credit belongs to a frozen post')", "false) throw refused('credit belongs to a frozen post')"],
   ['Stage parent remains within the active post', "body.post_id !== event.post_id) throw refused('parent belongs to a frozen post')", "false) throw refused('parent belongs to a frozen post')"],
   ['F5 contribution viewer predicate', "WHERE c.person=? AND COALESCE(ps.disabled,0)=0", "WHERE c.person=?"],
   ['F5 retrieved evidence reaches Effort data', 'workspaceRecords: workspaceRecords(this.store, job.requester, job.item, original)', 'workspaceRecords: []'],

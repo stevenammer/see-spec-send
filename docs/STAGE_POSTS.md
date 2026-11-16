@@ -24,7 +24,7 @@ The current decision projection follows existing event types and workflow. It do
 
 ## Frozen history and forks
 
-- A frozen post remains readable through stage history and its hash-bound snapshot. Its thread has no active comment or revision controls.
+- A frozen post remains readable through stage history and its hash-bound snapshot. Its thread has no active comment or revision controls. The steward may credit an unerased historical comment when explicitly adopting it into the current SPEC; that changes the active SPEC, not the frozen source. Replies must remain within their own post.
 - A fork from a frozen stage must identify both the exact `post_id` and `snapshot_hash`, plus a reason. This prevents a shared event hash from ambiguously selecting a different post identity.
 - Fork history stops at that selected snapshot. The child is a new item/branch with independent authority: prior approval, spend, HELPS eligibility, or permission is not inherited.
 - History export/import and projection rebuild preserve the post IDs, parent/successor links, exact frozen hashes, and queued close-out state. Erasure changes the source representation under the existing audited erasure behavior; it is not ordinary editing of frozen history.

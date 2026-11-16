@@ -107,6 +107,13 @@ export class Store {
       CREATE TABLE reanalysis_pairs(delta_hash TEXT NOT NULL, item TEXT NOT NULL, decision_hash TEXT NOT NULL DEFAULT '',
         provenance TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(delta_hash,item,decision_hash));`);
   }
+  migrateReanalysisDelivery() {
+    this.db.exec(`CREATE TABLE digest_entries(id TEXT PRIMARY KEY, person TEXT NOT NULL, annex_hash TEXT NOT NULL, created_at TEXT NOT NULL, seen_at TEXT, pinged INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE ping_log(person TEXT NOT NULL, day TEXT NOT NULL, annex_hash TEXT NOT NULL, PRIMARY KEY(person,day));
+      CREATE TABLE reanalysis_mute(person TEXT PRIMARY KEY);
+      CREATE TABLE lineage_relations(child TEXT PRIMARY KEY, relation TEXT NOT NULL);`);
+    this.rebuildLineage();
+  }
   stageProjection(item) {
     let context = initial();
     const posts = [], jobs = [], byId = new Map();
@@ -190,11 +197,15 @@ export class Store {
 
   recordLineage(item) {
     const row = this.lineageOf(item);
-    if (row) this.db.prepare('INSERT INTO lineage VALUES(?,?,?,?,?,?)').run(...Object.values(row));
+    if (row) {
+      this.db.prepare('INSERT INTO lineage VALUES(?,?,?,?,?,?)').run(...Object.values(row));
+      this.db.prepare('INSERT INTO lineage_relations(child,relation) VALUES(?,?)').run(item, this.events(item)[0]?.relation === 'renewal' ? 'renewal' : 'disagreement');
+    }
   }
 
   rebuildLineage() {
     this.db.exec('DELETE FROM lineage');
+    if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='lineage_relations'").get()) this.db.exec('DELETE FROM lineage_relations');
     for (const { item } of this.db.prepare("SELECT item FROM events WHERE seq=1 AND type='forked'").all()) this.recordLineage(item);
   }
   // `database` is deliberately a small synchronous compatibility surface
@@ -504,6 +515,15 @@ export class Store {
         ? this.db.prepare('SELECT hash FROM events WHERE item=? AND seq=?').get(parent.item, parent.seq)
         : null;
       if (!row || row.hash !== parent.hash) throw refused('fork parent does not match');
+      if (event.relation === 'renewal') {
+        if (!event.basis || typeof event.basis.annex !== 'string' || typeof event.basis.what_is_new !== 'string' || !event.basis.what_is_new.trim() || event.basis.what_is_new.length > 2000) throw refused('renewal annex and what is new required');
+        const annex = this.knowledge.entries('annex').find(entry => entry.hash === event.basis.annex);
+        if (!annex || annex.body.parent?.item !== parent.item) throw refused('renewal annex does not target parent');
+        if (this.knowledge.entries().some(entry => entry.kind === 'annex_response' && entry.body.kind === 'retract' && entry.body.annex === event.basis.annex)) throw refused('renewal annex is retracted');
+        const parentEvents = this.events(parent.item), parentContext = this.read(parent.item).context;
+        if (![parentContext.steward, parentEvents[0]?.actor].includes(event.actor)) throw refused('only the parent steward or original author may renew');
+        if (this.db.prepare("SELECT 1 FROM events e JOIN bodies b ON b.hash=e.body_hash WHERE e.type='forked' AND e.actor=? AND json_extract(b.bytes,'$.relation')='renewal' AND json_extract(b.bytes,'$.basis.annex')=?").get(event.actor, event.basis.annex)) throw refused('renewal already exists for this annex');
+      } else if (event.relation !== undefined) throw refused('invalid fork relation');
       if (event.from !== undefined) {
         const selected = this.events(parent.item)[parent.seq - 1];
         const kinds = { see: ['posted', 'forked', 'revised', 'checked', 'seen'], spec: ['specced'], artifact: ['tried'] };

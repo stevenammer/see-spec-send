@@ -29,6 +29,7 @@ import { validateCompletion } from './provider/index.js';
 import { migrationStatus, SCHEMA_VERSION, userVersion } from './core/migrations.js';
 import { appendAudit, verifyAudit } from './core/audit.js';
 import { kindOf } from './core/errors.js';
+import { runReanalysis } from './reanalysis/run.js';
 
 const fail = message => {
   throw new Error(message);
@@ -244,6 +245,12 @@ async function run(argv, env, write) {
       store.db.prepare('UPDATE research_config SET enabled=? WHERE source=?').run(args[0] === 'enable' ? 1 : 0, 'this_workspace');
       write(`this_workspace research ${args[0] === 'enable' ? 'enabled' : 'disabled'}; no external sources connected`);
     } else fail('use research status or research enable/disable --source this_workspace');
+  } else if (command === 'reanalysis') {
+    if (args[0] !== 'run') fail('use reanalysis run [--limit N]');
+    const limit = Number(value('--limit') || '20');
+    if (!Number.isSafeInteger(limit) || limit < 1) fail('--limit must be a positive integer');
+    const result = runReanalysis(store, { now: new Date().toISOString(), limit });
+    write(`reanalysis: deltas=${result.deltas.length} annexes=${result.annexes.length} digest_entries=${result.delivery.entries} pings=${result.delivery.pinged}`);
   } else if (command === 'erase') {
     // Removes the body text from the live database. Backups and earlier copies are not changed.
     // The actor must be a registered leader or steward of the item. The reason is written to the admin audit.

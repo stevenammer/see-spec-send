@@ -117,3 +117,7 @@ Node 22.19 or newer with SQLite FTS5 is required. Search and contribution record
 Internal prior-work research starts off. `node cli.js research status` reports it. An operator can use `node cli.js research enable --source this_workspace` or `disable` to change it; changes enter the admin audit. It performs no network or model call. External sources remain disconnected. Refreshing a SPEC research record states what was checked, gives source identities, and preserves the snapshot used at SEND.
 
 Erasure removes the target from the active search index and leaves a contribution tombstone. It does not purge text already copied into another record, a frozen packet, or a previous backup. Contribution pages show records, never employee rankings or performance scores.
+# Reanalysis
+
+`node cli.js reanalysis run [--limit N]` processes synthetic recorded knowledge against frozen posts and records linked annexes plus in-app digest entries. It does not schedule work, send an outbound message, approve anything, spend money, or start a build.
+

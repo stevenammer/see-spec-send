@@ -3,6 +3,7 @@ import { defaultCanRead, canRead } from '../access/read.js';
 import { extractDeltas } from '../knowledge/delta.js';
 import { findImpacts } from './match.js';
 import { buildAnnex, recordAnnex } from './annex.js';
+import { deliverAnnexes } from '../notifications/digest.js';
 
 const DAY = 7 * 24 * 60 * 60 * 1000;
 
@@ -37,5 +38,6 @@ export function runReanalysis(store, { now, limit = 20, canRead: policy = defaul
       components: ['deterministic_overlap', 'access_read'], counts: { checked: match.checked.length, held: match.held.length } }, { at: now });
     receipts.push(receipt);
   }
-  return { deltas, annexes, held, receipts, skipped };
+  const delivery = deliverAnnexes(store, { now, canRead: policy });
+  return { deltas, annexes, held, receipts, skipped, delivery };
 }

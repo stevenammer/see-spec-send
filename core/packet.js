@@ -3,7 +3,7 @@ import { RESEARCH_SOURCES } from '../research/connectors.js';
 
 // Deterministic, deliberately plain decision packet. It describes unavailable
 // research instead of pretending that a connector checked it.
-export function buildPacket({ original, see, spec, credits = [], comments = [], gatewayPolicy = {}, sandboxLimits = {}, researched, userEvidence = [], estimate, lineage = null } = {}) {
+export function buildPacket({ original, see, spec, credits = [], comments = [], gatewayPolicy = {}, sandboxLimits = {}, researched, userEvidence = [], estimate, lineage = null, prior_decision, new_information } = {}) {
   const openConcerns = comments.filter(comment => ['concern', 'alternative'].includes(comment.kind) && !comment.erased)
     .map(comment => ({ author: comment.actor, text: comment.comment }));
   const included = new Set(credits.map(credit => credit.comment));
@@ -30,6 +30,7 @@ export function buildPacket({ original, see, spec, credits = [], comments = [], 
       estimates: spec.estimates || [],
       openQuestions: ledger.filter(entry => entry.kind === 'question' && entry.status === 'open'),
       unverifiedAssumptions: ledger.filter(entry => entry.kind === 'assumption' && entry.status === 'unverified'),
+      ...(prior_decision && new_information ? { prior_decision, new_information } : {}),
     } : {}),
     worstCaseSpendMicros: Number.isSafeInteger(gatewayPolicy.worstCaseSpendMicros) && gatewayPolicy.worstCaseSpendMicros >= 0
       ? gatewayPolicy.worstCaseSpendMicros : null,

@@ -42,4 +42,6 @@ Rules 3 stage projections are reconstructed from rules 3 events. Older rules 1/2
 
 ## Verification scope and limits
 
+Active-thread reanalysis replies are out of scope for this slice. The matcher targets frozen posts only; linked updates render outside the frozen thread.
+
 `test/stage-freeze.test.mjs` covers stale post/version writes, server-side 409 refusal, old-thread read-only rendering, atomic rollback on close-out queue failure, delayed Effort refusal, exact snapshot forks, migration/export-import rebuild, and frozen TRY/HELPS behavior. These tests validate lifecycle state and queue integrity; they do not prove an E.F.F.O.R.T. close-out worker or broad organizational-intelligence behavior exists.

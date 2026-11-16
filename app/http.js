@@ -25,6 +25,7 @@ import { mentoringHome, mentoringRequest, mentoringEvidence } from './pages-ment
 import { emptyScope, validScope } from '../core/scope.js';
 import { reconciliation, forkEligibility, stewardInactivity, transferEligibility } from '../core/reconcile.js';
 import { searchPage, contributionsPage, recordPage } from './pages-memory.js';
+import { canRead, defaultCanRead } from '../access/read.js';
 
 // Object key order does not change a retry identity. Array order is meaningful.
 const canonical = value => JSON.stringify(value, (_key, entry) =>
@@ -237,7 +238,7 @@ const validEvent = input => {
 
 const postBinding = req => ({ post_id: req.headers['x-post-id'], post_version: req.headers['x-post-version'] });
 
-export function createHandler({ auth, store, integrations, questModel = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, trustedProxy = false }) {
+export function createHandler({ auth, store, integrations, questModel = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, trustedProxy = false, canRead: readPolicy = defaultCanRead }) {
   integrations ||= new Integrations(store, { origin });
   const mentoring = new Mentoring(store, { clock });
   // Fixed one-minute windows per signed-in member. Memory holds one entry per member.
@@ -309,6 +310,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       )
         return json(res, 403, { error: 'request refused' });
       let input = change ? await body(req) : {};
+      const readable = item => session && canRead(session.person, item, readPolicy);
       const ip = clientAddress(req, trustedProxy);
       if (req.method === 'GET' && url.pathname === '/api/oidc/start') {
         if (!auth.oidc) return json(res, 404, { error: 'not found' });
@@ -462,12 +464,13 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       }
       const history = url.pathname.match(/^\/items\/([^/]+)\/history\/([^/]+)$/);
       if (req.method === 'GET' && history) {
+        if (!readable(history[1])) return json(res, 403, { error: 'request refused' });
         const post = store.db.prepare('SELECT * FROM stage_posts WHERE item=? AND post_id=? AND closed_seq IS NOT NULL').get(history[1], decodeURIComponent(history[2]));
         if (!post) return json(res, 404, { error: 'not found' });
         const job = store.db.prepare('SELECT state FROM closeout_jobs WHERE item=? AND post_id=? AND snapshot_hash=?').get(history[1], post.post_id, post.snapshot_hash);
         const active = store.read(history[1]).context.activePost;
         const sources = active?.kind === 'spec' ? store.db.prepare("SELECT e.body_hash FROM events e JOIN bodies b ON b.hash=e.body_hash WHERE e.item=? AND e.type='commented' AND b.erased=0").all(history[1]).map(row => row.body_hash) : [];
-        return page(res, frozenPostPage(history[1], post, store.events(history[1]), job, sources));
+        return page(res, frozenPostPage(history[1], post, store.events(history[1]), job, sources, store.knowledge.entries('annex').filter(row => row.body.parent?.item === history[1])));
       }
       const specView = url.pathname.match(/^\/items\/([^/]+)\/spec$/);
       if (req.method === 'GET' && specView) {
@@ -483,6 +486,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       }
       const view = url.pathname.match(/^\/items\/([^/]+)$/);
       if (req.method === 'GET' && view) {
+        if (!readable(view[1])) return json(res, 403, { error: 'request refused' });
         const state = store.read(view[1]);
         const events = store.events(view[1]);
         if (state.state === 'SPECCED' && leader && state.context.steward !== session.person)
@@ -496,8 +500,41 @@ export function createHandler({ auth, store, integrations, questModel = null, se
               .map(event => [event.packet_hash, store.artifact(view[1], event.packet_hash)])),
             effortAllowance: effortAllowance(store, session.person, view[1], clock),
             stagePosts: store.db.prepare('SELECT * FROM stage_posts WHERE item=? ORDER BY opened_seq, post_id').all(view[1]),
+            annexes: store.knowledge.entries('annex').filter(row => row.body.parent?.item === view[1]),
             effort: store.db.prepare('SELECT kind,state,last_error,requester,created FROM effort_jobs WHERE item=? ORDER BY created').all(view[1]) }, events, session.person, leader),
         );
+      }
+      const updates = url.pathname.match(/^\/api\/items\/([^/]+)\/updates$/);
+      if (req.method === 'GET' && updates) {
+        if (!readable(updates[1])) return json(res, 403, { error: 'request refused' });
+        return json(res, 200, { annexes: store.knowledge.entries('annex').filter(row => row.body.parent?.item === updates[1]).map(row => ({ hash: row.hash, body: row.body, responses: store.knowledge.entries('annex_response').filter(response => response.body.annex === row.hash) })) });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/digest') {
+        const entries = store.db.prepare('SELECT * FROM digest_entries WHERE person=? ORDER BY created_at DESC').all(session.person)
+          .filter(entry => { const annex = store.knowledge.entries('annex').find(row => row.hash === entry.annex_hash); return annex && readable(annex.body.parent.item); });
+        return json(res, 200, { entries });
+      }
+      const annexResponse = url.pathname.match(/^\/api\/annexes\/([a-f0-9]{64})\/response$/);
+      if (req.method === 'POST' && annexResponse) {
+        if (!exactKeys(input, ['kind']) || !['relevant', 'not_relevant', 'mute'].includes(input.kind)) return json(res, 409, { error: 'request refused' });
+        const annex = store.knowledge.entries('annex').find(row => row.hash === annexResponse[1]);
+        if (!annex || !readable(annex.body.parent.item)) return json(res, 403, { error: 'request refused' });
+        const at = new Date(clock()).toISOString();
+        const response = store.knowledge.append('annex_response', { v: 1, annex: annex.hash, actor: session.person, kind: input.kind }, { at });
+        if (input.kind === 'mute') store.db.prepare('INSERT OR IGNORE INTO reanalysis_mute(person) VALUES(?)').run(session.person);
+        if (input.kind === 'not_relevant' && store.read(annex.body.parent.item).context.steward === session.person)
+          store.db.prepare('DELETE FROM digest_entries WHERE person=? AND annex_hash=?').run(session.person, annex.hash);
+        return json(res, 201, response);
+      }
+      const renew = url.pathname.match(/^\/api\/items\/([^/]+)\/renew$/);
+      if (req.method === 'POST' && renew) {
+        if (!exactKeys(input, ['annex', 'what_is_new', 'reason']) || !hex(input.annex) || !text(input.what_is_new, 2000) || !text(input.reason, 2000)) return json(res, 409, { error: 'request refused' });
+        if (!readable(renew[1])) return json(res, 403, { error: 'request refused' });
+        const key = req.headers['idempotency-key'] || randomUUID();
+        const id = createHash('sha256').update(canonical(['renewal', session.person, renew[1], input.annex, key])).digest('hex');
+        const point = store.forkPoint(renew[1], undefined, undefined, { extended: true });
+        const result = store.append(id, { type: 'forked', actor: session.person, ...point, seed_policy: 2, rules: CURRENT_RULES, relation: 'renewal', basis: { annex: input.annex, what_is_new: input.what_is_new }, reason: input.reason, at: new Date(clock()).toISOString() }, { idem: key });
+        return json(res, 201, { id, ...result });
       }
       if (req.method === 'GET' && url.pathname === '/api/items') {
         const listing = store.listPage(pageAfter(url));
@@ -584,10 +621,14 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           .flatMap(event => event.credits || []);
         const userEvidence = events.filter(event => ['posted', 'revised', 'specced', 'commented'].includes(event.type))
           .flatMap(event => event.evidence || []).map(evidence => ({ ...evidence }));
+        const renewal = first.relation === 'renewal' ? first : null;
+        const prior = renewal && store.events(renewal.parent.item).slice(0, renewal.parent.seq)
+          .filter(event => ['approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew'].includes(event.type)).at(-1);
         const packet = buildPacket({ original: first.original, see, spec: { ...spec, hash: input.spec_hash, rules: store.read(send[1]).context.rules }, credits,
           comments: events.filter(event => event.type === 'commented'), userEvidence, gatewayPolicy: {}, sandboxLimits: {},
           estimate: input.estimate ? { label: 'OP estimate, not independently verified', author: session.person, text: input.estimate } : undefined,
           researched: events.filter(event => event.type === 'researched').at(-1)?.sources,
+          ...(renewal && prior ? { prior_decision: { outcome: prior.disposition || prior.verdict || prior.type, reason: prior.reason, who: prior.actor, when: prior.at }, new_information: { what_is_new: renewal.basis.what_is_new, annex: renewal.basis.annex } } : {}),
           lineage: first.type === 'forked' ? { ...first.parent, from: first.from || null, reason: first.reason || 'No reason recorded',
             parentDecision: store.events(first.parent.item).slice(0, first.parent.seq).filter(event => ['approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew'].includes(event.type)).at(-1) || null } : null });
         const packet_hash = store.putArtifact(send[1], JSON.stringify(packet));

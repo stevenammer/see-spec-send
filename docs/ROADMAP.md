@@ -11,9 +11,9 @@ No dates. Status words are defined in [STATUS.md](STATUS.md). Items under Next a
 
 ## Next, in order
 
-1. Continuous reanalysis: new internal results are checked against earlier work and surfaced as linked updates, with a path to a new decision.
+1. Continuous reanalysis, delivery half: people see the linked updates, can respond, and can ask for a new decision. The checking core is done.
 2. Read scopes and opportunity propagation: results are followed to other teams as labeled candidates, with department boundaries enforced before anything is retrieved.
-3. A real coding agent through the metered proxy, starting with one open-source agent in a locked container on free model lanes.
+3. A real coding agent as a registered builder in the locked container. A first live trial through the metered proxy worked.
 4. Memory you can correct, so derived records can be challenged and removed along with their sources.
 5. Ask-the-organization questions with saved, re-runnable, contestable answers.
 6. One end-to-end synthetic walkthrough in a real browser, and a matching demo.

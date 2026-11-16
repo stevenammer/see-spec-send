@@ -15,10 +15,14 @@ import { Ledger, fixturePolicy, priceRate } from '../gateway/ledger.js';
 import { Gateway, ChatGateway, createGatewayServer } from '../gateway/http.js';
 import { fixtureProvider } from '../gateway/fixture.js';
 import { openAICompatible } from '../provider/adapters.js';
+import { bedrockConverse } from '../provider/bedrock.js';
 
 const [bin, task] = [process.argv[2], process.argv[3]];
-const model = process.env.TRIAL_MODEL || 'gemini-2.5-flash';
-if (!bin || !task || !process.env.GEMINI_API_KEY) { console.error('usage: GEMINI_API_KEY=.. node scripts/builder-trial.mjs OPENCODE_BIN "task"'); process.exit(2); }
+// TRIAL_PROVIDER=bedrock uses Amazon Nova through the Converse API (AWS_* credentials from the
+// environment); the default is Gemini's OpenAI-compatible endpoint (GEMINI_API_KEY).
+const useBedrock = process.env.TRIAL_PROVIDER === 'bedrock';
+const model = process.env.TRIAL_MODEL || (useBedrock ? 'nova-lite' : 'gemini-2.5-flash');
+if (!bin || !task || (!useBedrock && !process.env.GEMINI_API_KEY) || (useBedrock && !process.env.AWS_ACCESS_KEY_ID)) { console.error('usage: [TRIAL_PROVIDER=bedrock] node scripts/builder-trial.mjs OPENCODE_BIN "task"'); process.exit(2); }
 const dir = mkdtempSync(join(tmpdir(), 'sss-trial-'));
 const store = new Store(join(dir, 'trial.db'));
 store.registerPerson('op'); store.registerPerson('leader', { leader: true });
@@ -31,12 +35,15 @@ const packet_hash = store.putArtifact('trial', JSON.stringify({ specHash: spec_h
 append({ type: 'sent', actor: 'op', spec_hash, packet_hash });
 append({ type: 'approved', actor: 'leader', spec_hash, packet_hash, reason: 'Synthetic trial on a free model lane.', cap_usd: 1, quorum: 1, window_minutes: 60, max_iterations: 1 });
 new Worker(store, { start() {}, status: () => ({ state: 'running' }), stop: () => ({ state: 'stopped' }) }).reconcile();
-const rate = priceRate({ model, inputMicrosPerMillion: 0, outputMicrosPerMillion: 0, framingTokens: 64 });
+// Nova Lite list price: $0.06 / $0.24 per million tokens. Gemini free tier: zero.
+const rate = priceRate({ model, inputMicrosPerMillion: useBedrock ? 60_000 : 0, outputMicrosPerMillion: useBedrock ? 240_000 : 0, framingTokens: 64 });
 const ledger = new Ledger(store, { rate });
 const MAX_CALLS = Number(process.env.TRIAL_MAX_CALLS || 40);
 ledger.configure(fixturePolicy({ input_bytes: 600_000, output_tokens: 16_384, response_bytes: 1_000_000, timeout_ms: 180_000,
   max_calls_per_run: MAX_CALLS, max_tokens_per_run: 2_000_000, concurrency: 4 }));
-const provider = openAICompatible({ url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+const provider = useBedrock ? bedrockConverse({ region: process.env.AWS_REGION || 'us-east-1', modelId: 'us.amazon.nova-lite-v1:0',
+  credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY, sessionToken: process.env.AWS_SESSION_TOKEN } })
+  : openAICompatible({ url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
   apiKey: process.env.GEMINI_API_KEY, hosts: ['generativelanguage.googleapis.com'], timeoutMs: 180_000,
   requestBytes: 700_000, responseBytes: 1_000_000 });
 // Diagnostics only: shapes and sizes, never keys or message text.

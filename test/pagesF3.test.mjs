@@ -52,7 +52,7 @@ test('F3 returned decisions retain their reviewed snapshot when a newer spec is 
   append({ type: 'returned', actor: 'leader', spec_hash: spec, packet_hash: packet, reason: 'Check whether the current handoff view already works.' });
   append({ type: 'specced', actor: 'op', see_hash: see, must: ['Keep a clearer note'], how_we_know: ['Callers stop repeating'], out_of_scope: [] });
   const page = render();
-  assert.match(page, /<h3>Returned<\/h3>/);
+  assert.match(page, /<h3>Return for revision \(legacy outcome\)<\/h3>/);
   assert.ok(page.includes(`Reviewed spec: ${spec}`));
   assert.match(page, /Reviewed evidence snapshot/);
 });

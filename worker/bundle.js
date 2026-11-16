@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { posix } from 'node:path';
 import { validateBundleHtml } from './builder/index.js';
@@ -56,4 +56,20 @@ export function validateBundle(root, manifest, { maxFiles = BUNDLE_MAX_FILES, ma
   }
   visit(root); if (files.length !== expected.size) fail('missing file'); for (const [path, info] of dirs) if (!same(info, lstatSync(path, { bigint: true }))) fail('directory changed');
   return Object.freeze({ manifest: Object.freeze({ version: 1, files: Object.freeze([...manifest.files].sort((a, b) => a.path.localeCompare(b.path))) }), manifest_hash: manifestHash(manifest), files: Object.freeze(files) });
+}
+
+// The viewer serves model-built pages with scripts fully disabled (a standing rule). So the reviewable try
+// is one document: the entry page with its stylesheets inlined and its script elements removed, plus a
+// visible note. Only a bundle that already passed validateBundle should be composed.
+export function composeBundleDocument(root, manifest) {
+  const files = new Map(manifest.files.map(entry => [entry.path, join(root, entry.path)]));
+  const read = path => readFileSync(files.get(path), 'utf8');
+  const entry = manifest.files.map(file => file.path).sort().find(path => path === 'index.html') || manifest.files.map(file => file.path).sort().find(path => path.endsWith('.html'));
+  if (!entry) fail('no page in bundle');
+  const dir = posix.dirname(entry);
+  const resolve = name => posix.normalize(dir === '.' ? name : `${dir}/${name}`);
+  let html = read(entry);
+  html = html.replace(/<link\s+rel="stylesheet"\s+href="([^"]+)"\s*\/?>/gi, (_m, href) => files.has(resolve(href)) ? `<style>${read(resolve(href)).replace(/<\/style/gi, '<\\/style')}</style>` : '');
+  html = html.replace(/<script\b[^>]*>\s*<\/script>/gi, '');
+  return html.replace(/<\/body>/i, '<p><small>This build includes scripts. They are not run in the viewer.</small></p></body>');
 }

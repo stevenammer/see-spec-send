@@ -47,3 +47,15 @@ test('a real three-file bundle validates, and script capabilities that could rea
   const outside = bundle({ ...good, 'index.html': page('<script src="elsewhere/app.js"></script>') });
   assert.throws(() => validateBundle(outside.root, outside.manifest), /refused|not a local static page/);
 });
+
+import { composeBundleDocument } from '../worker/bundle.js';
+test('the reviewable try is one script-free document with the stylesheet inlined and a visible note', () => {
+  const b = bundle(good);
+  const checked = validateBundle(b.root, b.manifest);
+  const html = composeBundleDocument(b.root, checked.manifest);
+  assert.match(html, /<style>body\{margin:0\}<\/style>/);
+  assert.doesNotMatch(html, /<script/i, 'scripts are not part of the delivered try');
+  assert.doesNotMatch(html, /href="style\.css"|src="app\.js"/);
+  assert.match(html, /not run in the viewer/);
+  assert.match(html, /<textarea id="n">/, 'the page markup is kept');
+});

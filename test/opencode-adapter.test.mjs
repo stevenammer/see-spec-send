@@ -25,7 +25,11 @@ test('OpenCode is opt-in, locked down, gets only approved fields, and validates 
   const { a, docker } = adapter(t); a.start(request); const args = docker.calls[0].join(' ');
   for (const text of ['--network none', '--read-only', '--user 65532:65532', '--cap-drop ALL', '--pids-limit 256', '--memory 1g']) assert.match(args, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.equal(args.includes('raw-discussion-identity'), false); assert.equal(args.includes('provider') && args.includes('KEY'), false);
-  assert.deepEqual(a.status(request.id).state, 'ready');
+  const ready = a.status(request.id);
+  assert.deepEqual(ready.state, 'ready');
+  assert.equal(typeof ready.html, 'string', 'a ready bundle carries its reviewable single-document try');
+  assert.doesNotMatch(ready.html, /<script/i);
+  assert.equal(a.status(request.id).html, ready.html, 'the same document is produced after the job is already ready');
 });
 
 test('own-key and paid modes are honestly refused', t => {

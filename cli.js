@@ -80,6 +80,7 @@ const ADMIN = {
     if (['source', 'destination'].includes(args[0]) && ['add', 'disable', 'remove'].includes(args[1])) return `integration ${args[0]} ${args[1]}`;
     return args[0] === 'outbox' && ['retry', 'drop', 'deliver'].includes(args[1]) ? `outbox ${args[1]}` : null;
   },
+  channel: args => args[0] === 'map' && args[1] === 'add' ? 'channel map add' : null,
   gateway: args => {
     if (args[0] === 'fixture-enable') return 'gateway fixture-enable';
     if (args[0] === 'policy' && args[1] === 'set') return 'gateway policy set';
@@ -214,7 +215,19 @@ async function run(argv, env, write) {
   }
   const auth = new Auth(store);
   const integrations = new Integrations(store);
-  if (command === 'integration') {
+  if (command === 'channel') {
+    if (args[0] !== 'map' || args[1] !== 'add') fail('use channel map add --channel teams --tenant ID --team ID --external-user ID --person ID');
+    const channel = value('--channel') || fail('missing --channel');
+    const tenant = value('--tenant') || fail('missing --tenant');
+    const team = value('--team') || fail('missing --team');
+    const external = value('--external-user') || fail('missing --external-user');
+    const person = value('--person') || fail('missing --person');
+    if (!/^[a-z0-9_-]{1,32}$/i.test(channel) || ![tenant, team, external, person].every(entry => typeof entry === 'string' && entry.length <= 200)) fail('invalid channel mapping');
+    store.actor(person);
+    store.db.prepare('INSERT INTO channel_teams(channel,tenant_id,team_id,enabled,revoked) VALUES(?,?,?,?,0) ON CONFLICT(channel,tenant_id,team_id) DO UPDATE SET enabled=1,revoked=0').run(channel, tenant, team, 1);
+    store.db.prepare('INSERT INTO channel_identities(channel,tenant_id,external_user_id,person,enabled) VALUES(?,?,?,?,1) ON CONFLICT(channel,tenant_id,external_user_id) DO UPDATE SET person=excluded.person,enabled=1').run(channel, tenant, external, person);
+    write(`channel mapping added for ${channel}`);
+  } else if (command === 'integration') {
     const kind = args[0]; const action = args[1];
     if (kind === 'source' && action === 'add') {
       if (args.includes('--secret')) { store.close(); write(SECRET_REFUSAL); return 2; }

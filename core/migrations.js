@@ -27,6 +27,7 @@ export const MIGRATIONS = Object.freeze([
   { name: 'S3 groups, read scopes, and opportunity propagation', up: store => store.migrateS3() },
   { name: 'S5 correctable derived memory and source dependencies', up: store => store.migrateS5() },
   { name: 'S7 analysis receipts and metered analysis gateway', up: store => store.migrateAnalysis() },
+  { name: 'Teams-shaped channel receipts, mappings, and replay nonces', up: store => store.migrateChannels() },
 ]);
 export const SCHEMA_VERSION = MIGRATIONS.length;
 

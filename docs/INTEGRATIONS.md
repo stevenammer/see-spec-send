@@ -2,6 +2,14 @@
 
 Integrations can report a problem and receive a small event receipt. They cannot approve, name a steward, vote, say a try helps, or edit an existing item.
 
+## Teams-shaped channel adapter
+
+The repository includes a synthetic Teams-shaped adapter in `channels/teams.js`. It accepts only recorded fake activity payloads in tests. A message action creates a preview receipt, then a separate confirmation creates a canonical SEE through the same Store path as the native forum. Mention replies become anchored contributions. Adaptive-card actions go through Store authority and exact packet checks. Channel receipts preserve captured text, source ID/version/hash, audience, and later source changes without rewriting frozen content.
+
+External IDs only map to people through `channel map add --channel teams --tenant TENANT --team TEAM --external-user USER --person PERSON`. Tenant mismatch, guests, unmapped users, replayed signed payloads, and inactive channel teams are refused. The synthetic signature is HMAC-SHA256 over `timestamp + "." + nonce + "." + recorded payload body`, with a five-minute window and durable nonce receipt. Set the per-channel test secret in the process environment when a host eventually wires this adapter.
+
+No real Teams connector is built. There is no Microsoft tenant, Teams SDK, Microsoft Graph call, Entra validation, Bot Framework validation, tenant installation, webhook listener, or credential in this repository. Production callback validation must use Entra ID and Bot Framework JWT validation, not this synthetic HMAC seam.
+
 Create secrets at the terminal. The CLI never prints them again.
 
 ```sh

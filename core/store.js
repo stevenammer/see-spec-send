@@ -137,6 +137,30 @@ export class Store {
       UNIQUE(person,idem)
     );`);
   }
+  migrateChannels() {
+    this.db.exec(`CREATE TABLE channel_teams(
+      channel TEXT NOT NULL, tenant_id TEXT NOT NULL, team_id TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1, revoked INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(channel,tenant_id,team_id)
+    );
+    CREATE TABLE channel_identities(
+      channel TEXT NOT NULL, tenant_id TEXT NOT NULL, external_user_id TEXT NOT NULL,
+      person TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+      PRIMARY KEY(channel,tenant_id,external_user_id), UNIQUE(channel,tenant_id,person)
+    );
+    CREATE TABLE external_events(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, channel TEXT NOT NULL, tenant_id TEXT NOT NULL, team_id TEXT NOT NULL,
+      external_event_id TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL,
+      item TEXT, person TEXT, source_message_id TEXT, source_version TEXT, source_hash TEXT,
+      audience TEXT NOT NULL DEFAULT '[]', payload TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL,
+      UNIQUE(channel,tenant_id,team_id,external_event_id)
+    );
+    CREATE TABLE channel_nonces(
+      channel TEXT NOT NULL, tenant_id TEXT NOT NULL, nonce TEXT NOT NULL, expires INTEGER NOT NULL,
+      PRIMARY KEY(channel,tenant_id,nonce)
+    );
+    CREATE INDEX external_events_item ON external_events(item,id);`);
+  }
   groupCreate(name, description = '') {
     if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$/.test(name) || typeof description !== 'string' || description.length > 1000) throw invalid('invalid group');
     this.db.prepare('INSERT INTO groups(name,description) VALUES(?,?)').run(name, description);

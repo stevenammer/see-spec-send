@@ -19,6 +19,8 @@ No dates. Status words are defined in [STATUS.md](STATUS.md). Items under Next a
 
 ## Later
 
+A real Microsoft Teams connector (the synthetic adapter and its rules are built; a tenant, Graph and Entra sign-in are not), an evaluation of model quality in the reanalysis and question lanes, and the unavailable-author path for forks.
+
 Mutation and load testing, enterprise sign-in, PostgreSQL, a Microsoft Teams adapter, customer-owned storage, comparison of other coding agents, an optional external release watcher and SMS.
 
 ## Not planned

@@ -21,6 +21,7 @@ An honest table. A row says **Shipped and tested** only when a named test in thi
 | Opportunity propagation | Built (not verified live) | `test/propagation-s3.test.mjs` | Deterministic catalog/tag matching only; every edge remains a candidate until a person acts |
 | Ask the organization (saved, re-runnable, contestable answers over what you may read) | Shipped and tested | `test/analysis-run.test.mjs` | Works without any model (sources only). A model lane exists but is off unless an operator enables it; no live model verified. Ranking or motive questions are answered with criteria, outcomes and unknowns, never a person ranking |
 | Correctable derived memory | Shipped and tested | `test/corrections.test.mjs`, `test/knowledge-index.test.mjs` | Frozen packet copies, exports and backups can outlive an erasure; the live store tombstones dependent derived views and delivery |
+| Amazon Nova model lane for ask-the-organization and reanalysis checks | Built (one live call on a synthetic case) | `test/model-lanes.test.mjs`, `test/reanalysis-verify.test.mjs` | Off unless an operator names a provider. One real metered call settled for under a hundredth of a cent; the model can only hold a match or add uncertainty, never raise or create one. Not evaluated for quality |
 | Teams channel adapter | Built (synthetic payloads only) | `test/channel-teams.test.mjs` | No real Teams, Graph, Entra, tenant install, SDK, or network |
 | Other channels | Planned | none | Nothing shipped |
 | Customer-owned storage, enterprise sign-in | Planned | none | Seams only |

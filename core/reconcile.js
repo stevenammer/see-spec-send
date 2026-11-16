@@ -5,9 +5,11 @@
 // type, so replay, imports and legacy hashes are untouched. Enforcement lives
 // at the HTTP fork route; forks already in history stay valid.
 //
-// Not decided by the owner yet (so not invented here): material-disagreement
-// criteria, waiver of the window for agreed parallel experiments, and what
-// happens when the author is permanently unavailable.
+// Owner (Nov 16): keep it simple. The disagreer may fork when the steward moves
+// on, lets the window pass, or explicitly declines. No judging of reasons; the
+// people decide whether it is worth joining and the leader decides whether a
+// second experimental build is worth funding (a fork inherits no approval).
+// Still undecided, so not invented: an unavailable-author path.
 export const RECONCILE_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const ALTERNATIVE = 'alternative';
@@ -19,6 +21,8 @@ const incorporatedHashes = events => new Set(events
 export function reconciliation(events, { posts = [], steward = null, now = Date.now(), terminal = false } = {}) {
   const incorporated = incorporatedHashes(events);
   const closed = new Set(posts.filter(post => post.closed_seq !== null && post.closed_seq !== undefined).map(post => post.post_id));
+  const declined = new Set(events.filter(event => event.type === 'commented' && event.kind === 'decline' && event.actor === steward
+    && event.parent !== undefined).map(event => event.parent));
   const contributions = [];
   events.forEach((event, index) => {
     if (event.type !== 'commented' || event.kind !== ALTERNATIVE || event.erased) return;
@@ -26,6 +30,7 @@ export function reconciliation(events, { posts = [], steward = null, now = Date.
     const age = now - Date.parse(event.at);
     const frozen = terminal || (event.post_id !== undefined && closed.has(event.post_id));
     const status = incorporated.has(event.body_hash) ? 'incorporated'
+      : declined.has(event.body_hash) ? 'declined'
       : frozen ? 'unresolved_at_freeze'
       : age >= RECONCILE_DAYS * DAY_MS ? 'unresolved_after_window' : 'pending';
     contributions.push({ seq: index + 1, hash: event.body_hash, actor: event.actor, at: event.at, post_id: event.post_id ?? null,
@@ -34,7 +39,7 @@ export function reconciliation(events, { posts = [], steward = null, now = Date.
   return { window_days: RECONCILE_DAYS, contributions };
 }
 
-const FORKABLE = new Set(['unresolved_at_freeze', 'unresolved_after_window']);
+const FORKABLE = new Set(['declined', 'unresolved_at_freeze', 'unresolved_after_window']);
 
 // Decide whether `person` may fork. The disagreement is about the item, so any
 // historical point of it may be the starting point. Returns { allowed, reason, ... }.

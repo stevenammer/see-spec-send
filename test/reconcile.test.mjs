@@ -116,3 +116,24 @@ test('the steward cannot veto: the policy is a pure projection and the steward i
   assert.equal(forkEligibility(report, { person: 'x', steward: 'op' }).allowed, true);
   assert.equal(forkEligibility(report, { person: 'y', steward: 'op' }).allowed, false);
 });
+
+test('an explicit decline by the steward lets the disagreer fork at once; nobody else can decline', async t => {
+  const s = await setup(t);
+  assert.equal((await alternative(s, 'alex')).status, 201);
+  const hash = s.store.events(s.id).at(-1).body_hash;
+  const see = s.store.read(s.id).context.seeHash;
+  const decline = who => s.bound('POST', `/api/items/${s.id}/events`, { type: 'commented', comment: "I'm not taking this into the plan.", kind: 'decline',
+    anchor_kind: 'see', anchor_hash: see, parent: hash }, s.who[who]);
+  assert.equal((await decline('sam')).status, 409, 'a member cannot decline for the steward');
+  assert.equal((await fork(s, 'alex')).status, 409, 'still inside the window');
+  assert.equal((await decline('op')).status, 201);
+  const status = await s.bound('GET', `/api/items/${s.id}/reconciliation`, null, s.who.alex);
+  assert.equal(status.body.contributions[0].status, 'declined');
+  assert.equal((await fork(s, 'alex')).status, 201);
+});
+
+test('a decline needs something to decline', async t => {
+  const s = await setup(t);
+  const see = s.store.read(s.id).context.seeHash;
+  assert.equal((await s.bound('POST', `/api/items/${s.id}/events`, { type: 'commented', comment: 'no', kind: 'decline', anchor_kind: 'see', anchor_hash: see }, s.who.op)).status, 409);
+});

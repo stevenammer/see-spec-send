@@ -63,7 +63,9 @@ const forgedReporter = (value, actor) => array(value)
 const commentAnchor = (state, event) => {
   if (!nonempty(event.comment) || event.comment.length > 4000) return false;
   if (state.rules >= 2) {
-    if (!['comment', 'question', 'concern', 'alternative'].includes(event.kind)) return false;
+    if (!['comment', 'question', 'concern', 'alternative', 'decline'].includes(event.kind)) return false;
+    // Only the steward can decline, and a decline answers a specific comment.
+    if (event.kind === 'decline' && (event.parent === undefined || event.actor !== state.steward)) return false;
     // A Spec is only a live discussion anchor while it still describes the
     // current SEE. Once SEE changes, discussion must attach to SEE until a
     // replacement Spec is written.

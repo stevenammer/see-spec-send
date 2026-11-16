@@ -224,7 +224,7 @@ const validEvent = input => {
       && text(input.comment, 4000) && ((input.anchor_kind === undefined && input.anchor_hash === undefined)
         || (['see', 'spec', 'artifact', 'send'].includes(input.anchor_kind) && hex(input.anchor_hash)))
       && (input.parent === undefined || hex(input.parent))
-      && (input.kind === undefined || ['comment', 'question', 'concern', 'alternative'].includes(input.kind));
+      && (input.kind === undefined || ['comment', 'question', 'concern', 'alternative', 'decline'].includes(input.kind));
     case 'sent': case 'forked': case 'steered': return false;
     default: return false;
   }

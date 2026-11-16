@@ -1,4 +1,4 @@
-import { transaction } from '../worker/control.js';
+import { killed, transaction } from '../worker/control.js';
 import { effortPrompt } from '../effort/prompt.js';
 import { workspaceRecords } from '../research/workspace.js';
 import { specDraftPrompt, parseSpecDraft, SPEC_DRAFT_PREFIX } from '../effort/spec.js';
@@ -46,6 +46,10 @@ export class EffortWorker {
       // Recover a prior dispatch by receipt, even if intervening discussion
       // changed the newly constructed prompt. Never retry an unknown charge.
       const receipt = this.gateway.receipts().find(row => row.person === job.requester && row.idem === idem);
+      if (receipt && (killed(this.store) || !this.gateway.ledger.policy().enabled)) {
+        this.db.prepare("UPDATE effort_jobs SET last_error=? WHERE id=? AND state='running' AND next_at=?").run('gateway disabled or stopped; awaiting resume', job.id, job.lease);
+        return false;
+      }
       const result = receipt ? this.gateway.outcome(receipt) : await this.gateway.call(job.requester, idem,
         { model: this.gateway.ledger.rate.model, input: prompt.input, max_output_tokens: preparing ? 1024 : 128 }, job.item, job.id);
       // 202 means an unknown charged dispatch. Retain this attempt and hold;
@@ -66,11 +70,15 @@ export class EffortWorker {
       return transaction(this.store, () => {
         const owner = this.db.prepare("SELECT 1 FROM effort_jobs WHERE id=? AND state='running' AND next_at=?").get(job.id, job.lease);
         if (!owner) return false;
+        if (killed(this.store) || !this.gateway.ledger.policy().enabled) {
+          this.db.prepare("UPDATE effort_jobs SET last_error=? WHERE id=? AND state='running' AND next_at=?").run('gateway disabled or stopped; awaiting resume', job.id, job.lease);
+          return false;
+        }
         const current = this.store.read(job.item);
         if (current.context.rules === 3 && (job.post_id !== current.context.activePost?.id || job.post_version !== current.context.activePost?.version)) throw Error('post superseded, not answered');
         if (job.kind === 'tag' && currentAnchor(current.context, anchor_kind) !== anchor_hash) throw Error('outdated, not answered');
         if (preparing && (this.store.read(job.item).context.seeHash !== prompt.seeHash || this.store.read(job.item).context.steward !== job.requester)) throw Error('outdated SPEC request');
-        this.store.appendInTransaction(job.item, { type: 'commented', actor: 'effort', ...(job.post_id ? { post_id: job.post_id, post_version: job.post_version } : {}), comment, kind: 'agent', job: job.id, receipt: result.body.id, model: this.gateway.ledger.rate.model, anchor_kind, anchor_hash, ...(job.kind === 'tag' ? { parent: triggerBody.body_hash } : {}), at: new Date(this.clock()).toISOString() }, { idem: `effort:${job.id}` });
+        this.store.appendInTransaction(job.item, { type: 'commented', actor: 'effort', ...(job.post_id ? { post_id: job.post_id, post_version: job.post_version } : {}), comment, kind: 'agent', job: job.id, receipt: result.body.id, model: result.body.model, anchor_kind, anchor_hash, ...(job.kind === 'tag' ? { parent: triggerBody.body_hash } : {}), at: new Date(this.clock()).toISOString() }, { idem: `effort:${job.id}` });
         this.db.prepare("UPDATE effort_jobs SET state='done',last_error=NULL,next_at=NULL WHERE id=?").run(job.id);
         return true;
       });

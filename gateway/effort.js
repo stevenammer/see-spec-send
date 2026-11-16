@@ -68,9 +68,9 @@ export class EffortGateway {
     this.update(row, { state: 'dispatched' });
     try { const result = await this.provider(Object.freeze({ ...input }), { id: row.id, person, item, job });
       demand(result && typeof result.output === 'string' && result.usage && integer(result.usage.input_tokens) && integer(result.usage.output_tokens) && result.usage.input_tokens <= row.input_bound && result.usage.output_tokens <= row.output_bound, 'invalid provider output');
-      const charged = this.ledger.cost({ ...row, rate: canonical(this.ledger.rate) }, result.usage); this.update(row, { state: 'settled', charged_micros: charged, usage: canonical(result.usage), outcome: canonical({ output: result.output }) });
+      const charged = this.ledger.cost({ ...row, rate: canonical(this.ledger.rate) }, result.usage); this.update(row, { state: 'settled', charged_micros: charged, usage: canonical(result.usage), outcome: canonical({ output: result.output, model: input.model }) });
     } catch { /* A dispatched hold stays charged until an operator reviews it. */ }
     return this.outcome(this.db.prepare('SELECT * FROM gateway_effort_receipts WHERE id=?').get(row.id));
   }
-  outcome(row) { this.receipts(); return row.state === 'settled' ? { status: 200, body: { id: row.id, output: JSON.parse(row.outcome).output } } : { status: 202, body: { id: row.id, state: row.state, held_micros: row.charged_micros } }; }
+  outcome(row) { this.receipts(); return row.state === 'settled' ? { status: 200, body: { id: row.id, output: JSON.parse(row.outcome).output, model: JSON.parse(row.outcome).model || 'unknown (legacy receipt)' } } : { status: 202, body: { id: row.id, state: row.state, held_micros: row.charged_micros } }; }
 }

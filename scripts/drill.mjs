@@ -65,8 +65,20 @@ spawnSync('sh', ['-c', `printf 'x' >> ${tampered}/* 2>/dev/null || printf 'x' >>
 const bad = spawnSync(process.execPath, ['cli.js', 'restore', '--from', tampered], { cwd: root, env: { ...process.env, SSS_DB: join(data, 'bad.db') }, encoding: 'utf8' });
 ok('a tampered backup is refused on restore', bad.status !== 0);
 
+// 4b. portability: export everything, import it into a brand-new database elsewhere, and verify it
+import { writeFileSync as put } from 'node:fs';
+const exported = cli('export'); put(join(data, 'org.jsonl'), exported.stdout);
+ok('export writes a complete, self-describing file', exported.status === 0 && /"complete":true/.test(exported.stdout));
+const moved = join(data, 'moved.db');
+const imp = spawnSync(process.execPath, ['cli.js', 'import', '--from', join(data, 'org.jsonl')], { cwd: root, env: { ...process.env, SSS_DB: moved }, encoding: 'utf8' });
+ok('import loads it into a new database and says how to create the first leader', imp.status === 0 && /Run `init/.test(imp.stdout));
+const verifyMoved = spawnSync(process.execPath, ['cli.js', 'verify'], { cwd: root, env: { ...process.env, SSS_DB: moved }, encoding: 'utf8' });
+ok('the imported database verifies', verifyMoved.status === 0);
+const again = spawnSync(process.execPath, ['cli.js', 'import', '--from', join(data, 'org.jsonl')], { cwd: root, env: { ...process.env, SSS_DB: moved }, encoding: 'utf8' });
+ok('import never overwrites an existing database', again.status !== 0 && /new database/.test(again.stderr + again.stdout));
+
 // 5. second start must not need or change anything
-const again = cli('migrate', '--check');
-ok('migrations are idempotent on the live database', again.status === 0);
+const migrateAgain = cli('migrate', '--check');
+ok('migrations are idempotent on the live database', migrateAgain.status === 0);
 
 console.log(`\n${steps.filter(s => s.pass).length}/${steps.length} drill steps passed`);

@@ -31,6 +31,15 @@ Run this on a schedule you can stand behind, and after every upgrade.
 - Prune old backups: `node cli.js backup prune --dir <dir> --keep N`. It never removes the newest backup or one that fails verification.
 - A backup does not include the separate stop-latch file. Re-set the latch after a restore if you need it.
 
+## 3b. Moving to another installation (export and import)
+
+A backup is a copy of the same database. An export is a portable, readable file you can take anywhere.
+
+- Export: `node cli.js export > org.jsonl`. It carries people (as ids, not accounts), every event, artifacts, the groups that define who can read restricted work, the whole knowledge log (updates, corrections, receipts, analysis records), what was erased, and the small delivery state that stops a copy from announcing everything again. Erased records leave only their hashes, never their text.
+- Import: `SSS_DB=<a path that does not exist> node cli.js import --from org.jsonl`. It refuses an existing database, verifies every chain after loading, and removes everything it created if anything is wrong.
+- Not exported: accounts and passwords, and private mentoring. After an import, run `node cli.js init --id <leader>` to create the first leader and invite everyone else, or turn on single sign-on.
+- Check before you switch: run `node cli.js verify` and `node cli.js doctor` on the new database, open a restricted item as a member and as a non-member, and run `node cli.js reanalysis run` and confirm it announces nothing new.
+
 ## 4. What can and cannot be recovered
 
 | Case | Recoverable? |

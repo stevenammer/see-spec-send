@@ -71,6 +71,7 @@ function secretFrom(args, env) {
 const ADMIN = {
   init: () => 'init',
   restore: () => 'restore',
+  import: () => 'import',
   backup: () => 'backup',
   migrate: args => (args.includes('--check') ? null : 'migrate'),
   invite: args => (['create', 'revoke'].includes(args[0]) ? `invite ${args[0]}` : null),
@@ -256,6 +257,27 @@ async function run(argv, env, write) {
   // Reporting never opens the store for writing. --check reads the file and nothing else.
   if (command === 'migrate' && args.includes('--check')) {
     write(JSON.stringify(migrationStatus(file)));
+    return;
+  }
+  // Import loads an export (`node cli.js export > file`) into a NEW database. It never touches an existing one, and it
+  // removes what it started if anything fails, so a half-imported database cannot be mistaken for a real one.
+  if (command === 'import') {
+    const source = value('--from') || fail('missing --from FILE (an export made with `export`)');
+    if (existsSync(file)) fail('import needs a new database: point SSS_DB at a path that does not exist yet');
+    const text = readFileSync(source, 'utf8');
+    const target = new Store(file);
+    try {
+      target.importJsonl(text);
+      const bad = target.verifyAll().filter(row => !row.ok);
+      if (bad.length || !target.knowledge.verify().ok) throw new Error('imported data does not verify');
+      write(JSON.stringify({ imported: source, items: target.verifyAll().length, knowledge_records: target.knowledge.entries().length, groups: target.groups().length,
+        next: 'No accounts are imported. Run `init --id <leader>` to create the first leader, then invite everyone else (or turn on single sign-on).' }));
+      target.close();
+    } catch (error) {
+      try { target.close(); } catch {}
+      for (const suffix of ['', '-wal', '-shm']) rmSync(`${file}${suffix}`, { force: true });
+      throw error;
+    }
     return;
   }
   // Opening a missing file would create an empty database with no stop latch and report success.

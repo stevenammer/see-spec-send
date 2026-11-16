@@ -16,6 +16,7 @@ What is stored, where, who can read it, how long it stays, and how erasure reach
 | Model gateway receipts | `gateway_*` tables | Operators | Indefinite | Not erased with posts: they hold counts and hashes only, no text. |
 | Analysis receipts | `knowledge_log` | Anyone with the same read scope as the cited sources | Indefinite | Follow the cited sources. |
 | Build bundles and tries | Artifact store | Anyone who can read the item | Indefinite | Erased with the item body; frozen packet copies can remain. |
+| Exports | A file you write with `export` | Whoever can read that file | Operator's choice | Contains everything readable at export time, including restricted work and group membership. Erased text is left out of the file. Treat it like a backup. |
 | Backups | Where the operator puts them | Whoever can read that location | Operator's choice | Not changed by an erase. This is the main place erased text can survive. |
 | Logs | Standard error, wherever the operator sends it | Operators | Operator's choice | Contains person ids and route templates, no content. |
 | External messages | Nothing today | n/a | n/a | n/a |

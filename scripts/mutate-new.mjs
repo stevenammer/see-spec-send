@@ -68,6 +68,12 @@ const mutants = [
   ['fuzz: a missing password never reaches the hash function', 'app/auth.js', "if (typeof password !== 'string') return false;          // a missing or non-text password never reaches the hash function", '', T(['fuzz-routes'])],
   ['fuzz: a malformed analysis request is a refusal', 'intelligence/run.js', "|| !Array.isArray(request.objectives) || !request.objectives.every(value => typeof value === 'string'))", ')', T(['fuzz-routes'])],
   ['fuzz: redeem with missing fields is a refusal', 'app/auth.js', "if (typeof value !== 'string' || typeof password !== 'string') throw invalid('invite unavailable');", '', T(['fuzz-routes'])],
+  ['portability: groups are imported before the events that name them', 'core/store.js', "this.importGroups(groupRows);\n      for (const artifact of artifacts) {", "for (const artifact of artifacts) {", T(['export-portability'])],
+  ['portability: erased records leave only their hashes', 'core/store.js', "...(gone ? { redacted: true } : { body })", "...{ body }", T(['export-portability'])],
+  ['portability: an imported copy keeps its delivery state', 'core/store.js', "const allowed = new Set(['reanalysis_pairs', 'reanalysis_cursor', 'digest_entries', 'ping_log', 'reanalysis_mute']);", "const allowed = new Set([]);", T(['export-portability'])],
+  ['portability: two knowledge logs are never merged', 'core/store.js', "if (knowledgeRows.length && db.prepare('SELECT COUNT(*) AS n FROM knowledge_log').get().n !== 0) throw new Error('knowledge log is not empty');", '', T(['export-portability'])],
+  ['portability: an imported log must verify', 'core/store.js', "if (!check.ok) throw new Error('imported knowledge log does not verify');", '', T(['export-portability'])],
+  ['erasure: records built from a result are tombstoned too', 'knowledge/corrections.js', "for (const next of [row.derived_hash, body]) if (next && !seen.has(next))", "for (const next of [row.derived_hash]) if (next && !seen.has(next))", T(['export-portability'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 if (process.argv.includes('--check-sources')) {

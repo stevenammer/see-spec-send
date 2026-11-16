@@ -20,8 +20,10 @@ export function propagateErasure(store, sourceBodyHash, { reason, at }) {
     for (const row of store.db.prepare('SELECT derived_hash FROM knowledge_dependencies WHERE source_body_hash=?').all(source)) {
       if (derived.has(row.derived_hash)) continue;
       derived.add(row.derived_hash);
-      // Hashes can themselves appear as provenance in later derived records.
-      if (!seen.has(row.derived_hash)) { seen.add(row.derived_hash); queue.push(row.derived_hash); }
+      // A later record may refer to an earlier one by its log hash (a response to an update) or by its body hash (an
+      // update naming the result it was built from). Follow both, or text copied into the later record outlives the erase.
+      const body = store.db.prepare('SELECT body_hash FROM knowledge_log WHERE hash=?').get(row.derived_hash)?.body_hash;
+      for (const next of [row.derived_hash, body]) if (next && !seen.has(next)) { seen.add(next); queue.push(next); }
     }
   }
   for (const hash of derived) {

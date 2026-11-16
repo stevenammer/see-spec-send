@@ -982,7 +982,26 @@ export class Store {
     }
     lines.push(...[...artifacts.values()].sort((a, b) => `${a.item}:${a.hash}`.localeCompare(`${b.item}:${b.hash}`)).map(artifact => JSON.stringify({ artifact })));
     lines.push(...rows.map(row => JSON.stringify(row)));
-    lines.push(JSON.stringify({ complete: true, events: rows.length, actors: actors.length, artifacts: artifacts.size }));
+    // Everything an organization needs to take its memory elsewhere, not only the events: who may read restricted work
+    // (groups), the derived knowledge log (hash-chained), what was erased, and the small delivery state that stops an
+    // imported copy from announcing everything again. Erased records leave only their hashes, never their text.
+    // Accounts and passwords are not exported (people sign in again), and mentoring is private and stays out.
+    const db = this.db, extra = { groups: 0, knowledge: 0, tombstones: 0, derived: 0 };
+    for (const group of db.prepare('SELECT name,description FROM groups ORDER BY name').all()) {
+      const members = db.prepare('SELECT person FROM group_members WHERE group_name=? ORDER BY person').all(group.name).map(row => row.person);
+      lines.push(JSON.stringify({ group: { ...group, members } })); extra.groups += 1;
+    }
+    for (const row of db.prepare(`SELECT l.seq,l.kind,l.body,l.body_hash,l.prev_hash,l.hash,l.at,
+        (t.target_hash IS NOT NULL OR COALESCE(k.erased,0)=1) AS gone FROM knowledge_log l
+        LEFT JOIN knowledge_tombstones t ON t.target_hash=l.hash LEFT JOIN knowledge_bodies k ON k.body_hash=l.body_hash ORDER BY l.seq`).all()) {
+      const { gone, body, ...rest } = row;
+      lines.push(JSON.stringify({ knowledge: { ...rest, ...(gone ? { redacted: true } : { body }) } })); extra.knowledge += 1;
+    }
+    for (const row of db.prepare('SELECT * FROM knowledge_tombstones ORDER BY target_hash').all()) { lines.push(JSON.stringify({ tombstone: row })); extra.tombstones += 1; }
+    for (const table of ['reanalysis_pairs', 'reanalysis_cursor', 'digest_entries', 'ping_log', 'reanalysis_mute']) {
+      for (const row of db.prepare(`SELECT * FROM ${table}`).all()) { lines.push(JSON.stringify({ derived: { table, row } })); extra.derived += 1; }
+    }
+    lines.push(JSON.stringify({ complete: true, events: rows.length, actors: actors.length, artifacts: artifacts.size, ...extra }));
     return `${lines.join('\n')}\n`;
   }
 
@@ -991,7 +1010,14 @@ export class Store {
     const footer = lines.pop();
     const actors = lines.filter(row => row.registry).map(row => row.registry);
     const artifacts = lines.filter(row => row.artifact).map(row => row.artifact);
-    const events = lines.filter(row => !row.registry && !row.artifact);
+    const groupRows = lines.filter(row => row.group).map(row => row.group);
+    const knowledgeRows = lines.filter(row => row.knowledge).map(row => row.knowledge);
+    const tombstoneRows = lines.filter(row => row.tombstone).map(row => row.tombstone);
+    const derivedRows = lines.filter(row => row.derived).map(row => row.derived);
+    const events = lines.filter(row => !row.registry && !row.artifact && !row.group && !row.knowledge && !row.tombstone && !row.derived);
+    // Exports made before groups and the knowledge log were included carry none of them and still import.
+    if ((footer?.groups ?? 0) !== groupRows.length || (footer?.knowledge ?? 0) !== knowledgeRows.length
+      || (footer?.tombstones ?? 0) !== tombstoneRows.length || (footer?.derived ?? 0) !== derivedRows.length) throw new Error('incomplete import');
     if (!footer?.complete || footer.events !== events.length || footer.actors !== actors.length) {
       throw new Error('incomplete import');
     }
@@ -999,6 +1025,8 @@ export class Store {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       for (const actor of actors) this.importActor(actor);
+      // Groups first: a restricted post names its groups, and an event naming a missing group is refused.
+      this.importGroups(groupRows);
       for (const artifact of artifacts) {
         if (typeof artifact.item !== 'string' || typeof artifact.hash !== 'string'
           || this.putArtifact(artifact.item, artifact.bytes) !== artifact.hash) throw new Error('bad import artifact');
@@ -1021,11 +1049,44 @@ export class Store {
         visiting.delete(item); imported.add(item);
       };
       for (const item of groups.keys()) importItem(item);
+      this.importExtras({ knowledgeRows, tombstoneRows, derivedRows });
       this.db.exec('COMMIT');
     } catch (error) {
       try { this.db.exec('ROLLBACK'); } catch {}
       throw error;
     }
+  }
+
+  // Groups, the knowledge log and delivery state, imported inside the same transaction as the events. The knowledge log
+  // must be empty: its chain is one sequence, so two cannot be merged.
+  importGroups(groupRows) {
+    for (const group of groupRows) {
+      if (typeof group.name !== 'string' || !Array.isArray(group.members)) throw new Error('bad import group');
+      this.db.prepare('INSERT OR IGNORE INTO groups(name,description) VALUES(?,?)').run(group.name, group.description ?? '');
+      for (const person of group.members) { this.actor(person); this.db.prepare('INSERT OR IGNORE INTO group_members VALUES(?,?)').run(group.name, person); }
+    }
+  }
+
+  importExtras({ knowledgeRows, tombstoneRows, derivedRows }) {
+    const db = this.db;
+    if (knowledgeRows.length && db.prepare('SELECT COUNT(*) AS n FROM knowledge_log').get().n !== 0) throw new Error('knowledge log is not empty');
+    const redacted = new Set();
+    for (const row of knowledgeRows) {
+      const gone = row.redacted === true;
+      if (typeof row.hash !== 'string' || typeof row.body_hash !== 'string' || !Number.isInteger(row.seq) || (!gone && typeof row.body !== 'string')) throw new Error('bad import knowledge row');
+      db.prepare('INSERT INTO knowledge_log(seq,kind,body,body_hash,prev_hash,hash,at) VALUES(?,?,?,?,?,?,?)').run(row.seq, row.kind, gone ? '' : row.body, row.body_hash, row.prev_hash, row.hash, row.at);
+      if (gone) { redacted.add(row.body_hash); db.prepare('INSERT OR REPLACE INTO knowledge_bodies(body_hash,bytes,erased) VALUES(?,?,1)').run(row.body_hash, ''); }
+      else db.prepare('INSERT OR IGNORE INTO knowledge_bodies(body_hash,bytes) VALUES(?,?)').run(row.body_hash, row.body);
+    }
+    for (const row of tombstoneRows) db.prepare('INSERT OR IGNORE INTO knowledge_tombstones(target_hash,reason,source_body_hash,at) VALUES(?,?,?,?)').run(row.target_hash, row.reason, row.source_body_hash ?? null, row.at);
+    const allowed = new Set(['reanalysis_pairs', 'reanalysis_cursor', 'digest_entries', 'ping_log', 'reanalysis_mute']);
+    for (const { table, row } of derivedRows) {
+      if (!allowed.has(table)) throw new Error('bad import table');
+      const columns = Object.keys(row); if (!columns.every(name => /^[a-z_]+$/.test(name))) throw new Error('bad import column');
+      db.prepare(`INSERT OR IGNORE INTO ${table}(${columns.join(',')}) VALUES(${columns.map(() => '?').join(',')})`).run(...columns.map(name => row[name]));
+    }
+    const check = this.knowledge.verify();
+    if (!check.ok) throw new Error('imported knowledge log does not verify');
   }
 
   importActor(actor) {

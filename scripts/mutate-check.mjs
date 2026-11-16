@@ -291,7 +291,7 @@ const mutants = [
   ['oidc issuer check', 'claims.iss !== this.issuer', 'false'],
   ['oidc pending cap', "if (this.pending.size >= maxPending) throw new Error('too many pending OIDC handshakes');", ''],
   ['account id bound on create', "async createUser(id, password, leader = false, { mustChange = false } = {}) {\n    if (!validAccountId(id)) throw invalid('invalid account id');", "async createUser(id, password, leader = false, { mustChange = false } = {}) {"],
-  ['account id bound on redeem', "async redeem(value, id, password, ip = 'local') {\n    if (!validAccountId(id)) throw invalid('invalid account id');", "async redeem(value, id, password, ip = 'local') {"],
+  ['account id bound on redeem', "    if (!validAccountId(id)) throw invalid('invalid account id');\n    const existing = this.db.prepare('SELECT id FROM users WHERE lower(id)=lower(?)').get(id);", "    const existing = this.db.prepare('SELECT id FROM users WHERE lower(id)=lower(?)').get(id);"],
   ['oidc audience check', '!audience.includes(this.clientId)', 'false'],
   ['oidc nonce check', 'claims.nonce !== nonce', 'false'],
   ["oidc token expiry", "|| !Number.isInteger(claims.exp) || claims.exp < now - this.clockSkewSeconds", "|| !Number.isInteger(claims.exp)"],

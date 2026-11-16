@@ -42,8 +42,12 @@ export class KnowledgeLog {
   }
   verify() {
     let previous = '';
-    for (const row of this.store.db.prepare(`SELECT l.*,COALESCE(k.bytes,l.body) AS content FROM knowledge_log l LEFT JOIN knowledge_bodies k ON k.body_hash=l.body_hash ORDER BY l.seq`).all()) {
-      if (sha(row.body) !== row.body_hash || sha(row.content) !== row.body_hash || row.prev_hash !== previous || sha(`${previous}${row.kind}${row.body_hash}`) !== row.hash)
+    for (const row of this.store.db.prepare(`SELECT l.*,COALESCE(k.bytes,l.body) AS content, (t.target_hash IS NOT NULL OR COALESCE(k.erased,0)=1) AS gone
+        FROM knowledge_log l LEFT JOIN knowledge_bodies k ON k.body_hash=l.body_hash LEFT JOIN knowledge_tombstones t ON t.target_hash=l.hash ORDER BY l.seq`).all()) {
+      // The links between records are always checked. The text of an erased record is not: it may have been removed
+      // from this copy (an import carries only its hashes), and an erased record must not need its text to verify.
+      const bodyOk = row.gone ? true : sha(row.body) === row.body_hash && sha(row.content) === row.body_hash;
+      if (!bodyOk || row.prev_hash !== previous || sha(`${previous}${row.kind}${row.body_hash}`) !== row.hash)
         return { ok: false, reason: 'chain' };
       previous = row.hash;
     }

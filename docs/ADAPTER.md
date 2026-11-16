@@ -106,7 +106,9 @@ is trusted.
 
 ## Versioned organization adapter seam
 
-The executable contract in `worker/adapter-contract.js` offers version 1 of a
+Contract version 2 adds an opt-in `bundle` capability for bounded multi-file static source. Its manifest lists only relative allowlisted paths, byte lengths, and hashes. The host validates the stopped writer's files before the worker records the manifest as the TRY artifact. The fixture remains the default. `opencode` is a registered profile only when explicitly selected with `--builder opencode`; its unit tests use a fake Docker seam, and its live image and trial remain unverified. See [OPENCODE.md](OPENCODE.md).
+
+The executable contract in `worker/adapter-contract.js` offers version 2 of a
 **static HTML profile**, with `static_html`, `approved_spec`, and optional
 `adopted_instructions` capabilities. Selection refuses unknown versions,
 capabilities, and profile names before constructing an adapter. The existing
@@ -139,11 +141,10 @@ static HTML validator does not sandbox agent execution. The existing gateway is
 a narrow completion protocol, not a general tool-calling agent proxy. A separate
 integration must demonstrate that every model call passes the authorized budget
 and that the agent cannot bypass the sandbox or access unapproved tools. No
-Claude Code, Codex, OpenCode, or other general agent bridge is implemented here.
-They are potential integration targets, not supported profiles or benchmarked
-winners. Multi-file/code artifacts, shell tools, and network capabilities are
-not supported by version 1. A richer profile requires a separately reviewed
-contract and external enforcement.
+Claude Code or Codex bridge is implemented here. OpenCode has the limited,
+opt-in profile documented above, but is not a default or benchmarked winner.
+Shell tools and general network access remain denied. A richer profile requires
+a separately reviewed contract and external enforcement.
 
 
 ## Proposed next slice, not implemented

@@ -21,6 +21,9 @@ export const MIGRATIONS = Object.freeze([
   { name: 'S1 working ledger projection', up: store => store.migrateLedger() },
   { name: 'S2A knowledge log and reanalysis cursor', up: store => store.migrateReanalysis() },
   { name: 'S2B reanalysis delivery and renewal lineage', up: store => store.migrateReanalysisDelivery() },
+  { name: 'S4 OpenCode bundle adapter jobs', up: store => store.db.exec(`CREATE TABLE IF NOT EXISTS opencode_jobs(
+    id TEXT PRIMARY KEY, input TEXT NOT NULL, state TEXT NOT NULL, container_name TEXT NOT NULL,
+    token_digest TEXT, deadline INTEGER NOT NULL, bundle_root TEXT NOT NULL, error TEXT)` ) },
 ]);
 export const SCHEMA_VERSION = MIGRATIONS.length;
 

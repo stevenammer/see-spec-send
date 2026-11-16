@@ -392,13 +392,13 @@ async function run(argv, env, write) {
     const registry = builtInBuilderRegistry(store);
     const profile = value('--builder') || 'fixture';
     let adapter;
-    if (profile === 'container') {
+    if (profile === 'container' || profile === 'opencode') {
       // The worker starts containers through the Docker socket, which is root on this host. See docs/ADMIN.md.
-      const socket = value('--gateway-socket') || fail('--builder container needs --gateway-socket PATH');
+      const socket = value('--gateway-socket') || fail(`--builder ${profile} needs --gateway-socket PATH`);
       if (!existsSync(socket)) fail(`gateway socket missing: ${socket}`);
-      adapter = registry.select('container', { capabilities: ['static_html', 'approved_spec'] }, { gatewaySocket: resolvePath(socket), root: value('--builder-root') || join(dirname(resolvePath(file)), 'builds'), providerEnv: env });
+      adapter = registry.select(profile, { capabilities: ['approved_spec', ...(profile === 'opencode' ? ['bundle'] : ['static_html'])] }, { gatewaySocket: resolvePath(socket), root: value('--builder-root') || join(dirname(resolvePath(file)), 'builds'), ...(profile === 'container' ? { providerEnv: env } : {}) });
     } else if (profile === 'fixture') adapter = registry.select('fixture', { capabilities: ['static_html', 'approved_spec'] });
-    else fail('--builder must be container or fixture');
+    else fail('--builder must be fixture, container, or opencode');
     const worker = new Worker(store, adapter);
     do {
       worker.reconcile();

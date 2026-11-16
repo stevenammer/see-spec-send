@@ -1,10 +1,11 @@
 import { FakeAdapter } from './fake.js';
 import { ContainerAdapter } from './container.js';
+import { OpenCodeAdapter } from './opencode.js';
 import { approvedBuildInput, validateHtml } from './builder/index.js';
 
-// Contract version 1 is deliberately limited to static HTML artifacts.
-export const BUILDER_CONTRACT_VERSION = 1;
-export const STATIC_CAPABILITIES = Object.freeze(['static_html', 'approved_spec', 'adopted_instructions']);
+// Version 2 adds a bounded source bundle. The fixture remains the default profile.
+export const BUILDER_CONTRACT_VERSION = 2;
+export const STATIC_CAPABILITIES = Object.freeze(['static_html', 'approved_spec', 'adopted_instructions', 'bundle']);
 const capabilities = new Set(STATIC_CAPABILITIES);
 const fail = message => { throw Error(`builder adapter incompatible: ${message}`); };
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -49,8 +50,10 @@ export function createBridgeAdapter(transport, manifest, requirements = {}) {
     if (!plain(result) || !['missing', 'running', 'ready', 'failed', 'stopped'].includes(result.state)) fail('invalid transport status');
     if (stopping && !['running', 'failed', 'stopped'].includes(result.state)) fail('invalid stop status');
     if (result.state === 'ready') {
-      if (Object.keys(result).sort().join(',') !== 'html,state') fail('invalid artifact response');
-      return { state: 'ready', html: validateHtml(result.html) };
+      const keys = Object.keys(result).sort().join(',');
+      if (keys === 'html,state') return { state: 'ready', html: validateHtml(result.html) };
+      if (keys === 'bundle,state' && selected.capabilities.includes('bundle') && plain(result.bundle)) return { state: 'ready', bundle: freeze(JSON.parse(JSON.stringify(result.bundle))) };
+      fail('invalid artifact response');
     }
     if (Object.keys(result).some(key => !['state', 'error'].includes(key)) || (result.error !== undefined && typeof result.error !== 'string')) fail('invalid status fields');
     return { state: result.state, ...(result.error !== undefined ? { error: result.error } : {}) };
@@ -86,12 +89,16 @@ function registryFor(builtins = []) {
 export function createBuilderRegistry() { return registryFor(); }
 
 export function builtInBuilderRegistry(store) {
-  const manifest = { version: 1, capabilities: STATIC_CAPABILITIES };
+  const manifest = { version: 2, capabilities: STATIC_CAPABILITIES };
   return registryFor([
     ['fixture', manifest, () => new FakeAdapter(store)],
     ['container', manifest, options => {
       if (Object.keys(options).some(key => !['gatewaySocket', 'root', 'providerEnv'].includes(key))) fail('unsupported container option');
       return new ContainerAdapter(store, options);
+    }],
+    ['opencode', manifest, options => {
+      if (Object.keys(options).some(key => !['gatewaySocket', 'root', 'imageFile', 'providerMode'].includes(key))) fail('unsupported opencode option');
+      return new OpenCodeAdapter(store, options);
     }],
   ]);
 }

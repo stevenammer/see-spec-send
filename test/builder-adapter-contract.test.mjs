@@ -7,19 +7,19 @@ import { builtInBuilderRegistry, createBuilderRegistry, createBridgeAdapter, neg
 import { checkStaticBridgeConformance } from './helpers/builder-bridge-conformance.mjs';
 import { put, spec, approve } from './helpers/gateway-fixture.mjs';
 
-const manifest = { version: 1, capabilities: [...STATIC_CAPABILITIES] };
+const manifest = { version: 2, capabilities: [...STATIC_CAPABILITIES] };
 const request = { id: 'f'.repeat(64), item: 'item', approval: 1, iteration: 0, spec_hash: 'a'.repeat(64), cap_micros: 0,
   spec: { must: ['One proof'], how_we_know: ['Visible'], out_of_scope: [] }, instructions: [{ instruction: 'Refine it', actor: 'private', source: 'private', mode: 'quoted' }] };
 
 test('contract negotiates exact versions and capabilities before constructing adapters', () => {
   const registry = createBuilderRegistry(); let creates = 0;
   registry.register('custom', manifest, () => { creates++; return {}; });
-  assert.throws(() => registry.select('custom', { version: 2 }), /invalid requested contract/);
+  assert.throws(() => registry.select('custom', { version: 3 }), /invalid requested contract/);
   assert.throws(() => registry.select('custom', { capabilities: ['network'] }), /unknown requested capability/);
   assert.throws(() => registry.select('other'), /unknown profile/);
   assert.equal(creates, 0);
-  assert.throws(() => negotiateBuilder({ version: 2, capabilities: [] }), /invalid version/);
-  const limited = { version: 1, capabilities: ['static_html', 'approved_spec'] };
+  assert.throws(() => negotiateBuilder({ version: 3, capabilities: [] }), /invalid version/);
+  const limited = { version: 2, capabilities: ['static_html', 'approved_spec'] };
   assert.throws(() => negotiateBuilder(limited, { capabilities: ['adopted_instructions'] }), /missing capabilities/);
   const bridge = createBridgeAdapter({ start() {}, status() {}, stop() {} }, limited);
   assert.throws(() => bridge.start(request), /missing capabilities/);

@@ -29,6 +29,13 @@ The current decision projection follows existing event types and workflow. It do
 - Fork history stops at that selected snapshot. The child is a new item/branch with independent authority: prior approval, spend, HELPS eligibility, or permission is not inherited.
 - History export/import and projection rebuild preserve the post IDs, parent/successor links, exact frozen hashes, and queued close-out state. Erasure changes the source representation under the existing audited erasure behavior; it is not ordinary editing of frozen history.
 
+## Stewardship transfer on inactivity
+
+- Stewardship stays on the same item and branch. It preserves the original author's attribution and does not inherit or broaden approval, spend, helper, or tool authority.
+- A person with their own `unresolved_after_window` alternative may file a visible `transfer_request` comment only when the current steward has had no authoring event on the active stage for the same 14-day reconciliation window. The response reports the active-stage inactivity date and eligibility.
+- A request is not a transfer and silence is not consent. The request route cannot change the steward. A leader records any actual transfer through the existing, reasoned `steward_changed` event, whose server-side validation also applies active-stage inactivity unless the steward recorded consent.
+- Different direction alone is not grounds for transfer. A real unresolved disagreement remains the only reason to fork.
+
 ## Legacy compatibility
 
 Rules 3 stage projections are reconstructed from rules 3 events. Older rules 1/2 histories remain readable and replayable; their historical transitions did not record stage-post identities or freeze snapshots, so the migration does not invent those missing historical posts. The UI identifies legacy records accordingly. Existing event hashes, approvals, charges, artifacts, comments, and fork lineage must continue to verify after migration and import.

@@ -14,6 +14,23 @@ export const RECONCILE_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const ALTERNATIVE = 'alternative';
 
+// Stewardship and reconciliation use one clock. An active stage starts the
+// inactivity clock if the steward has not written in that stage; otherwise the
+// steward's latest active-stage event resets it. This pure projection keeps
+// HTTP, Store validation, replay tooling, and tests aligned.
+export function stewardInactivity(events, { steward = null, activePost = null, posts = [], now = Date.now() } = {}) {
+  if (!steward || !activePost?.id) return { inactive: false, inactive_since: null, eligible_at: null };
+  const active = posts.find(post => post.post_id === activePost.id && (post.closed_seq === null || post.closed_seq === undefined));
+  const opened = active && events[active.opened_seq - 1];
+  const onActiveStage = event => event.actor === steward && (event.post_id === activePost.id
+    || activePost.id === `see:${event.body_hash}`);
+  const last = events.filter(onActiveStage).at(-1) || opened;
+  const since = Date.parse(last?.at);
+  if (!Number.isFinite(since)) return { inactive: false, inactive_since: null, eligible_at: null };
+  const eligibleAt = since + RECONCILE_DAYS * DAY_MS;
+  return { inactive: now >= eligibleAt, inactive_since: new Date(since).toISOString(), eligible_at: new Date(eligibleAt).toISOString() };
+}
+
 const incorporatedHashes = events => new Set(events
   .filter(event => ['revised', 'specced'].includes(event.type))
   .flatMap(event => (event.credits || []).map(credit => credit.comment)));
@@ -53,4 +70,15 @@ export function forkEligibility(report, { person, steward }) {
     not_before: pending.fork_eligible_at };
   if (mine.some(item => item.status === 'incorporated')) return { allowed: false, reason: 'your alternative was incorporated, so there is no disagreement to fork over' };
   return { allowed: false, reason: 'a fork needs a disagreement: post an alternative in the active stage and give the team time to agree' };
+}
+
+// A transfer request is not a transfer. It is a visible request for a leader
+// to consider, and needs both an aged unresolved alternative and an inactive
+// current steward. No approval, spend, or tool authority changes here.
+export function transferEligibility(report, inactivity, { person, steward }) {
+  if (person === steward) return { allowed: false, reason: 'the current steward cannot request their own transfer' };
+  const contribution = report.contributions.find(item => item.actor === person && item.status === 'unresolved_after_window');
+  if (!contribution) return { allowed: false, reason: 'a transfer request needs your unresolved alternative after the reconciliation window' };
+  if (!inactivity.inactive) return { allowed: false, reason: 'the current steward is still active in this stage', eligible_at: inactivity.eligible_at };
+  return { allowed: true, contribution: contribution.hash, eligible_at: inactivity.eligible_at };
 }

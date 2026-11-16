@@ -9,6 +9,7 @@ import { appendAudit } from './audit.js';
 import { emptyScope, validScope, withinScope } from './scope.js';
 import { initializeMemory, syncMemory, rebuildMemory, verifyMemory, searchMemory, contributionMemory } from './memory.js';
 import { initializeMentoring } from './mentoring.js';
+import { reconciliation, stewardInactivity, transferEligibility } from './reconcile.js';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 // Fixed page size for the feed and the item API. There is no setting for it.
@@ -428,15 +429,30 @@ export class Store {
       if (context.rules >= 2) {
         const consented = this.events(item).some(entry => entry.type === 'checked_in'
           && entry.actor === context.steward && entry.consent === true);
-        const last = this.db.prepare('SELECT at FROM events WHERE actor=? ORDER BY at DESC LIMIT 1').get(context.steward);
-        // Both values are event data, not a wall-clock read. The event being
-        // appended supplies the comparison point, which keeps replay deterministic.
-        const currentAt = new Date(event.at).getTime();
-        const lastAt = last && new Date(last.at).getTime();
-        const inactiveForFourteenDays = Number.isSafeInteger(currentAt) && Number.isSafeInteger(lastAt)
-          && currentAt - lastAt >= 14 * 24 * 60 * 60 * 1000;
-        if (!consented && !inactiveForFourteenDays) throw refused('steward consent or fourteen days of inactivity required');
+        const events = this.events(item);
+        const posts = this.db.prepare('SELECT post_id, opened_seq, closed_seq FROM stage_posts WHERE item=?').all(item);
+        // Rules 3 has stage identities, so it measures only the active stage.
+        // Keep older histories replayable under their original item-wide rule.
+        const inactivity = context.rules >= 3
+          ? stewardInactivity(events, { steward: context.steward, activePost: context.activePost, posts, now: Date.parse(event.at) })
+          : (() => {
+              const last = events.filter(entry => entry.actor === context.steward).at(-1);
+              const elapsed = Date.parse(event.at) - Date.parse(last?.at);
+              return { inactive: Number.isFinite(elapsed) && elapsed >= 14 * 24 * 60 * 60 * 1000 };
+            })();
+        if (!consented && !inactivity.inactive) throw refused(context.rules >= 3
+          ? 'steward consent or fourteen days of active-stage inactivity required'
+          : 'steward consent or fourteen days of inactivity required');
       }
+    }
+    if (event.type === 'commented' && event.kind === 'transfer_request') {
+      const context = this.read(item).context;
+      const events = this.events(item);
+      const posts = this.db.prepare('SELECT post_id, opened_seq, closed_seq FROM stage_posts WHERE item=?').all(item);
+      const report = reconciliation(events, { posts, steward: context.steward, now: Date.parse(event.at) });
+      const inactivity = stewardInactivity(events, { steward: context.steward, activePost: context.activePost, posts, now: Date.parse(event.at) });
+      const eligibility = transferEligibility(report, inactivity, { person: event.actor, steward: context.steward });
+      if (!eligibility.allowed) throw refused(eligibility.reason);
     }
     if (event.type === 'erased') {
       // Every path to an erasure (the product, a direct append, an import) meets the same rules.

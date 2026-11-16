@@ -23,7 +23,7 @@ import { effortAllowance } from '../gateway/effort.js';
 import { Mentoring } from '../core/mentoring.js';
 import { mentoringHome, mentoringRequest, mentoringEvidence } from './pages-mentoring.js';
 import { emptyScope, validScope } from '../core/scope.js';
-import { reconciliation, forkEligibility } from '../core/reconcile.js';
+import { reconciliation, forkEligibility, stewardInactivity, transferEligibility } from '../core/reconcile.js';
 import { searchPage, contributionsPage, recordPage } from './pages-memory.js';
 
 // Object key order does not change a retry identity. Array order is meaningful.
@@ -514,7 +514,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           const retry = prior?.original === input.original && { type: prior.type, actor: prior.actor,
             original: prior.original, rules: prior.rules, at: prior.at };
           store.append(id, retry || { type: 'posted', actor: session.person, original: input.original,
-            rules: CURRENT_RULES, at: new Date().toISOString() }, { idem });
+            rules: CURRENT_RULES, at: new Date(clock()).toISOString() }, { idem });
           return json(res, 201, { id, state: store.read(id) });
         }
         // Derive and validate before looking up a receipt, including the signed-in owner.
@@ -533,8 +533,8 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           return json(res, 200, { id, state: store.read(id), idempotent: true });
         }
         store.append(id, questAsSee ? { type: 'posted', actor: session.person, original: eventBody.problem,
-          questMemo: eventBody.questMemo, rules: CURRENT_RULES, at: new Date().toISOString() } : { type: 'checked', actor: session.person,
-          at: new Date().toISOString(), ...eventBody },
+          questMemo: eventBody.questMemo, rules: CURRENT_RULES, at: new Date(clock()).toISOString() } : { type: 'checked', actor: session.person,
+          at: new Date(clock()).toISOString(), ...eventBody },
         { idem: input.quest ? `quest:${id}` : randomUUID() });
         return json(res, 201, { id, state: store.read(id) });
       }
@@ -594,15 +594,32 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         const events = store.events(itemId);
         if (!events.length) throw refused('item not found');
         const state = store.read(itemId);
-        const posts = store.db.prepare('SELECT post_id, closed_seq FROM stage_posts WHERE item=?').all(itemId);
+        const posts = store.db.prepare('SELECT post_id, opened_seq, closed_seq FROM stage_posts WHERE item=?').all(itemId);
         const terminal = !['SEEN', 'CHECKED', 'SPECCED', 'SUBMITTED', 'SENDING', 'TRYING'].includes(state.state);
-        return { events, state, report: reconciliation(events, { posts, steward: state.context.steward, now: clock(), terminal }) };
+        const inactivity = stewardInactivity(events, { posts, steward: state.context.steward, activePost: state.context.activePost, now: clock() });
+        return { events, state, report: reconciliation(events, { posts, steward: state.context.steward, now: clock(), terminal }), inactivity };
       };
       const recon = url.pathname.match(/^\/api\/items\/([^/]+)\/reconciliation$/);
       if (req.method === 'GET' && recon) {
-        const { report, state } = reconcileFor(recon[1]);
+        const { report, state, inactivity } = reconcileFor(recon[1]);
         return json(res, 200, { ...report, steward: state.context.steward,
-          you: forkEligibility(report, { person: session.person, steward: state.context.steward }) });
+          you: forkEligibility(report, { person: session.person, steward: state.context.steward }),
+          transfer: { ...inactivity, you: transferEligibility(report, inactivity, { person: session.person, steward: state.context.steward }) } });
+      }
+      const transferRequest = url.pathname.match(/^\/api\/items\/([^/]+)\/reconciliation\/transfer-request$/);
+      if (req.method === 'POST' && transferRequest) {
+        if (!exactKeys(input, ['reason']) || !text(input.reason, 2000)) return json(res, 409, { error: 'request refused' });
+        const { report, state, inactivity } = reconcileFor(transferRequest[1]);
+        const eligibility = transferEligibility(report, inactivity, { person: session.person, steward: state.context.steward });
+        if (!eligibility.allowed) return json(res, 409, { error: 'request refused', reason: eligibility.reason,
+          ...(eligibility.eligible_at ? { eligible_at: eligibility.eligible_at } : {}) });
+        const active = state.context.activePost;
+        if (!active) return json(res, 409, { error: 'request refused' });
+        const result = store.append(transferRequest[1], { type: 'commented', actor: session.person,
+          kind: 'transfer_request', comment: `Transfer requested: ${input.reason}`, anchor_kind: active.kind,
+          anchor_hash: active.version, ...postBinding(req), at: new Date(clock()).toISOString() },
+        { idem: req.headers['idempotency-key'] || randomUUID() });
+        return json(res, 201, { ...result, transfer: eligibility });
       }
       const fork = url.pathname.match(/^\/api\/items\/([^/]+)\/fork$/);
       if (req.method === 'POST' && fork) {

@@ -63,7 +63,7 @@ const forgedReporter = (value, actor) => array(value)
 const commentAnchor = (state, event) => {
   if (!nonempty(event.comment) || event.comment.length > 4000) return false;
   if (state.rules >= 2) {
-    if (!['comment', 'question', 'concern', 'alternative', 'decline'].includes(event.kind)) return false;
+    if (!['comment', 'question', 'concern', 'alternative', 'decline', 'transfer_request'].includes(event.kind)) return false;
     // Only the steward can decline, and a decline answers a specific comment.
     if (event.kind === 'decline' && (event.parent === undefined || event.actor !== state.steward)) return false;
     // A Spec is only a live discussion anchor while it still describes the
@@ -169,7 +169,14 @@ export function step(state, event, who) {
     const helpers = context.helpers.filter(id => id !== event.steward);
     const authors = context.rules >= 2 && !context.authors.includes(event.steward)
       ? [...context.authors, event.steward] : context.authors;
-    return result({ ...context, steward: event.steward, helpers, ineligibleHelpers, ...(authors ? { authors } : {}) });
+    // A new steward receives the branch and its history, not an active build
+    // authorization. Advance the approval fence so stale run tokens cannot
+    // match a later approval, then require a fresh Send and leader approval.
+    const invalidatesApproval = context.rules >= 3 && ['SUBMITTED', 'SENDING', 'TRYING'].includes(context.phase);
+    const next = { ...context, steward: event.steward, helpers, ineligibleHelpers, ...(authors ? { authors } : {}),
+      ...(invalidatesApproval ? { phase: 'SPECCED', sent: null, approver: null, capMicros: null, spentMicros: 0,
+        approval: context.approval + 1, leash: null } : {}) };
+    return result(next, invalidatesApproval ? stopsBuild(context, next.phase, event.type) : []);
   }
   if (event.type === 'shelved' && nonempty(event.reason)
       && (leader(who) || steward(context, event, who))) {

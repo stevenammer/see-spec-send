@@ -8,7 +8,7 @@ An honest table. A row says **Shipped and tested** only when a named test in thi
 | Nine decision outcomes | Shipped and tested | `test/decision-outcomes.test.mjs` | Older generic no's stay unclassified |
 | Fork on disagreement, decline, 14-day window | Shipped and tested | `test/reconcile.test.mjs` | Unavailable-author path not built |
 | Stewardship transfer | Shipped and tested | `test/steward-transfer.test.mjs` | A leader decides the transfer |
-| Closeout reports | Shipped and tested | `test/closeout.test.mjs` | Template-based, no analysis, correction path planned |
+| Closeout reports | Shipped and tested | `test/closeout.test.mjs`, `test/corrections.test.mjs` | Template-based, no analysis. A readable page with a way to challenge or add context |
 | Private opt-in mentoring | Shipped and tested | `test/sliceF6-mentoring.test.mjs` | Not wired to anything else, by design |
 | Guided problem discovery | Shipped and tested | `test/vision-quest.test.mjs` | AI lane is a fixture unless an operator configures one |
 | Metered model gateway and chat proxy | Shipped and tested | `test/gateway.test.mjs`, `test/proxy-chat.test.mjs` | Dollar caps, plus optional per-run call and token ceilings (`test/gateway-run-limits.test.mjs`) so a free model is bounded too |
@@ -19,6 +19,7 @@ An honest table. A row says **Shipped and tested** only when a named test in thi
 | Private reflection after decisions | Shipped and tested | `test/reflection.test.mjs` | Notes stay in the person's browser only; they do not follow the person across devices |
 | Departments and read scopes | Built (not verified live) | `test/read-scope.test.mjs` | Groups are admin-CLI managed; restricted work exposes existence and steward contact outside its audience |
 | Opportunity propagation | Built (not verified live) | `test/propagation-s3.test.mjs` | Deterministic catalog/tag matching only; every edge remains a candidate until a person acts |
+| Ask the organization (saved, re-runnable, contestable answers over what you may read) | Shipped and tested | `test/analysis-run.test.mjs` | Works without any model (sources only). A model lane exists but is off unless an operator enables it; no live model verified. Ranking or motive questions are answered with criteria, outcomes and unknowns, never a person ranking |
 | Correctable derived memory | Shipped and tested | `test/corrections.test.mjs`, `test/knowledge-index.test.mjs` | Frozen packet copies, exports and backups can outlive an erasure; the live store tombstones dependent derived views and delivery |
 | Microsoft Teams and other channels | Planned | none | Nothing shipped |
 | Customer-owned storage, enterprise sign-in | Planned | none | Seams only |

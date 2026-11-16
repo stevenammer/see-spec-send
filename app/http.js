@@ -779,7 +779,8 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         const target = store.knowledge.entries().find(row => row.hash === correction[1]);
         const source = store.db.prepare('SELECT item FROM events WHERE body_hash=?').get(correction[1]);
         const item = target?.body?.item || target?.body?.parent?.item || source?.item;
-        if (!target || !item || !readable(item)) return json(res, 403, { error: 'request refused' });
+        // A correction may target a derived record in the knowledge log or a source event it was built from.
+        if ((!target && !source) || !item || !readable(item)) return json(res, 403, { error: 'request refused' });
         return json(res, 201, challengeClaim(store, { target: correction[1], actor: session.person, note: input.note, at: new Date(clock()).toISOString() }));
       }
       const deliver = url.pathname.match(/^\/api\/items\/([^/]+)\/artifact$/);

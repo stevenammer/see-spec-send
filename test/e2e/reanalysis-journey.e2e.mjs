@@ -93,9 +93,33 @@ try {
   assert.ok(fresh.knowledge.verify().ok);
   step('the original decision and its frozen record are unchanged');
 
+  // Memory: the typed Knowledge page finds the stated reason, and the readable closing report takes a correction.
+  await dana.goto(`${origin}/knowledge?q=integration`);
+  assert.match(await dana.locator('main').innerText(), /No budget for a new integration/, 'the knowledge page finds the decline reason');
+  const sendPost = fresh.db.prepare("SELECT post_id FROM stage_posts WHERE item=? AND kind='decision'").get(danaItem);
+  assert.ok(sendPost, 'the declined case has a frozen decision post');
+  fresh.close();
+  const { runCloseoutJobs } = await import('../../core/closeout.js');
+  const writer = new Store(db); runCloseoutJobs(writer, {}); writer.close();
+  await dana.goto(`${origin}/items/${danaItem}/closeout/${encodeURIComponent(sendPost.post_id)}`);
+  await dana.getByRole('heading', { name: 'Closing report' }).waitFor();
+  assert.match(await dana.locator('main').innerText(), /No budget for a new integration/);
+  await dana.locator('form[data-correction] [name=note]').fill('Context: the existing export was not known when this was decided.');
+  await dana.getByRole('button', { name: 'This is wrong / Add context' }).click();
+  let checked, corrections = [];
+  for (let i = 0; i < 100 && !corrections.length; i++) { // the page posts in the background; poll the record
+    await new Promise(r => setTimeout(r, 100)); checked?.close(); checked = new Store(db); corrections = checked.knowledge.entries('correction');
+  }
+  assert.equal(corrections.length, 1, 'a correction was recorded');
+  assert.equal(corrections[0].body.actor ?? corrections[0].body.person ?? 'dana', 'dana');
+  assert.deepEqual(checked.eventRows(danaItem).map(r => r.hash), before.events, 'the source record did not change');
+  assert.ok(checked.knowledge.verify().ok);
+  checked.close();
+  step('memory: the knowledge page found the reason, and a correction was recorded without touching the source');
+
   const samSeesNothing = await sam.goto(`${origin}/items/${samItem}`);
   assert.equal(samSeesNothing.status(), 200);
-  console.log('PASS: continuous reanalysis in a real browser: result, linked update, response, and a new decision with the old case untouched.');
+  console.log('PASS: continuous reanalysis in a real browser: result, linked update, response, a new decision, and a correction, with the old case untouched.');
 } finally {
   await browser?.close(); server.kill();
 }

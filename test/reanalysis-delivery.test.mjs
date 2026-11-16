@@ -156,3 +156,15 @@ test('static: delivery code never reads the leader flag or counts renewals or re
   const http = readFileSync('app/http.js', 'utf8');
   assert.doesNotMatch(http, /renewals?_per|reversal_count|yes_rate/i);
 });
+
+test('a correction can target a source event, as the closing-report button does, and never changes the source', async t => {
+  const { store, call } = await world(t);
+  const decision = store.eventRows('dana').find(row => row.type === 'decided');
+  const before = store.eventRows('dana').map(row => row.hash);
+  assert.equal((await call('POST', `/api/knowledge/${decision.body_hash}/correction`, 'pat', { note: 'Context: an existing export covers this.' })).status, 201);
+  assert.equal((await call('POST', `/api/knowledge/${'a'.repeat(64)}/correction`, 'pat', { note: 'Nothing here.' })).status, 403, 'an unknown target is refused');
+  assert.equal((await call('POST', `/api/knowledge/${decision.body_hash}/correction`, 'pat', { note: '' })).status >= 400, true, 'an empty note is refused');
+  const entry = store.knowledge.entries('correction')[0].body;
+  assert.equal(entry.actor, 'pat'); assert.equal(entry.target, decision.body_hash);
+  assert.deepEqual(store.eventRows('dana').map(row => row.hash), before);
+});

@@ -291,7 +291,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
       if (req.method === 'GET' && url.pathname === '/assets/app.css')
         return staticFile(res, 'app.css', 'text/css; charset=utf-8');
       if (req.method === 'GET' &&
-          ['/assets/vision-quest.js', '/assets/quest-storage.js', '/assets/quest-ui.js']
+          ['/assets/vision-quest.js', '/assets/quest-storage.js', '/assets/quest-ui.js', '/assets/reflection.js']
             .includes(url.pathname)) {
         return staticFile(res, url.pathname.split('/').at(-1),
           'application/javascript; charset=utf-8');

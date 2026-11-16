@@ -34,6 +34,21 @@ const decisionLabels = {
   redirect: 'Redirect', resolve_without_build: 'Resolve without build', decline: 'Decline',
   prohibited: 'Prohibited', experiment_did_not_help: 'Experiment did not help', op_withdrew: 'OP withdrew',
 };
+const reflectionLinks = event => ['evidence', 'annexes', 'results'].flatMap(field => Array.isArray(event?.[field]) ? event[field] : [])
+  .filter(row => row && typeof row.url === 'string' && /^https?:\/\//.test(row.url))
+  .map(row => ({ url: row.url, label: typeof row.claim === 'string' ? row.claim : 'Record link' }));
+const reflectionRecord = (item, events, person) => {
+  const decisionAt = events.findIndex(event => ['approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew'].includes(event.type));
+  const known = events.slice(0, decisionAt < 0 ? events.length : decisionAt + 1).flatMap(reflectionLinks);
+  const later = decisionAt < 0 ? [] : events.slice(decisionAt + 1).filter(event =>
+    ['approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'helped', 'tried'].includes(event.type) ||
+    ['annexes', 'results'].some(field => Array.isArray(event[field]) && event[field].length));
+  const changed = later.flatMap(reflectionLinks);
+  const record = { person, item: item.id, known, changed,
+    later: later.map(event => event.body_hash || `${event.type}:${event.at || ''}`) };
+  record.changeKey = JSON.stringify({ changed, later: record.later });
+  return record;
+};
 const shell = (title, content) =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><link rel="stylesheet" href="/assets/app.css"></head><body><header><a href="/">See / Spec / Send</a> <a href="/search">Search</a> <a href="/intelligence">Investigate</a> <a href="/mentoring">Mentoring</a></header><main>${content}</main><script src="/assets/app.js" defer></script></body></html>`;
 const progress = item => `${item.helpers} of ${item.quorum} people have said it helps`;
@@ -139,6 +154,9 @@ export function itemPage(item, events, person, leader) {
   const rules2 = context.rules >= 2;
   const problem = firstEvent?.original || events.find(event => event.type === 'checked' || event.type === 'seen')?.problem || '';
   const current = events.at(-1);
+  const decisionActors = events.filter(event => ['approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew'].includes(event.type)).map(event => event.actor);
+  const canReflect = decisionActors.includes(person) || [context.steward, context.originator, ...(context.authors || [])].includes(person);
+  const reflection = canReflect && decisionActors.length ? `<section id="private-reflection" data-record="${escape(JSON.stringify(reflectionRecord(item, events, person)))}"></section><script type="module" src="/assets/reflection.js"></script>` : '';
   const questEvent = events.find(event => event.type === 'checked' || (event.type === 'posted' && event.questMemo));
   let questMemo = '';
   let questDraft;
@@ -279,7 +297,7 @@ export function itemPage(item, events, person, leader) {
     problem,
     (context.rules === 3 && context.activePost ? `<span hidden data-active-post="${escape(context.activePost.id)}" data-post-version="${escape(context.activePost.version)}"></span>` : '') + '<p><a href="/">Back to the work</a></p>' +
       `<p class="stage">${context.rules === 3 && !context.activePost && context.phase === 'SPECCED' ? 'Branch frozen' : stages[item.state]}</p><h1>${escape(problem)}</h1><p>Originator: <a href="/people/${encodeURIComponent(context.originator || context.steward)}">${escape(context.originator || context.steward)}</a>. Current steward: <a href="/people/${encodeURIComponent(context.steward)}">${escape(context.steward)}</a>.</p><p><a href="/items/${encodeURIComponent(item.id)}/related">Discover related work</a></p>` +
-      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${context.superseded ? `<p>This old approval is superseded. Update the spec, SEND IT!, and get a new leader approval.${context.supersededArtifact ? ' The delivered try is superseded and cannot receive new Helps votes.' : ''}</p>` : ''}${forkedFrom}${stageHistory}${effortStatus}${effortAllowance}${see}${forkDraft}${questMemo}${specSummary}${decision}${leash}${decisionHistory ? `<section><h2>Decision history</h2><ol>${decisionHistory}</ol></section>` : ''}${erasures ? `<section><h2>Erased content</h2><ol>${erasures}</ol></section>` : ''}${context.rules !== 3 || context.activePost?.kind === 'see' ? revise : '<p>SEE discussion is frozen. Fork it to continue a separate discussion.</p>'}${action}${packetView}${tryThread}${oldTryHistory}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${context.rules === 3 ? `<form data-fork-frozen="true"><h2>Fork a frozen stage</h2><label>Frozen snapshot<select name="from">${(item.stagePosts || []).filter(post => post.closed_seq !== null).map(post => `<option value="snapshot|${escape(post.post_id)}|${escape(post.snapshot_hash)}">${escape(post.kind)} at event ${escape(post.closed_seq)}</option>`).join('')}</select></label><label>Reason<input name="reason" required maxlength="2000"></label><button>Fork frozen stage</button></form>` : ''}${context.rules !== 3 || context.activePost ? shelve : ''}${context.rules !== 3 || context.activePost ? reassign + checkin : ''}${context.rules !== 3 || context.activePost?.kind === 'see' ? comment : ''}${outcomeActions}` +
+      `<p>${progress({ helpers: context.helpers.length, quorum: context.quorum })}</p>${reflection}${context.superseded ? `<p>This old approval is superseded. Update the spec, SEND IT!, and get a new leader approval.${context.supersededArtifact ? ' The delivered try is superseded and cannot receive new Helps votes.' : ''}</p>` : ''}${forkedFrom}${stageHistory}${effortStatus}${effortAllowance}${see}${forkDraft}${questMemo}${specSummary}${decision}${leash}${decisionHistory ? `<section><h2>Decision history</h2><ol>${decisionHistory}</ol></section>` : ''}${erasures ? `<section><h2>Erased content</h2><ol>${erasures}</ol></section>` : ''}${context.rules !== 3 || context.activePost?.kind === 'see' ? revise : '<p>SEE discussion is frozen. Fork it to continue a separate discussion.</p>'}${action}${packetView}${tryThread}${oldTryHistory}${instructions ? `<section><h2>Builder instructions</h2><ol>${instructions}</ol></section>` : ''}${fork}${context.rules === 3 ? `<form data-fork-frozen="true"><h2>Fork a frozen stage</h2><label>Frozen snapshot<select name="from">${(item.stagePosts || []).filter(post => post.closed_seq !== null).map(post => `<option value="snapshot|${escape(post.post_id)}|${escape(post.snapshot_hash)}">${escape(post.kind)} at event ${escape(post.closed_seq)}</option>`).join('')}</select></label><label>Reason<input name="reason" required maxlength="2000"></label><button>Fork frozen stage</button></form>` : ''}${context.rules !== 3 || context.activePost ? shelve : ''}${context.rules !== 3 || context.activePost ? reassign + checkin : ''}${context.rules !== 3 || context.activePost?.kind === 'see' ? comment : ''}${outcomeActions}` +
       `<h2>${rules2 ? 'Thread' : 'Comments'}</h2>${rules2 ? (renderThread(events, { ...context, readOnly: context.rules === 3 && context.activePost?.kind !== 'see', steward: context.steward === person ? context.steward : null }) || '<p>No comments yet.</p>') : `<ol>${anchoredComments || '<li>No comments yet.</li>'}</ol>`}<h2>What happened</h2><ol>${events.filter(event => event.type !== 'commented' && event.type !== 'revised').map(event => `<li>${eventWords(event)}</li>`).join('')}</ol>`,
   );
 }

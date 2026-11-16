@@ -11,7 +11,7 @@ An honest table. A row says **Shipped and tested** only when a named test in thi
 | Closeout reports | Shipped and tested | `test/closeout.test.mjs` | Template-based, no analysis, correction path planned |
 | Private opt-in mentoring | Shipped and tested | `test/sliceF6-mentoring.test.mjs` | Not wired to anything else, by design |
 | Guided problem discovery | Shipped and tested | `test/vision-quest.test.mjs` | AI lane is a fixture unless an operator configures one |
-| Metered model gateway and chat proxy | Shipped and tested | `test/gateway.test.mjs`, `test/proxy-chat.test.mjs` | Dollar caps only; call and token caps planned. A price-zero model is not yet bounded |
+| Metered model gateway and chat proxy | Shipped and tested | `test/gateway.test.mjs`, `test/proxy-chat.test.mjs` | Dollar caps, plus optional per-run call and token ceilings (`test/gateway-run-limits.test.mjs`) so a free model is bounded too |
 | Static-page builder in a locked container | Built (fixture only) | `test/builder.test.mjs`, `test/container.test.mjs` | One-shot static HTML, verified against a local mock |
 | Real coding agent as a builder | Planned | none | No agent connected yet |
 | Working ledger and sourced estimates | Planned | none | Today only free text |

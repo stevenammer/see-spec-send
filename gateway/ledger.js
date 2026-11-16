@@ -43,9 +43,14 @@ export const fixturePolicy = overrides => ({
   enabled: true, global_micros: 1_000_000, day_micros: 100_000, concurrency: 4,
   input_bytes: 8192, output_tokens: 1024, response_bytes: 8192, timeout_ms: 2000, ...overrides,
 });
+// Optional per-run ceilings. A price-zero model makes dollar caps vacuous, so an
+// operator can bound a run by call count and by total (worst-case) tokens too.
+// Absent means no extra ceiling, which keeps every stored policy valid.
+const OPTIONAL_LIMITS = ['max_calls_per_run', 'max_tokens_per_run'];
 const validatePolicy = policy => {
   const expected = Object.keys(fixturePolicy()).sort();
-  demand(canonical(Object.keys(policy).sort()) === canonical(expected), 'invalid gateway policy keys');
+  demand(canonical(Object.keys(policy).filter(key => !OPTIONAL_LIMITS.includes(key)).sort()) === canonical(expected), 'invalid gateway policy keys');
+  for (const key of OPTIONAL_LIMITS) demand(policy[key] === undefined || (integer(policy[key], 10_000_000) && policy[key] > 0), 'invalid per-run limit');
   demand(typeof policy.enabled === 'boolean', 'invalid gateway enablement');
   for (const key of ['global_micros', 'day_micros']) demand(integer(policy[key], 1_000_000_000_000), 'invalid cap');
   for (const key of ['input_bytes', 'output_tokens', 'response_bytes', 'timeout_ms']) {
@@ -275,6 +280,12 @@ export class Ledger {
       const used = add(legacyMicros(this.store, run.item, run.approval),
         sum(rows.filter(row => row.item === run.item && row.approval === run.approval)));
       demand(add(used, worst) <= cap, 'run cap exceeded');
+      const mine = rows.filter(row => row.run === run.id && row.approval === run.approval);
+      if (policy.max_calls_per_run !== undefined) demand(mine.length < policy.max_calls_per_run, 'run call limit exceeded');
+      if (policy.max_tokens_per_run !== undefined) {
+        const spent = mine.reduce((n, row) => add(n, add(row.input_bound, row.output_bound)), 0);
+        demand(add(spent, add(inputBound, input.max_output_tokens)) <= policy.max_tokens_per_run, 'run token limit exceeded');
+      }
       const combined = this.allMeteredReceipts();
       demand(add(sum(combined), worst) <= policy.global_micros, 'global cap exceeded');
       demand(add(sum(combined.filter(row => row.day === day)), worst) <= policy.day_micros, 'day cap exceeded');

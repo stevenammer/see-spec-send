@@ -82,3 +82,12 @@ export function transferEligibility(report, inactivity, { person, steward }) {
   if (!inactivity.inactive) return { allowed: false, reason: 'the current steward is still active in this stage', eligible_at: inactivity.eligible_at };
   return { allowed: true, contribution: contribution.hash, eligible_at: inactivity.eligible_at };
 }
+
+// Event timestamps are data, so parsing them is deterministic (core must not read a clock).
+export const parseAt = at => Date.parse(at);
+// Rules 1 and 2 keep their original item-wide inactivity measure for replay.
+export function legacyInactive(events, steward, at) {
+  const last = events.filter(entry => entry.actor === steward).at(-1);
+  const elapsed = parseAt(at) - parseAt(last?.at);
+  return { inactive: Number.isFinite(elapsed) && elapsed >= RECONCILE_DAYS * DAY_MS };
+}

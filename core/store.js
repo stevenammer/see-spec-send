@@ -9,7 +9,7 @@ import { appendAudit } from './audit.js';
 import { emptyScope, validScope, withinScope } from './scope.js';
 import { initializeMemory, syncMemory, rebuildMemory, verifyMemory, searchMemory, contributionMemory } from './memory.js';
 import { initializeMentoring } from './mentoring.js';
-import { reconciliation, stewardInactivity, transferEligibility } from './reconcile.js';
+import { reconciliation, stewardInactivity, transferEligibility, parseAt, legacyInactive } from './reconcile.js';
 import { buildCloseout } from './closeout.js';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
@@ -439,12 +439,8 @@ export class Store {
         // Rules 3 has stage identities, so it measures only the active stage.
         // Keep older histories replayable under their original item-wide rule.
         const inactivity = context.rules >= 3
-          ? stewardInactivity(events, { steward: context.steward, activePost: context.activePost, posts, now: Date.parse(event.at) })
-          : (() => {
-              const last = events.filter(entry => entry.actor === context.steward).at(-1);
-              const elapsed = Date.parse(event.at) - Date.parse(last?.at);
-              return { inactive: Number.isFinite(elapsed) && elapsed >= 14 * 24 * 60 * 60 * 1000 };
-            })();
+          ? stewardInactivity(events, { steward: context.steward, activePost: context.activePost, posts, now: parseAt(event.at) })
+          : legacyInactive(events, context.steward, event.at);
         if (!consented && !inactivity.inactive) throw refused(context.rules >= 3
           ? 'steward consent or fourteen days of active-stage inactivity required'
           : 'steward consent or fourteen days of inactivity required');
@@ -454,8 +450,8 @@ export class Store {
       const context = this.read(item).context;
       const events = this.events(item);
       const posts = this.db.prepare('SELECT post_id, opened_seq, closed_seq FROM stage_posts WHERE item=?').all(item);
-      const report = reconciliation(events, { posts, steward: context.steward, now: Date.parse(event.at) });
-      const inactivity = stewardInactivity(events, { steward: context.steward, activePost: context.activePost, posts, now: Date.parse(event.at) });
+      const report = reconciliation(events, { posts, steward: context.steward, now: parseAt(event.at) });
+      const inactivity = stewardInactivity(events, { steward: context.steward, activePost: context.activePost, posts, now: parseAt(event.at) });
       const eligibility = transferEligibility(report, inactivity, { person: event.actor, steward: context.steward });
       if (!eligibility.allowed) throw refused(eligibility.reason);
     }

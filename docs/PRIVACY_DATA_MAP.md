@@ -10,7 +10,7 @@ What is stored, where, who can read it, how long it stays, and how erasure reach
 | Reflection notes | The person's own browser only | Only that person, on that device | Until the person deletes them | The person deletes or exports them. The server holds nothing. |
 | Mentoring requests and check-ins | Separate mentoring tables | Only the two participants | Indefinite | Not reachable by erase of work posts; **not decided:** a retention rule. Nothing else reads these tables. |
 | Search index (words from records) | `search_docs` | Rebuilt from events; scoped to the viewer | Follows the posts | Rebuilt when a body is erased. |
-| Knowledge log: results, impacts, updates, receipts | `knowledge_log` (hash-chained) | Scoped by the source and target read rules | Indefinite | Dependent records are tombstoned in the same step as the source erase. |
+| Knowledge log: results, impacts, updates, receipts | `knowledge_log` (hash-chained) | Scoped by the source and target read rules | Indefinite | Records built from an erased source (results, updates, saved question answers, the ledger, closing reports) are tombstoned and their text is removed from this database in the same step. Their hashes stay so the chain still verifies. Earlier backups and exports are not changed. |
 | Corrections and challenges | `knowledge_log` | Anyone who can read the target | Indefinite | They are attributed notes, not edits; they follow the target. |
 | Digest entries and ping log | `digest_entries`, `ping_log` | The recipient only | Indefinite | Removed with the update when its source is erased. **Not decided:** a retention rule. |
 | Model gateway receipts | `gateway_*` tables | Operators | Indefinite | Not erased with posts: they hold counts and hashes only, no text. |

@@ -62,6 +62,9 @@ function sourceHashes(body) {
   const visit = (value, key = '') => {
     if (!value || typeof value !== 'object') return;
     if (Array.isArray(value)) return value.forEach(entry => visit(entry));
+    // A reference to a source record in the shape { item, hash } (a saved answer's sources and citations) names
+    // the body it was built from, so erasing that body must reach the record.
+    if (typeof value.item === 'string' && typeof value.hash === 'string' && /^[a-f0-9]{64}$/.test(value.hash)) found.add(value.hash);
     for (const [name, entry] of Object.entries(value)) {
       if ((name === 'body_hash' || name === 'source_body_hash' || name === 'delta' || name === 'impact' || name === 'annex') && typeof entry === 'string' && /^[a-f0-9]{64}$/.test(entry)) found.add(entry);
       if (name === 'source' && entry && typeof entry === 'object' && typeof entry.body_hash === 'string') found.add(entry.body_hash);

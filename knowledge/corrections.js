@@ -30,7 +30,13 @@ export function propagateErasure(store, sourceBodyHash, { reason, at }) {
     store.db.prepare('INSERT OR IGNORE INTO knowledge_tombstones(target_hash,reason,source_body_hash,at) VALUES(?,?,?,?)').run(hash, reason, sourceBodyHash, at);
     store.knowledge.append('retraction', { v: 1, target: hash, source_body_hash: sourceBodyHash, reason }, { at });
     store.db.prepare('DELETE FROM digest_entries WHERE annex_hash=?').run(hash);
+    // The record keeps its place in the chain (its hashes), but its text is removed from this database, not merely hidden:
+    // the log row, its copy in the bodies table, and so any export or backup made from now on.
+    const bodyHash = store.db.prepare('SELECT body_hash FROM knowledge_log WHERE hash=?').get(hash)?.body_hash;
+    store.db.prepare("UPDATE knowledge_log SET body='' WHERE hash=?").run(hash);
+    if (bodyHash) store.db.prepare("UPDATE knowledge_bodies SET bytes='', erased=1 WHERE body_hash=?").run(bodyHash);
   }
-  store.db.prepare('UPDATE knowledge_bodies SET erased=1 WHERE body_hash=?').run(sourceBodyHash);
+  // The copy of the erased source that the knowledge log kept for dependency tracking goes too.
+  store.db.prepare("UPDATE knowledge_bodies SET erased=1, bytes='' WHERE body_hash=?").run(sourceBodyHash);
   return { tombstoned: derived.size };
 }

@@ -959,6 +959,7 @@ export class Store {
       // Derived records are a separate append-only chain. Their tombstones and
       // digest cleanup are committed with this source erasure, never later.
       propagateErasure(this, targetHash, { reason: ground || 'author erased own content', at });
+      rebuildLedger(this);   // the ledger table is a projection of specs: rebuild it from the now-redacted body
       syncMemory(this, item);
       this.db.exec('COMMIT');
     } catch (error) {

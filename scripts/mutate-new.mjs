@@ -74,6 +74,10 @@ const mutants = [
   ['portability: two knowledge logs are never merged', 'core/store.js', "if (knowledgeRows.length && db.prepare('SELECT COUNT(*) AS n FROM knowledge_log').get().n !== 0) throw new Error('knowledge log is not empty');", '', T(['export-portability'])],
   ['portability: an imported log must verify', 'core/store.js', "if (!check.ok) throw new Error('imported knowledge log does not verify');", '', T(['export-portability'])],
   ['erasure: records built from a result are tombstoned too', 'knowledge/corrections.js', "for (const next of [row.derived_hash, body]) if (next && !seen.has(next))", "for (const next of [row.derived_hash]) if (next && !seen.has(next))", T(['export-portability'])],
+  ['erasure: saved answers citing the source are tombstoned too', 'knowledge/chain.js', "if (typeof value.item === 'string' && typeof value.hash === 'string' && /^[a-f0-9]{64}$/.test(value.hash)) found.add(value.hash);", '', T(['erasure-completeness'])],
+  ['erasure: the text of a tombstoned record is removed, not hidden', 'knowledge/corrections.js', "store.db.prepare(\"UPDATE knowledge_log SET body='' WHERE hash=?\").run(hash);", '', T(['erasure-completeness'])],
+  ['erasure: the copy of the erased source is removed', 'knowledge/corrections.js', "store.db.prepare(\"UPDATE knowledge_bodies SET erased=1, bytes='' WHERE body_hash=?\").run(sourceBodyHash);", '', T(['erasure-completeness'])],
+  ['erasure: the ledger projection is rebuilt', 'core/store.js', "      rebuildLedger(this);   // the ledger table is a projection of specs: rebuild it from the now-redacted body\n", '', T(['erasure-completeness'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 if (process.argv.includes('--check-sources')) {

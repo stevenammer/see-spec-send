@@ -553,17 +553,21 @@ async function main() {
     await olive.getByRole('button', { name: 'SEND IT!' }).click();
     await olive.waitForFunction(() => !document.querySelector('form[data-send]'));
     await leader.goto(decisionUrl);
-    const returnForm = leader.locator('form[data-event=returned]');
+    const returnForm = leader.locator('form[data-decision]');
+    await returnForm.locator('[name=disposition]').selectOption('return_for_revision');
+    await returnForm.locator('[name=reason_code]').fill('existing_option_unchecked');
+    await returnForm.locator('[name=needed]').fill('Check the existing handoff view.');
+    await returnForm.locator('[name=next_reviewer]').fill('leader');
     const returnedPacket = await returnForm.locator('[name=packet_hash]').inputValue();
     const returnReason = 'Check the existing handoff view before adding another.';
     // Browser validity stops a short reason, and the server refuses a crafted short reason too.
     await returnForm.locator('[name=reason]').fill('short');
-    await returnForm.getByRole('button', { name: 'Return the spec' }).click();
+    await returnForm.getByRole('button', { name: 'Record decision' }).click();
     assert.equal(await leader.locator('.stage', { hasText: 'Decide' }).count(), 1);
     assert.ok(await rawPost(leader, `/api/items/${decisionId}/events`, { type: 'returned', reason: 'short' }) >= 400);
     await returnForm.locator('[name=reason]').fill(returnReason);
-    await submitDecisionAndCapture(leader, returnForm, returnForm.getByRole('button', { name: 'Return the spec' }), decisionId, 'returned');
-    await leader.getByRole('heading', { name: 'Decision history' }).waitFor();
+    await submitDecisionAndCapture(leader, returnForm, returnForm.getByRole('button', { name: 'Record decision' }), decisionId, 'decided');
+    await leader.getByRole('heading', { name: 'Decision record' }).waitFor();
     await ben.goto(decisionUrl);
     await ben.getByText(returnReason).first().waitFor();
     assert.equal(await ben.locator('form[data-event=returned]').count(), 0);
@@ -581,26 +585,29 @@ async function main() {
     await olive.getByRole('button', { name: 'SEND IT!' }).click();
     await olive.waitForFunction(() => !document.querySelector('form[data-send]'));
     await leader.goto(decisionUrl);
-    const notBuilt = leader.locator('form[data-event=not_built]');
+    const notBuilt = leader.locator('form[data-decision]');
+    await notBuilt.locator('[name=disposition]').selectOption('resolve_without_build');
+    await notBuilt.locator('[name=reason_code]').fill('existing_option_sufficient');
+    await notBuilt.locator('[name=alternative]').fill('Use the existing handoff view.');
+    await notBuilt.locator('[name=action_owner]').fill('olive');
     const newPacket = await notBuilt.locator('[name=packet_hash]').inputValue();
     assert.notEqual(returnedPacket, newPacket);
     const noBuildReason = 'The existing handoff view covers this without a new build.';
     await notBuilt.locator('[name=reason]').fill(noBuildReason);
-    await notBuilt.locator('[name=restricted_evidence]').fill('a restricted source exists; ask Privacy');
-    await notBuilt.locator('[name=pivot_note]').fill('The existing view was verified after the return.');
     const notBuiltDiagnostic = await submitDecisionAndCapture(
-      leader, notBuilt, notBuilt.getByRole('button', { name: 'Not building' }), decisionId, 'not_built',
+      leader, notBuilt, notBuilt.getByRole('button', { name: 'Record decision' }), decisionId, 'decided',
     );
     await leader.getByRole('heading', { name: 'Decision history' }).waitFor();
     await ben.goto(decisionUrl);
     await waitForDecisionText(ben, noBuildReason, notBuiltDiagnostic);
     assert.equal(ben.viewportSize().width, 390, 'member reads decision history at phone width');
-    assert.match(await ben.locator('main').innerText(), /a restricted source exists; ask Privacy/);
-    assert.match(await ben.locator('main').innerText(), /What changed: The existing view was verified after the return\./);
-    assert.equal(await ben.locator('section:has(h2:text("Decision history")) > ol > li').count(), 2);
+    assert.match(await ben.locator('main').innerText(), /Resolve without build/);
+    assert.match(await ben.locator('main').innerText(), /Use the existing handoff view\./);
+    assert.equal(await ben.locator('section:has(h2:text("Decision history")) > ol > li').count(), 1);
+    assert.equal(await ben.getByRole('heading', { name: 'Decision record', exact: true }).count(), 1);
     assert.ok(await ben.getByText(returnReason).count() > 0, 'earlier return reason remains');
     assert.equal(await ben.locator('iframe[title="Playable try"]').count(), 0);
-    step('Not building records a concrete reason, evidence receipt and pivot note; prior decision stays public');
+    step('Resolve without build records a reason and action owner; prior return stays public');
 
     // 18. A completed/closed parent remains available as a historical fork source.
     await leader.goto(itemUrl);

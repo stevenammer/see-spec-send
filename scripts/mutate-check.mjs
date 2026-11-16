@@ -158,7 +158,7 @@ const mutants = [
   ['F3 explicit expiry matches duration', 'event.window_minutes !== undefined && event.expires_at !== undefined && event.expires_at !== expiresAt', 'false'],
   ['F3 leash limits iteration', 'context.iteration + 1 <= (context.leash?.maxIterations ?? DEFAULT_MAX_ITERATIONS)', 'true'],
   ['F3 research has six honest slots', "export const RESEARCH_SOURCES = Object.freeze([\n  'internal tools and licenses', 'internal prior work', 'configuration options',\n  'open source', 'commercial options', 'process change',\n]);", "export const RESEARCH_SOURCES = Object.freeze(['internal tools and licenses', 'internal prior work', 'configuration options', 'commercial options', 'process change']);"],
-  ['F3 decision records cannot erase', "['posted', 'forked', 'approved', 'returned', 'not_built', 'sent'].includes(target.type)", "['posted', 'forked', 'approved', 'returned', 'sent'].includes(target.type)"],
+  ['F3 decision records cannot erase', "['posted', 'forked', 'approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew', 'sent'].includes(target.type)", "['posted', 'forked', 'approved', 'returned', 'decided', 'experiment_not_helpful', 'op_withdrew', 'sent'].includes(target.type)"],
   ['gateway disabled default', "demand(policy.enabled, 'gateway disabled');", ''],
   ['gateway run cap', "demand(add(used, worst) <= cap, 'run cap exceeded');", ''],
   ['gateway global cap', "demand(add(sum(combined), worst) <= policy.global_micros, 'global cap exceeded');", ''],
@@ -464,7 +464,7 @@ const mutants = [
   ['slice27 container uses an init process', "'--init', this.image, 'timeout'", "this.image, 'timeout'"],
   ['slice27 docker calls time out', "timeout: this.timeoutMs, ", ""],
   ['slice27 container builder needs the socket', "|| fail('--builder container needs --gateway-socket PATH')", "|| ''"],
-  ['slice27 builder kind is checked', "} else if (value('--builder')) fail('--builder must be container');", "}"],
+  ['slice27 builder kind is checked', "else fail('--builder must be container or fixture');", "else adapter = builtInBuilderRegistry(store).select('fixture');"],
   ['slice27 gateway socket directory is private', "if (statSync(parent).mode & 0o022) fail(", "if (false) fail("],
 ];
 

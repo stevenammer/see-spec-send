@@ -207,7 +207,7 @@ export class Ledger {
     } else {
       const usage = JSON.parse(row.usage);
       demand(row.charged_micros === this.cost(row, usage), 'corrupt settlement');
-      demand(typeof JSON.parse(row.outcome).output === 'string', 'corrupt outcome');
+      if (row.outcome !== null) demand(typeof JSON.parse(row.outcome).output === 'string', 'corrupt outcome');
     }
     return row;
   }
@@ -347,7 +347,11 @@ export class Ledger {
     });
   }
 
-  settle(id, result) {
+  // Proxy calls deliberately retain no model body.  Their client receives the
+  // body directly, while the durable receipt retains only the identity hash,
+  // frozen price, usage, and charge.  Old generate calls keep their output for
+  // their established idempotent replay behavior.
+  settle(id, result, { retainOutput = true } = {}) {
     return transaction(this.store, () => {
       const row = this.check(this.db.prepare('SELECT * FROM gateway_receipts WHERE id=?').get(id));
       if (row.state !== 'dispatched') return false;
@@ -356,14 +360,14 @@ export class Ledger {
       const cost = this.cost(row, result.usage);
       // Authority and day are the original receipt, even if its run is now stopped.
       this.update(row, { state: 'settled', charged_micros: cost,
-        usage: canonical(result.usage), outcome: canonical({ output: result.output }) });
+        usage: canonical(result.usage), outcome: retainOutput ? canonical({ output: result.output }) : null });
       return true;
     });
   }
 
   outcome(id) {
     const row = this.check(this.db.prepare('SELECT * FROM gateway_receipts WHERE id=?').get(id));
-    return row.state === 'settled'
+    return row.state === 'settled' && row.outcome !== null
       ? { status: 200, body: { id, state: 'settled', output: JSON.parse(row.outcome).output,
         estimated_micros: row.charged_micros } }
       : { status: 202, body: { id, state: row.state, held_micros: row.charged_micros } };

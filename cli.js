@@ -8,13 +8,13 @@ import { watchdog } from './worker/watchdog.js';
 import { DockerCli } from './worker/container.js';
 import { builtInBuilderRegistry } from './worker/adapter-contract.js';
 import { Ledger, fixturePolicy, rateWithSystemText } from './gateway/ledger.js';
-import { Gateway, createGatewayServer, providerGateway } from './gateway/http.js';
+import { Gateway, ChatGateway, createGatewayServer, providerGateway } from './gateway/http.js';
 import { QuestGateway } from './gateway/quest.js';
 import { EffortGateway } from './gateway/effort.js';
 import { EffortWorker } from './app/effort.js';
 import { SPEC_INSTRUCTIONS } from './effort/spec.js';
 import { EFFORT_SYSTEM, effortProviderRequest } from './effort/prompt.js';
-import { fixtureProvider } from './gateway/fixture.js';
+import { fixtureProvider, fixtureChatProvider } from './gateway/fixture.js';
 import { readFileSync, mkdirSync, statSync, unlinkSync, chmodSync } from 'node:fs';
 import { dirname, join, resolve as resolvePath } from 'node:path';
 import { readProviders, saveProviders, validateProvider, providerFor, meteredProviderFor } from './provider/config.js';
@@ -317,7 +317,7 @@ async function run(argv, env, write) {
         reason: value('--reason') || fail('missing --reason'), refund: args.includes('--refund') });
       write(JSON.stringify({ id: row.id, state: row.state, charged_micros: row.charged_micros }));
     } else if (args[0] === 'serve-fixture') {
-      const server = createGatewayServer(new Gateway(ledger, fixtureProvider));
+      const server = createGatewayServer(new Gateway(ledger, fixtureProvider), new ChatGateway(ledger, fixtureChatProvider));
       const port = Number(value('--port') || '8081');
       await new Promise((resolve, reject) => {
         server.once('error', reject);
@@ -331,7 +331,7 @@ async function run(argv, env, write) {
       const providerLedger = new Ledger(store, { rate: selected.rate });
       if (!providerLedger.policy().enabled) fail('gateway is disabled');
       const gateway = providerGateway(providerLedger, selected.provider, { system: SYSTEM_PROMPT });
-      const server = createGatewayServer(gateway);
+      const server = createGatewayServer(gateway, new ChatGateway(providerLedger, selected.provider));
       const port = Number(value('--port') || '8081');
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
       const policy = gateway.ledger.policy();
@@ -342,21 +342,22 @@ async function run(argv, env, write) {
       // The builder container reaches the gateway only through this Unix socket. The directory is private to the
       // service user; the socket itself is connectable so the container's unprivileged user can use it.
       const socket = resolvePath(value('--socket') || fail('missing --socket PATH'));
-      let handler;
-      if (args.includes('--fixture')) handler = new Gateway(ledger, fixtureProvider);
+      let handler; let chatHandler;
+      if (args.includes('--fixture')) { handler = new Gateway(ledger, fixtureProvider); chatHandler = new ChatGateway(ledger, fixtureChatProvider); }
       else {
         const name = value('--name') || readProviders(env).defaults[value('--org') || 'default'] || fail('missing --name or configured --org default');
         const selected = meteredProviderFor(name, env);
         const providerLedger = new Ledger(store, { rate: selected.rate });
         if (!providerLedger.policy().enabled) fail('gateway is disabled');
         handler = providerGateway(providerLedger, selected.provider, { system: SYSTEM_PROMPT });
+        chatHandler = new ChatGateway(handler.ledger, selected.provider);
         write(`provider=${name}; model=${selected.rate.model}`);
       }
       const parent = dirname(socket);
       if (!existsSync(parent)) mkdirSync(parent, { recursive: true, mode: 0o700 });
       if (statSync(parent).mode & 0o022) fail(`${parent} is writable by others; use a private directory for the socket`);
       if (existsSync(socket)) unlinkSync(socket);
-      const server = createGatewayServer(handler);
+      const server = createGatewayServer(handler, chatHandler);
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve); });
       chmodSync(socket, 0o666);
       write(`Gateway listening on ${socket}`);

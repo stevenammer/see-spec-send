@@ -17,6 +17,24 @@ async function body(req, limit) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
+const unsafe = value => value && typeof value === 'object' && (Object.hasOwn(value, '__proto__')
+  || Object.hasOwn(value, 'constructor') || Object.hasOwn(value, 'prototype')
+  || Object.values(value).some(unsafe));
+const chatKeys = ['function_call', 'functions', 'max_tokens', 'messages', 'model', 'stream', 'tool_choice', 'tools'];
+const proxyInput = request => ({ model: request.model, input: JSON.stringify({
+  messages: request.messages, tools: request.tools, tool_choice: request.tool_choice,
+  functions: request.functions, function_call: request.function_call,
+}), max_output_tokens: request.max_tokens });
+function validateChat(request, ledger) {
+  if (!request || Array.isArray(request) || typeof request !== 'object' || unsafe(request)) throw Error('invalid chat payload');
+  if (JSON.stringify(Object.keys(request).sort()) !== JSON.stringify(Object.keys(request).sort().filter(key => chatKeys.includes(key)))) throw Error('invalid chat payload keys');
+  if (request.model !== ledger.rate.model || !Array.isArray(request.messages) || request.messages.length === 0
+    || typeof request.stream !== 'boolean' || !Number.isSafeInteger(request.max_tokens) || request.max_tokens < 1) throw Error('invalid chat payload');
+  const policy = ledger.policy();
+  if (request.max_tokens > policy.output_tokens || Buffer.byteLength(JSON.stringify(request), 'utf8') > policy.input_bytes) throw Error('chat limit');
+  return proxyInput(request);
+}
+
 export class Gateway {
   constructor(ledger, provider) {
     this.ledger = ledger;
@@ -43,6 +61,55 @@ export class Gateway {
   }
 }
 
+// This is intentionally a separate protocol entry point, but not a separate
+// ledger: every chat completion uses the same reserve/dispatch/settle receipt
+// and original-approval cap as /v1/generate.
+export class ChatGateway {
+  constructor(ledger, provider) { this.ledger = ledger; this.provider = provider; }
+
+  async call(raw, idem, request) {
+    if (!this.provider || typeof this.provider.chat !== 'function') throw Error('no chat provider configured');
+    const input = validateChat(request, this.ledger);
+    const { row, fresh } = this.ledger.reserve(raw, idem, input);
+    if (!fresh) return this.ledger.outcome(row.id);
+    if (!this.ledger.dispatch(raw, row.id)) return this.ledger.outcome(row.id);
+    let timer; let response;
+    try {
+      const controller = new AbortController();
+      response = this.provider.chat(Object.freeze({ ...request, stream: false }), { id: row.id, signal: controller.signal });
+      const work = Promise.resolve(response).then(result => Promise.resolve(this.ledger.settle(row.id,
+        { output: JSON.stringify(result), usage: result?.usage }, { retainOutput: false })).then(ok => ok ? result : null)).catch(() => null);
+      const timeout = new Promise(resolve => { timer = setTimeout(() => { controller.abort(); resolve(null); }, JSON.parse(row.policy).timeout_ms); });
+      const result = await Promise.race([work, timeout]);
+      return result ? { status: 200, body: result } : this.ledger.outcome(row.id);
+    } finally { clearTimeout(timer); }
+  }
+
+  async stream(raw, idem, request, send) {
+    if (!this.provider || typeof this.provider.chat !== 'function') throw Error('no chat provider configured');
+    const input = validateChat(request, this.ledger);
+    const { row, fresh } = this.ledger.reserve(raw, idem, input);
+    if (!fresh || !this.ledger.dispatch(raw, row.id)) throw Error('idempotency request is not dispatchable');
+    const controller = new AbortController();
+    let usage = null;
+    try {
+      const source = await this.provider.chat(Object.freeze({ ...request, stream: true }), { id: row.id, signal: controller.signal });
+      for await (const chunk of source) {
+        // Permission is rechecked before every provider chunk. Revocation,
+        // expiry, kill, or stale approval aborts the upstream stream.
+        this.ledger.authorize(raw); if (chunk?.usage) usage = chunk.usage;
+        send(chunk);
+      }
+      if (!usage) throw Error('missing usage');
+      if (!this.ledger.settle(row.id, { output: '', usage }, { retainOutput: false })) throw Error('stream not settleable');
+      send('[DONE]');
+    } catch (error) {
+      controller.abort();
+      send({ error: { message: 'gateway stream aborted', type: 'gateway_refusal' } }); send('[DONE]');
+    }
+  }
+}
+
 // This keeps provider credentials outside the ledger and turns the narrow
 // completion contract into the legacy gateway response shape. Construct the
 // Ledger with the matching provider/config priceRate before exposing this path.
@@ -61,19 +128,26 @@ export function providerGateway(ledger, provider, options) {
   });
 }
 
-export function createGatewayServer(gateway) {
+export function createGatewayServer(gateway, chatGateway = null) {
   const server = createServer(async (req, res) => {
     try {
-      if (req.method !== 'POST' || req.url !== '/v1/generate') return reply(res, 404, { error: 'not found' });
+      if (req.method !== 'POST' || !['/v1/generate', '/v1/chat/completions'].includes(req.url)) return reply(res, 404, { error: 'not found' });
       if (req.headers['content-type'] !== 'application/json') return reply(res, 415, { error: 'JSON required' });
       // Bearer capabilities are distinct from person sessions and generic API tokens.
       const match = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization || '');
       if (!match) return reply(res, 401, { error: 'capability required' });
-      gateway.ledger.authorize(match[1]);
-      const policy = gateway.ledger.policy();
+      const handler = req.url === '/v1/chat/completions' ? chatGateway : gateway;
+      if (!handler) return reply(res, 404, { error: 'not found' });
+      handler.ledger.authorize(match[1]);
+      const policy = handler.ledger.policy();
       // JSON escaping can expand each input byte, but is still strictly bounded before parsing.
       const input = await body(req, policy.input_bytes * 6 + 1024);
-      const result = await gateway.call(match[1], req.headers['idempotency-key'], input);
+      if (req.url === '/v1/chat/completions' && input.stream) {
+        res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
+        await handler.stream(match[1], req.headers['idempotency-key'], input, chunk => res.write(`data: ${typeof chunk === 'string' ? chunk : JSON.stringify(chunk)}\n\n`));
+        return res.end();
+      }
+      const result = await handler.call(match[1], req.headers['idempotency-key'], input);
       reply(res, result.status, result.body);
     } catch (error) {
       const status = /cap exceeded/.test(error.message) ? 402

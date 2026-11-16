@@ -13,3 +13,18 @@ export async function fixtureProvider(request) {
     input_tokens: Buffer.byteLength(request.input) + 8, output_tokens: 1,
   } };
 }
+
+// Deterministic OpenAI-shaped fake. It is the only chat upstream used in tests.
+export const fixtureChatProvider = Object.freeze({
+  async chat(request) {
+    const tool = request.tools?.[0];
+    const message = tool ? { role: 'assistant', content: null, tool_calls: [{ id: 'call_fixture', type: 'function', function: { name: tool.function.name, arguments: '{"fixture":true}' } }] }
+      : { role: 'assistant', content: 'Fixture chat result' };
+    const usage = { input_tokens: Buffer.byteLength(JSON.stringify(request.messages)), output_tokens: 1 };
+    if (!request.stream) return { id: 'chatcmpl-fixture', object: 'chat.completion', model: request.model, choices: [{ index: 0, message, finish_reason: tool ? 'tool_calls' : 'stop' }], usage };
+    return (async function* () {
+      yield { id: 'chatcmpl-fixture', object: 'chat.completion.chunk', model: request.model, choices: [{ index: 0, delta: tool ? { tool_calls: message.tool_calls } : { content: 'Fixture chat result' }, finish_reason: null }] };
+      yield { id: 'chatcmpl-fixture', object: 'chat.completion.chunk', model: request.model, choices: [{ index: 0, delta: {}, finish_reason: tool ? 'tool_calls' : 'stop' }], usage };
+    })();
+  },
+});

@@ -51,6 +51,38 @@ review its own tokenizer, framing, hidden/reasoning tokens, price source and
 maximum billable usage before it can use this control. Configured providers supply an explicit reviewed model and integer price table.
 The app cannot verify the provider's invoice or an operator's pricing assumption.
 
+## Chat-completions proxy
+
+The fixture gateway also exposes `POST /v1/chat/completions`, using the same
+Bearer run capability and `Idempotency-Key`. It accepts an OpenAI-shaped request
+with `model`, nonempty `messages`, optional `tools`/`tool_choice` or legacy
+`functions`/`function_call`, required integer `max_tokens`, and required boolean `stream`. Tool calls are returned
+unchanged in `choices[].message.tool_calls`; streaming returns SSE
+`chat.completion.chunk` records and a final `[DONE]`. This is the metered route
+for a multi-call agent: every individual completion has its own idempotency key
+and receipt.
+
+Before either a normal or streaming upstream chat dispatch, the gateway reserves
+the serialized request byte bound plus framing and `max_tokens` at the reviewed
+rate. It checks the capability again immediately before dispatch and before each
+streamed upstream chunk. Stop, kill, stale approval/spec, expiry, revocation, or
+cap exhaustion refuse the following request. A changed condition during a stream aborts
+the upstream signal and ends SSE with a generic gateway error and `[DONE]`.
+Reported final usage settles the hold. Missing or malformed usage leaves the
+worst-case hold, including its concurrency slot. The durable receipt retains the
+call ID, run ID, model/rate snapshot, token usage, charge, state, and hashes.
+It intentionally stores neither prompts nor normal or streamed response bodies.
+Consequently, a completed chat request cannot be replayed after a client loss:
+the same key reports its settled receipt as `202`, and never sends the upstream
+request again.
+
+The shipped fixture returns a synthetic function call and synthetic usage, does
+no network I/O, and has no provider account. The existing OpenAI-compatible
+provider adapter also implements this transport, including bounded SSE parsing,
+when an operator has separately configured and approved it. Other provider
+adapters remain text-only and this route refuses them rather than falling back
+to an unmetered call.
+
 Before forwarding, `BEGIN IMMEDIATE` validates the live capability and reserves
 input byte bound plus framing and maximum output cost. The real builder, Effort,
 and Quest paths add a UTF-8 byte bound for their server-owned system text to
@@ -107,6 +139,18 @@ The app's read-only JSON API labels `context.spentMicros` and list `spent` as
 legacy charged-event values and exposes a separate `gateway_budget` summary.
 The pure state machine and helper quorum are unchanged. Gateway amounts are
 price estimates, not invoices or third-party financial-cap certification.
+
+### Enforcement boundary
+
+Enforced: calls sent through this gateway with its minted per-run capability are
+reserved before dispatch, charged or held in the shared approval cap, isolated to
+that active run, and stopped at the next admission or stream-chunk check after a
+live permission change. Receipts contain no chat body.
+
+Not enforced: a BYO agent that uses its own provider key or another endpoint can
+bypass this gateway and its cap. The gateway does not control an external
+provider account, certify provider token counts or invoices, undo provider work
+already dispatched, or terminate an agent process that ignores an aborted stream.
 
 Permanent tests cover real HTTP, a 100-request barrier one cent below a run cap,
 two actual SQLite writer processes, duplicate requests, crash holds, late usage,

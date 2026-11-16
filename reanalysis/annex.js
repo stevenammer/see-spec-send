@@ -1,6 +1,6 @@
 import { canonical } from '../knowledge/chain.js';
 
-export function buildAnnex(delta, impact) {
+export function buildAnnex(delta, impact, advisory = null) {
   const sourceQuotes = delta.claims.map(claim => claim.text);
   const bearing = impact.cites.map(cite => cite.quoted);
   return { v: 1, authoritative_for_original_stage: false,
@@ -8,6 +8,7 @@ export function buildAnnex(delta, impact) {
     why_matched: impact.why_this_case,
     not_known: impact.overlap_with_stated_reason ? ['Whether this new information changes a later decision.']
       : ['No overlap with the stated reason found.', 'Whether this new information changes a later decision.'],
+    ...(advisory ? { known_unknowns: advisory.known_unknowns, contrary: advisory.contrary } : {}),
     statement: 'Found by Effort (AI). This does not change the earlier decision.',
     delta: delta.body_hash, impact: canonical(impact) };
 }

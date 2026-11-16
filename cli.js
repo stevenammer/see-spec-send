@@ -32,6 +32,7 @@ import { appendAudit, verifyAudit } from './core/audit.js';
 import { kindOf } from './core/errors.js';
 import { runReanalysis } from './reanalysis/run.js';
 import { startReanalysisSchedule } from './reanalysis/schedule.js';
+import { AnalysisGateway } from './gateway/analysis.js';
 
 const fail = message => {
   throw new Error(message);
@@ -255,10 +256,21 @@ async function run(argv, env, write) {
       write(`this_workspace research ${args[0] === 'enable' ? 'enabled' : 'disabled'}; no external sources connected`);
     } else fail('use research status or research enable/disable --source this_workspace');
   } else if (command === 'reanalysis') {
-    if (args[0] !== 'run') fail('use reanalysis run [--limit N]');
+    if (args[0] !== 'run') fail('use reanalysis run [--limit N] [--verify]');
     const limit = Number(value('--limit') || '20');
     if (!Number.isSafeInteger(limit) || limit < 1) fail('--limit must be a positive integer');
-    const result = runReanalysis(store, { now: new Date().toISOString(), limit });
+    let verify = null;
+    if (args.includes('--verify')) {
+      const name = value('--analysis-provider') || readProviders(env).defaults.default || fail('missing --analysis-provider or configured default');
+      const selected = meteredProviderFor(name, env); const ledger = new Ledger(store, { rate: selected.rate });
+      if (!ledger.policy().enabled) fail('gateway is disabled');
+      const gateway = new AnalysisGateway(ledger, async input => {
+        const result = validateCompletion(await selected.provider.complete({ system: 'Return JSON only. This is advisory and cannot change a decision.', messages: [{ role: 'user', content: input.input }], maxOutputTokens: input.max_output_tokens, model: input.model, signal: AbortSignal.timeout(ledger.policy().timeout_ms) }));
+        return { output: result.text, usage: { input_tokens: result.usage.inputTokens, output_tokens: result.usage.outputTokens } };
+      });
+      verify = (prompt, context) => gateway.ask(context.person, context.idem, prompt);
+    }
+    const result = await runReanalysis(store, { now: new Date().toISOString(), limit, verify });
     write(`reanalysis: deltas=${result.deltas.length} annexes=${result.annexes.length} digest_entries=${result.delivery.entries} pings=${result.delivery.pinged}`);
   } else if (command === 'erase') {
     // Removes the body text from the live database. Backups and earlier copies are not changed.
@@ -480,6 +492,17 @@ async function run(argv, env, write) {
   } else if (command === 'serve') {
     const { port, host, origin, secure, trustedProxy, tls, bundlePort, bundleHostSuffix } = served;
     let questModel = null;
+    let analysisGateway = null;
+    if (args.includes('--analysis-provider')) {
+      const name = value('--analysis-provider') || fail('missing --analysis-provider');
+      const selected = meteredProviderFor(name, env); const ledger = new Ledger(store, { rate: selected.rate });
+      if (!ledger.policy().enabled) fail('gateway is disabled');
+      analysisGateway = new AnalysisGateway(ledger, async input => {
+        const result = validateCompletion(await selected.provider.complete({ system: 'Return JSON only. This is advisory organizational analysis.', messages: [{ role: 'user', content: input.input }], maxOutputTokens: input.max_output_tokens, model: input.model, signal: AbortSignal.timeout(ledger.policy().timeout_ms) }));
+        return { output: result.text, usage: { input_tokens: result.usage.inputTokens, output_tokens: result.usage.outputTokens } };
+      });
+      write(`Analysis model enabled. provider=${name}; model=${selected.rate.model}`);
+    }
     if (args.includes('--enable-quest-model')) {
       const name = value('--quest-provider') || readProviders(env).defaults.default || fail('missing --quest-provider or configured default');
       const selected = meteredProviderFor(name, env); const ledger = new Ledger(store, { rate: rateWithSystemText(selected.rate, QUEST_SYSTEM) });
@@ -523,7 +546,7 @@ async function run(argv, env, write) {
     }
     const bundleServer = bundlePort === null ? null : createBundleServer({ store, secret: randomBytes(32), hostSuffix: bundleHostSuffix, appOrigin: origin });
     if (bundleServer) await new Promise(resolve => bundleServer.listen(bundlePort, host, resolve));
-    const server = createServerFor({ store, auth, integrations, questModel, secure, origin, trustedProxy, tls, bundleServer });
+    const server = createServerFor({ store, auth, integrations, questModel, analysisGateway, secure, origin, trustedProxy, tls, bundleServer });
     await new Promise(resolve => server.listen(port, host, resolve));
     stopOnSignal(server, store);
     if (bundleServer) { process.once('SIGTERM', () => bundleServer.close()); process.once('SIGINT', () => bundleServer.close()); }

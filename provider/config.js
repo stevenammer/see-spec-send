@@ -25,8 +25,13 @@ export function readProviders(env = process.env) {
   return parsed;
 }
 export function validateProvider(provider) {
-  if (!provider || typeof provider.name !== 'string' || !/^[A-Za-z0-9._-]{1,64}$/.test(provider.name) || !kinds.includes(provider.kind) || typeof provider.model !== 'string' || !provider.model || provider.enabled !== true && provider.enabled !== false) throw Error('invalid provider');
+  if (!provider || typeof provider.name !== 'string' || !/^[A-Za-z0-9._-]{1,64}$/.test(provider.name) || !kinds.includes(provider.kind) || provider.enabled !== true && provider.enabled !== false) throw Error('invalid provider');
+  if (provider.kind === 'bedrock') {
+    if (typeof provider.region !== 'string' || !/^[a-z]{2}-[a-z]+-\d+$/.test(provider.region) || typeof provider.modelId !== 'string' || !provider.modelId) throw Error('invalid Bedrock provider');
+    if (['apiKey', 'apiKeyEnv', 'apiKeyFile', 'credentials', 'accessKeyId', 'secretAccessKey', 'sessionToken', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN'].some(key => Object.hasOwn(provider, key))) throw Error('Bedrock credentials belong only in the environment');
+  } else if (typeof provider.model !== 'string' || !provider.model) throw Error('invalid provider');
   if (!provider.price || !integer(provider.price.inputMicrosPerMillion) || !integer(provider.price.outputMicrosPerMillion)) throw Error('priced provider required');
+  if (provider.kind === 'bedrock') return provider;
   if (provider.kind === 'command') return provider;
   if (typeof provider.url !== 'string' || !Array.isArray(provider.hosts) || !provider.hosts.length || !provider.hosts.every(host => typeof host === 'string' && host)) throw Error('provider URL and host allowlist required');
   if (provider.apiKeyEnv && provider.apiKeyFile) throw Error('choose one provider credential reference');
@@ -37,6 +42,11 @@ export function validateProvider(provider) {
 export function saveProviders(data, env = process.env) { const file = configPath(env); writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 }); chmodSync(file, 0o600); }
 export function providerFor(name, env = process.env) {
   const provider = readProviders(env).providers.find(entry => entry.name === name && entry.enabled); if (!provider) throw Error('provider is not enabled');
+  if (provider.kind === 'bedrock') {
+    const { AWS_ACCESS_KEY_ID: accessKeyId, AWS_SECRET_ACCESS_KEY: secretAccessKey, AWS_SESSION_TOKEN: sessionToken } = env;
+    if (!accessKeyId || !secretAccessKey) throw Error('Bedrock credentials unavailable from environment');
+    return adapters.bedrock({ ...provider, credentials: { accessKeyId, secretAccessKey, ...(sessionToken ? { sessionToken } : {}) } });
+  }
   const apiKey = provider.apiKeyEnv ? env[provider.apiKeyEnv] : provider.apiKeyFile ? readKeyFile(provider.apiKeyFile) : undefined;
   if ((provider.apiKeyEnv || provider.apiKeyFile) && !apiKey) throw Error('provider credential unavailable');
   return adapters[provider.kind]({ ...provider, apiKey });
@@ -45,7 +55,7 @@ export function meteredProviderFor(name, env = process.env) {
   const config = readProviders(env);
   const entry = config.providers.find(provider => provider.name === name && provider.enabled);
   if (!entry) throw Error('provider is not enabled');
-  return { provider: providerFor(name, env), rate: priceRate({ model: entry.model, ...entry.price }) };
+  return { provider: providerFor(name, env), rate: priceRate({ model: entry.kind === 'bedrock' ? entry.modelId : entry.model, ...entry.price }) };
 }
 export function defaultProviderFor(org, env = process.env) {
   const name = readProviders(env).defaults[org];

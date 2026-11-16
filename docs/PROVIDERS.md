@@ -115,6 +115,33 @@ exactly that response JSON on standard output. It has a wall-clock timeout and
 output cap. It receives no database credential, worker credential, browser data,
 or provider key unless the organization itself gives its process one.
 
+## Amazon Bedrock
+
+Amazon Bedrock uses `"kind": "bedrock"`. Its file has no URL, host list, or
+credential field. At call time it reads `AWS_ACCESS_KEY_ID`,
+`AWS_SECRET_ACCESS_KEY`, and optionally `AWS_SESSION_TOKEN` from the service
+environment. Nova Lite's reviewed list-price table is 60000 input and 240000
+output micro-dollars per million tokens:
+
+```json
+{
+  "name": "nova-lite",
+  "kind": "bedrock",
+  "enabled": true,
+  "region": "us-east-1",
+  "modelId": "amazon.nova-lite-v1:0",
+  "price": { "inputMicrosPerMillion": 60000, "outputMicrosPerMillion": 240000 }
+}
+```
+
+Add it with `node cli.js provider add --file nova-lite.provider.json`. The file
+cannot contain AWS credentials. `serve --analysis-provider nova-lite` is an
+explicit opt-in for organizational analysis. Without that flag, analysis stays
+sources-only and makes no model call. The configured gateway policy must be
+enabled and keeps its existing daily cap. `reanalysis run --verify
+--analysis-provider nova-lite` enables the same metered advisory check for that
+manual run. It can only hold a match or add uncertainty to its annex.
+
 ## Network boundary
 
 HTTPS is required. Plain HTTP is only available to an explicitly private-enabled

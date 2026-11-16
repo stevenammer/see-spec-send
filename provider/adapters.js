@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { jsonRequest, resolvePinned, pinnedFetch } from './safe-http.js';
 import { validateCompletion } from './index.js';
+import { bedrockConverse } from './bedrock.js';
 
 const auth = config => config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {};
 const text = value => typeof value === 'string' ? value : value?.map?.(part => part.text || '').join('') || '';
@@ -79,4 +80,13 @@ export function localCommand(config) { return { async complete(request) {
     child.stdin.end(JSON.stringify(request));
   });
 } }; }
-export const adapters = Object.freeze({ openai: openAICompatible, anthropic: anthropicMessages, gemini: geminiGenerateContent, webhook, command: localCommand });
+export function bedrock(config) {
+  const adapter = bedrockConverse({ region: config.region, modelId: config.modelId, credentials: config.credentials });
+  return { async complete(request) {
+    const response = await adapter.chat({ model: request.model, messages: [
+      ...(request.system ? [{ role: 'system', content: request.system }] : []), ...request.messages],
+    max_tokens: request.maxOutputTokens, signal: request.signal });
+    return validateCompletion({ text: text(response.choices?.[0]?.message?.content), usage: usage(response.usage) });
+  }, chat: adapter.chat };
+}
+export const adapters = Object.freeze({ openai: openAICompatible, anthropic: anthropicMessages, gemini: geminiGenerateContent, webhook, command: localCommand, bedrock });

@@ -27,7 +27,7 @@ fullSuite.push('test/sliceF5-memory.test.mjs', 'test/sliceF5-pages.test.mjs');
 fullSuite.push('test/sliceF6-mentoring.test.mjs', 'test/sliceF6-pages.test.mjs', 'test/sliceF6-demo.test.mjs');
 fullSuite.push('test/sliceF7-spec.test.mjs');
 fullSuite.push('test/sliceF8-evidence.test.mjs', 'test/sliceF8-http.test.mjs');
-fullSuite.push('test/sliceF9.test.mjs', 'test/trusted-system-metering.test.mjs');
+fullSuite.push('test/sliceF9.test.mjs', 'test/trusted-system-metering.test.mjs', 'test/effort-lease.test.mjs');
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;

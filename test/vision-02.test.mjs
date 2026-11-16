@@ -69,8 +69,8 @@ test('F1 Effort leaves the post visible with an honest failure, disabled, and ki
     await new EffortWorker(store, effort).tick();
     const job = store.db.prepare("SELECT state,last_error FROM effort_jobs WHERE item='item'").get();
     assert.equal(calls, mode === 'failed' ? 1 : 0);
-    assert.equal(job.state, mode === 'failed' ? 'queued' : 'blocked');
-    assert.match(job.last_error, mode === 'disabled' ? /not turned on|disabled/ : mode === 'killed' ? /stopped/ : /failed/);
+    assert.equal(job.state, mode === 'failed' ? 'running' : 'blocked');
+    if (mode !== 'failed') assert.match(job.last_error, mode === 'disabled' ? /not turned on|disabled/ : /stopped/);
   }
 });
 

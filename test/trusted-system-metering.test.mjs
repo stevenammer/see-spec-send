@@ -13,7 +13,7 @@ import { deriveQuest } from '../public/vision-quest.js';
 import { Ledger, fixturePolicy, fixtureRates, rateWithSystemText } from '../gateway/ledger.js';
 import { providerGateway } from '../gateway/http.js';
 import { QuestGateway } from '../gateway/quest.js';
-import { EffortGateway } from '../gateway/effort.js';
+import { EffortGateway, effortAllowance } from '../gateway/effort.js';
 import { SYSTEM_PROMPT } from '../worker/builder/index.js';
 import { EFFORT_SYSTEM } from '../effort/prompt.js';
 import { SPEC_INSTRUCTIONS } from '../effort/spec.js';
@@ -72,13 +72,15 @@ test('real serve CLI reserves Effort system text before the loopback provider ca
   const dir = mkdtempSync(join(tmpdir(), 'sss-system-metering-'));
   const db = join(dir, 'db');
   const env = { ...process.env, SSS_DB: db, SSS_PROVIDERS_FILE: join(dir, 'providers.json'), SSS_TEST_KEY: 'synthetic-key' };
-  let observed;
+  let observed; let calls = 0;
   const upstream = createServer(async (req, res) => {
+    calls++;
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw);
     const system = body.messages.find(message => message.role === 'system').content;
     const user = body.messages.find(message => message.role === 'user').content;
     observed = { system, user, tokens: Buffer.byteLength(system) + Buffer.byteLength(user) };
+    await new Promise(resolve => setTimeout(resolve, 1400));
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify({ choices: [{ message: { content: 'Check the handoff.' } }],
       usage: { prompt_tokens: observed.tokens, completion_tokens: 1 } }));
@@ -109,6 +111,11 @@ test('real serve CLI reserves Effort system text before the loopback provider ca
   assert.ok(observed.tokens > Buffer.byteLength(observed.user) + 8);
   assert.ok(row.input_bound >= Buffer.byteLength(observed.user) + Math.max(Buffer.byteLength(EFFORT_SYSTEM), Buffer.byteLength(SPEC_INSTRUCTIONS)));
   assert.equal(row.charged_micros, observed.tokens + 2);
+  await new Promise(resolve => setTimeout(resolve, 1200));
+  assert.equal(calls, 1);
+  assert.equal(store.db.prepare('SELECT count(*) AS n FROM gateway_effort_receipts').get().n, 1);
+  assert.equal(store.events('metering').filter(event => event.type === 'commented').length, 1);
+  assert.equal(effortAllowance(store, 'op', 'metering').automatic_item, 1);
 });
 
 test('real serve CLI reserves Quest system text for an authenticated draft', async t => {

@@ -199,7 +199,10 @@ export class Store {
     const row = this.lineageOf(item);
     if (row) {
       this.db.prepare('INSERT INTO lineage VALUES(?,?,?,?,?,?)').run(...Object.values(row));
-      this.db.prepare('INSERT INTO lineage_relations(child,relation) VALUES(?,?)').run(item, this.events(item)[0]?.relation === 'renewal' ? 'renewal' : 'disagreement');
+      // Older databases reach their lineage migration before the relation table exists; its own
+      // migration backfills every row, so skipping here is safe.
+      if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='lineage_relations'").get())
+        this.db.prepare('INSERT INTO lineage_relations(child,relation) VALUES(?,?)').run(item, this.events(item)[0]?.relation === 'renewal' ? 'renewal' : 'disagreement');
     }
   }
 

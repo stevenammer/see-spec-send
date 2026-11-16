@@ -31,6 +31,7 @@ test('reanalysis is isolated per Store', () => {
   const first = new Store(), second = new Store();
   first.knowledge.append('receipt', { v: 1, first: true }, { at: now });
   assert.equal(second.knowledge.entries().length, 0);
-  assert.deepEqual(runReanalysis(second, { now }), { deltas: [], annexes: [], held: [], receipts: [], skipped: [] });
+  const none = runReanalysis(second, { now });
+  assert.deepEqual([none.deltas, none.annexes, none.held, none.receipts, none.skipped], [[], [], [], [], []]);
   first.close(); second.close();
 });

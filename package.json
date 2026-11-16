@@ -15,6 +15,7 @@
     "test:decision-outcomes": "node test/e2e/decision-outcomes.e2e.mjs",
     "test:stage-freeze": "node test/e2e/stage-freeze.e2e.mjs",
     "test:vision": "node test/e2e/vision-journey.e2e.mjs",
+    "test:reanalysis": "node test/e2e/reanalysis-journey.e2e.mjs",
     "test:artifact-origin": "node test/e2e/artifact-origin.e2e.mjs",
     "test:container": "node --test test/container.acceptance.mjs",
     "sync:demo": "node scripts/sync-demo.mjs",

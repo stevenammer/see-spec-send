@@ -9,7 +9,7 @@ const canonical = value => {
   }).join(',')}}`;
 };
 const sha = value => createHash('sha256').update(value).digest('hex');
-const kinds = new Set(['delta', 'impact', 'receipt', 'annex', 'annex_response', 'edge', 'capability', 'correction', 'retraction']);
+const kinds = new Set(['delta', 'impact', 'receipt', 'analysis_receipt', 'analysis_challenge', 'annex', 'annex_response', 'edge', 'capability', 'correction', 'retraction']);
 
 export class KnowledgeLog {
   constructor(store) { this.store = store; }
@@ -20,6 +20,7 @@ export class KnowledgeLog {
     if (duplicate) return { seq: duplicate.seq, hash: duplicate.hash, body_hash, duplicate: true };
     const previous = this.store.db.prepare('SELECT seq,hash FROM knowledge_log ORDER BY seq DESC LIMIT 1').get();
     const seq = (previous?.seq || 0) + 1, prev_hash = previous?.hash || '', hash = sha(`${prev_hash}${kind}${body_hash}`);
+    this.store.db.prepare('INSERT OR IGNORE INTO knowledge_bodies(body_hash,bytes) VALUES(?,?)').run(body_hash, bytes);
     this.store.db.prepare('INSERT INTO knowledge_log(seq,kind,body,body_hash,prev_hash,hash,at) VALUES(?,?,?,?,?,?,?)')
       .run(seq, kind, bytes, body_hash, prev_hash, hash, at);
     if (this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='knowledge_bodies'").get()) {
@@ -43,8 +44,8 @@ export class KnowledgeLog {
   }
   verify() {
     let previous = '';
-    for (const row of this.store.db.prepare('SELECT * FROM knowledge_log ORDER BY seq').all()) {
-      if (sha(row.body) !== row.body_hash || row.prev_hash !== previous || sha(`${previous}${row.kind}${row.body_hash}`) !== row.hash)
+    for (const row of this.store.db.prepare(`SELECT l.*,COALESCE(k.bytes,l.body) AS content FROM knowledge_log l LEFT JOIN knowledge_bodies k ON k.body_hash=l.body_hash ORDER BY l.seq`).all()) {
+      if (sha(row.body) !== row.body_hash || sha(row.content) !== row.body_hash || row.prev_hash !== previous || sha(`${previous}${row.kind}${row.body_hash}`) !== row.hash)
         return { ok: false, reason: 'chain' };
       previous = row.hash;
     }

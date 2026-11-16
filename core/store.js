@@ -128,6 +128,15 @@ export class Store {
       CREATE TABLE knowledge_tombstones(target_hash TEXT PRIMARY KEY, reason TEXT NOT NULL, source_body_hash TEXT, at TEXT NOT NULL);
       INSERT OR IGNORE INTO knowledge_bodies(body_hash,bytes) SELECT body_hash,body FROM knowledge_log;`);
   }
+  migrateAnalysis() {
+    this.db.exec(`CREATE TABLE gateway_analysis_receipts(
+      id TEXT PRIMARY KEY, person TEXT NOT NULL, idem TEXT NOT NULL, payload_hash TEXT NOT NULL,
+      policy TEXT NOT NULL, day TEXT NOT NULL, input_bound INTEGER NOT NULL, output_bound INTEGER NOT NULL,
+      worst_micros INTEGER NOT NULL, charged_micros INTEGER NOT NULL, state TEXT NOT NULL,
+      usage TEXT, outcome TEXT, seal TEXT NOT NULL, job_class TEXT NOT NULL,
+      UNIQUE(person,idem)
+    );`);
+  }
   groupCreate(name, description = '') {
     if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$/.test(name) || typeof description !== 'string' || description.length > 1000) throw invalid('invalid group');
     this.db.prepare('INSERT INTO groups(name,description) VALUES(?,?)').run(name, description);

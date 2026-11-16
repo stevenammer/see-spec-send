@@ -249,7 +249,19 @@ export class Ledger {
     });
   }
 
-  allMeteredReceipts() { return this.receipts().concat(this.questReceipts(), this.effortReceipts()); }
+  analysisReceipts() {
+    const table = this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gateway_analysis_receipts'").get();
+    if (!table) return [];
+    return this.db.prepare('SELECT * FROM gateway_analysis_receipts ORDER BY id').all().map(row => {
+      demand(row.seal === sealed(row), 'corrupt analysis receipt');
+      demand(row.job_class === 'analysis' && ['dispatched', 'settled'].includes(row.state), 'corrupt analysis receipt state');
+      demand(integer(row.charged_micros) && integer(row.worst_micros) && row.charged_micros <= row.worst_micros,
+        'corrupt analysis accounting');
+      return row;
+    });
+  }
+
+  allMeteredReceipts() { return this.receipts().concat(this.questReceipts(), this.effortReceipts(), this.analysisReceipts()); }
 
   cost(row, usage) {
     demand(usage && canonical(Object.keys(usage).sort()) === canonical(['input_tokens', 'output_tokens']), 'invalid usage keys');

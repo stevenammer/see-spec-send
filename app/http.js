@@ -18,6 +18,7 @@ import { researchRecord } from '../research/connectors.js';
 import { workspaceConnectors } from '../research/workspace.js';
 import { requestSpecDraft } from '../effort/spec.js';
 import { evidencePackage, readAnalysisAnswer } from '../intelligence/evidence.js';
+import { challengeAnalysisReceipt, readAnalysisReceipt, runAnalysis } from '../intelligence/run.js';
 import { intelligencePage } from './pages-intelligence.js';
 import { effortAllowance } from '../gateway/effort.js';
 import { Mentoring } from '../core/mentoring.js';
@@ -240,7 +241,7 @@ const validEvent = input => {
 
 const postBinding = req => ({ post_id: req.headers['x-post-id'], post_version: req.headers['x-post-version'] });
 
-export function createHandler({ auth, store, integrations, questModel = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, trustedProxy = false, canRead: readPolicy = defaultCanRead }) {
+export function createHandler({ auth, store, integrations, questModel = null, analysisAskModel = null, analysisGateway = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, trustedProxy = false, canRead: readPolicy = defaultCanRead }) {
   integrations ||= new Integrations(store, { origin });
   const mentoring = new Mentoring(store, { clock });
   // Fixed one-minute windows per signed-in member. Memory holds one entry per member.
@@ -403,6 +404,18 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         const packet = evidencePackage(store, session.person, input.request, { clock });
         if (packet.hash !== input.package_hash) throw refused('sources changed; prepare a fresh package');
         return json(res, 200, readAnalysisAnswer(packet, input.answer));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/intelligence/run') {
+        const now = new Date(clock()).toISOString();
+        const askModel = analysisAskModel || (analysisGateway
+          ? packet => analysisGateway.ask(session.person, `analysis:${packet.hash}`, packet) : null);
+        return json(res, 201, await runAnalysis({ store, viewer: session.person, request: input, askModel, now, clock }));
+      }
+      const analysisReceipt = url.pathname.match(/^\/api\/intelligence\/receipts\/([a-f0-9]{64})$/);
+      if (req.method === 'GET' && analysisReceipt) return json(res, 200, readAnalysisReceipt(store, session.person, analysisReceipt[1]));
+      if (req.method === 'POST' && analysisReceipt) {
+        if (!exactKeys(input, ['text'])) throw refused('analysis challenge text required');
+        return json(res, 201, challengeAnalysisReceipt(store, session.person, analysisReceipt[1], input.text, new Date(clock()).toISOString()));
       }
       if (req.method === 'GET' && url.pathname === '/mentoring')
         return page(res, mentoringHome(session.person, mentoring.opted(session.person), mentoring.directory(session.person), mentoring.list(session.person)));

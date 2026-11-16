@@ -56,3 +56,16 @@ document.addEventListener('click', async event => {
   try { await navigator.clipboard.writeText(document.querySelector('[data-analysis-prompt]').value); status.textContent = 'Copied. Review the data before pasting into your chosen AI.'; }
   catch { status.textContent = 'Select the packet text and copy it manually.'; }
 });
+document.addEventListener('click', async event => {
+  if (!event.target.closest?.('[data-analysis-run]')) return;
+  const form = document.querySelector('[data-analysis-package]');
+  try {
+    const input = Object.fromEntries(new FormData(form));
+    const request = { question: input.question, objectives: lines(input.objectives), constraints: lines(input.constraints), items: lines(input.items),
+      from: new Date(input.from + 'Z').toISOString(), to: new Date(input.to + 'Z').toISOString() };
+    const result = await post('/api/intelligence/run', request);
+    const panel = document.querySelector('[data-analysis-answer]');
+    panel.replaceChildren(node('h2', 'Saved analysis receipt'), node('p', result.receipt.label), node('p', `Receipt ${result.receipt.hash}. It can be reopened by coworkers with the same read scope.`));
+    panel.hidden = false;
+  } catch { error(form, 'This could not run. Use complete criteria, a valid past range, and records you can read.'); }
+});

@@ -33,8 +33,9 @@ test('F5 signed-in search, source records and contributions escape content and h
   const headers={cookie:login.headers['set-cookie'].split(';')[0],origin:'http://localhost','x-csrf-token':login.body.csrf};
   assert.equal((await call(handler,'GET','/search?q=quartz')).status,403);
   const post=await call(handler,'POST','/api/items',{original:'Transfer notes need a clearer handoff.'},headers);const id=post.body.id;
-  const see=store.read(id).context.seeHash;
-  store.append(id,{type:'commented',actor:'member',kind:'comment',anchor_kind:'see',anchor_hash:see,comment:'quartz <img src=x onerror=alert(1)>',at:new Date().toISOString()},{idem:'comment'});
+  const context=store.read(id).context; const see=context.seeHash;
+  headers['x-post-id']=context.activePost.id; headers['x-post-version']=context.activePost.version;
+  store.append(id,{type:'commented',actor:'member',kind:'comment',post_id:context.activePost.id,post_version:context.activePost.version,anchor_kind:'see',anchor_hash:see,comment:'quartz <img src=x onerror=alert(1)>',at:new Date().toISOString()},{idem:'comment'});
   const comment=store.events(id).at(-1).body_hash;
   const page=await call(handler,'GET','/search?q=quartz',null,headers);
   assert.equal(page.status,200); assert.match(page.text,/&lt;img/);assert.doesNotMatch(page.text,/<img/);

@@ -24,6 +24,7 @@ export function effortPrompt(original, events, { maxBytes = MAX_BYTES, workspace
     : events.filter(event => ['specced', 'revised', 'posted', 'forked'].includes(event.type)).at(-1);
   const currentText = currentEvent?.type === 'specced'
     ? JSON.stringify(Object.fromEntries(['must', 'how_we_know', 'out_of_scope', 'assumptions', 'open_questions'].map(key => [key, currentEvent[key] || []])))
+    : currentEvent?.type === 'sent' ? JSON.stringify({ spec_hash: currentEvent.spec_hash, packet_hash: currentEvent.packet_hash })
     : String(currentEvent?.text ?? currentEvent?.original ?? currentEvent?.problem ?? '');
   let current = trim(currentText, 1800);
   const triggerText = String(trigger?.comment ?? '');

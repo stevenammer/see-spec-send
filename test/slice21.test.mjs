@@ -12,7 +12,7 @@ import { Ledger } from '../gateway/ledger.js';
 import { main as cli } from '../cli.js';
 
 // Bump together with a new entry in core/migrations.js.
-const CURRENT = 11;
+const CURRENT = 12;
 const temp = () => join(mkdtempSync(join(tmpdir(), 'sss-slice21-')), 'db.sqlite');
 const fixtureSql = name => readFileSync(new URL(`./fixtures/golden/${name}.sql`, import.meta.url), 'utf8');
 
@@ -173,6 +173,20 @@ test('golden schema 10 restores FTS memory and upgrades mentoring with no defaul
     assert.equal(store.db.prepare('SELECT count(*) n FROM mentor_optin').get().n, 0);
   } finally { store.close(); }
   assert.equal(userVersion(backups(file)[0]), 10);
+});
+
+test('golden schema 11 preserves legacy hashes without inventing stage freezes', () => {
+  const file = loadFixture('dbeccf6-v11');
+  const before = new DatabaseSync(file, { readOnly: true });
+  const events = before.prepare('SELECT item,seq,hash FROM events ORDER BY item,seq').all(); before.close();
+  const store = new Store(file);
+  try {
+    assert.deepEqual(store.db.prepare('SELECT item,seq,hash FROM events ORDER BY item,seq').all(), events);
+    assert.equal(store.db.prepare('SELECT count(*) n FROM stage_posts').get().n, 0);
+    assert.equal(store.db.prepare('SELECT count(*) n FROM closeout_jobs').get().n, 0);
+    assert.ok(store.verifyAll().every(row => row.ok));
+  } finally { store.close(); }
+  assert.equal(userVersion(backups(file)[0]), 11);
 });
 
 test('a routine open of a current database runs no schema work, no backfill, and takes no write lock', () => {

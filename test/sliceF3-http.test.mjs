@@ -29,23 +29,28 @@ test('F3 HTTP decisions bind reviewed packets, preserve history, label estimates
   for (const id of ['op', 'member', 'leader']) await auth.createUser(id, password, id === 'leader');
   const now = Date.parse('2026-11-14T23:00:00.000Z');
   const handler = createHandler({ store, auth, clock: () => now, secure: false, origin: 'http://localhost' });
+  const boundCall = (handler, method, path, input, headers = {}) => {
+    const match = path.match(/^\/api\/items\/([^/]+)\//);
+    const active = match ? store.read(match[1]).context.activePost : null;
+    return call(handler, method, path, input, { ...headers, ...(active ? { 'x-post-id': active.id, 'x-post-version': active.version } : {}) });
+  };
   const login = async id => {
-    const result = await call(handler, 'POST', '/api/login', { id, password });
+    const result = await boundCall(handler, 'POST', '/api/login', { id, password });
     return { cookie: result.headers['set-cookie'].split(';')[0], origin: 'http://localhost', 'x-csrf-token': result.body.csrf };
   };
   const op = await login('op'), member = await login('member'), leader = await login('leader');
-  const id = (await call(handler, 'POST', '/api/items', { original: 'Transfer context disappears.' }, op)).body.id;
+  let id = (await boundCall(handler, 'POST', '/api/items', { original: 'Transfer context disappears.' }, op)).body.id;
   const spec = async must => {
-    assert.equal((await call(handler, 'POST', `/api/items/${id}/events`, { type: 'specced', see_hash: store.read(id).context.seeHash,
+    assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/events`, { type: 'specced', see_hash: store.read(id).context.seeHash,
       must: [must], how_we_know: ['A transfer preserves context'], out_of_scope: [] }, op)).status, 201);
     return store.read(id).context.specHash;
   };
   let hash = await spec('Show the context');
-  assert.equal((await call(handler, 'POST', `/api/items/${id}/research`, {}, member)).status, 409);
-  assert.equal((await call(handler, 'POST', `/api/items/${id}/research`, { sources: { 'open source': { status: 'checked' } } }, op)).status, 409);
-  assert.equal((await call(handler, 'POST', `/api/items/${id}/research`, {}, op)).status, 201);
-  assert.equal((await call(handler, 'POST', `/api/items/${id}/events`, { type: 'researched', sources: {} }, op)).status, 409);
-  const sent = await call(handler, 'POST', `/api/items/${id}/send`, { spec_hash: hash, estimate: 'Two hours, no purchases.' }, op);
+  assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/research`, {}, member)).status, 409);
+  assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/research`, { sources: { 'open source': { status: 'checked' } } }, op)).status, 409);
+  assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/research`, {}, op)).status, 201);
+  assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/events`, { type: 'researched', sources: {} }, op)).status, 409);
+  const sent = await boundCall(handler, 'POST', `/api/items/${id}/send`, { spec_hash: hash, estimate: 'Two hours, no purchases.' }, op);
   assert.equal(sent.status, 201);
   const packetHash = sent.body.packet_hash;
   const packet = JSON.parse(store.artifact(id, packetHash));
@@ -53,25 +58,30 @@ test('F3 HTTP decisions bind reviewed packets, preserve history, label estimates
   assert.equal(Object.keys(packet.researched).length, 6);
   assert.ok(Object.values(packet.researched).every(source => source.status === 'not connected' && source.checkedAt === null));
   const reason = 'The existing transfer screen already does this.';
-  assert.equal((await call(handler, 'POST', `/api/items/${id}/events`, { type: 'not_built', reason, spec_hash: hash, packet_hash: '0'.repeat(64) }, leader)).status, 409);
-  assert.equal((await call(handler, 'POST', `/api/items/${id}/events`, { type: 'not_built', reason, spec_hash: hash, packet_hash: packetHash }, member)).status, 409);
-  assert.equal((await call(handler, 'POST', `/api/items/${id}/events`, { type: 'not_built', reason, spec_hash: hash, packet_hash: packetHash }, leader)).status, 201);
-  let page = await call(handler, 'GET', `/items/${id}`, null, member);
+  assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/events`, { type: 'not_built', reason, spec_hash: hash, packet_hash: '0'.repeat(64) }, leader)).status, 409);
+  assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/events`, { type: 'not_built', reason, spec_hash: hash, packet_hash: packetHash }, member)).status, 409);
+  assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/events`, { type: 'not_built', reason, spec_hash: hash, packet_hash: packetHash }, leader)).status, 201);
+  let page = await boundCall(handler, 'GET', `/items/${id}`, null, member);
   assert.equal(page.status, 200); assert.match(page.text, /Two hours, no purchases/); assert.match(page.text, /existing transfer screen/);
-  assert.equal((await call(handler, 'POST', `/api/items/${id}/send`, { spec_hash: hash, estimate: 'Two hours, no purchases.' }, op)).status, 409, 'unchanged decided pair cannot be resent');
+  assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/send`, { spec_hash: hash, estimate: 'Two hours, no purchases.' }, op)).status, 409, 'unchanged decided pair cannot be resent');
+  const originalId = id;
+  const fork = await boundCall(handler, 'POST', `/api/items/${id}/fork`, { reason: 'Explore a separately approved alternative.' }, op);
+  assert.equal(fork.status, 201); id = fork.body.id;
   hash = await spec('Carry context into the second transfer too');
-  const next = await call(handler, 'POST', `/api/items/${id}/send`, { spec_hash: hash }, op);
+  const next = await boundCall(handler, 'POST', `/api/items/${id}/send`, { spec_hash: hash }, op);
   assert.equal(next.status, 201);
   const approval = { type: 'approved', spec_hash: hash, packet_hash: next.body.packet_hash,
     reason: 'New evidence makes a small trial worthwhile.', cap_usd: 1, quorum: 1, max_iterations: 2, window_minutes: 30 };
-  assert.equal((await call(handler, 'POST', `/api/items/${id}/events`, approval, leader)).status, 403);
-  assert.equal((await call(handler, 'POST', '/api/stepup', { password }, leader)).status, 204);
-  assert.equal((await call(handler, 'POST', `/api/items/${id}/events`, { ...approval, expires_at: '2099-01-01T00:00:00.000Z' }, leader)).status, 409);
-  assert.equal((await call(handler, 'POST', `/api/items/${id}/events`, approval, leader)).status, 201);
+  assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/events`, approval, leader)).status, 403);
+  assert.equal((await boundCall(handler, 'POST', '/api/stepup', { password }, leader)).status, 204);
+  assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/events`, { ...approval, expires_at: '2099-01-01T00:00:00.000Z' }, leader)).status, 409);
+  assert.equal((await boundCall(handler, 'POST', `/api/items/${id}/events`, approval, leader)).status, 201);
   assert.equal(store.read(id).context.leash.expiresAt, '2026-11-14T23:30:00.000Z');
-  page = await call(handler, 'GET', `/items/${id}`, null, member);
-  assert.match(page.text, /existing transfer screen/); assert.match(page.text, /Two hours, no purchases/);
-  assert.deepEqual(store.verifyAll(), [{ item: id, ok: true }]);
+  page = await boundCall(handler, 'GET', `/items/${id}`, null, member);
+  assert.match(page.text, /small trial worthwhile/);
+  const originalPage = await boundCall(handler, 'GET', `/items/${originalId}`, null, member);
+  assert.match(originalPage.text, /existing transfer screen/); assert.match(originalPage.text, /Two hours, no purchases/);
+  assert.ok(store.verifyAll().every(row => row.ok));
   store.db.close();
 });
 

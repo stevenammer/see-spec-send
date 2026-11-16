@@ -171,7 +171,7 @@ test('R the fork route stores the reason and shows it with the parent link', asy
   assert.equal(made.status, 201);
   const itemId = made.body.id;
   const seeHash = store.read(itemId).context.seeHash;
-  store.append(itemId, { type: 'specced', actor: 'olive', see_hash: seeHash, must: ['Keep context'], how_we_know: ['The next agent can see it'], out_of_scope: [], at: new Date().toISOString() }, { idem: 'status-spec' });
+  store.append(itemId, { type: 'specced', actor: 'olive', post_id: store.read(itemId).context.activePost.id, post_version: store.read(itemId).context.activePost.version, see_hash: seeHash, must: ['Keep context'], how_we_know: ['The next agent can see it'], out_of_scope: [], at: new Date().toISOString() }, { idem: 'status-spec' });
   for (const [state, label] of [['queued', 'queued, waiting for a worker'], ['running', 'thinking'], ['blocked', 'blocked, not retrying'], ['failed', 'unavailable, retries exhausted']]) {
     store.db.prepare('UPDATE effort_jobs SET state=? WHERE item=?').run(state, itemId);
     const seePage = await call(handler, 'GET', `/items/${itemId}`, undefined, olive);

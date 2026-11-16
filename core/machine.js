@@ -1,7 +1,7 @@
 const open = new Set(['SEEN', 'CHECKED', 'SPECCED', 'SUBMITTED', 'SENDING', 'TRYING']);
 const verdicts = new Set(['already_have', 'setting', 'free', 'pay', 'build_needed']);
 const MICROS_PER_USD = 1_000_000;
-export const CURRENT_RULES = 2;
+export const CURRENT_RULES = 3;
 export const NOT_BUILT_LABEL = 'Not building';
 const DEFAULT_MAX_ITERATIONS = 5;
 const DEFAULT_WINDOW_MINUTES = 7 * 24 * 60;
@@ -42,7 +42,7 @@ const commentAnchor = (state, event) => {
     // replacement Spec is written.
     const current = { see: state.seeHash,
       spec: state.specSeeHash === state.seeHash ? state.specHash : null,
-      artifact: state.artifact };
+      artifact: state.artifact, ...(state.rules === 3 && state.activePost?.kind === 'send' ? { send: state.activePost.version } : {}) };
     return current[event.anchor_kind] !== undefined && current[event.anchor_kind] !== null
       && event.anchor_hash === current[event.anchor_kind];
   }
@@ -90,11 +90,16 @@ export function step(state, event, who) {
   if (!open.has(context.phase)) return fail('terminal state');
   if (forgedReporter(event.evidence, event.actor)) return fail('reported evidence reported_by must equal actor');
 
+  if (context.rules === 3 && !['erased', 'credit_note', 'charged', 'tried', 'failed'].includes(event.type)
+      && (!context.activePost || event.post_id !== context.activePost.id || event.post_version !== context.activePost.version)) return fail('frozen or superseded post');
+  if (context.rules === 3 && event.type === 'commented' && event.anchor_kind !== context.activePost?.kind) return fail('frozen or superseded post');
+  if (context.rules === 3 && event.type === 'revised' && context.activePost?.kind !== 'see') return fail('frozen or superseded post');
+  if (context.rules === 3 && event.type === 'specced' && !['see', 'spec'].includes(context.activePost?.kind)) return fail('frozen or superseded post');
   if (event.type === 'commented' && person(who) && commentAnchor(context, event)) return result(context);
   if (event.type === 'commented' && who?.kind === 'agent' && event.actor === 'effort'
       && nonempty(event.comment) && event.comment.length <= 4000 && event.kind === 'agent'
       && nonempty(event.job) && nonempty(event.receipt) && nonempty(event.model)
-      && ({ see: context.seeHash, spec: context.specHash, artifact: context.artifact })[event.anchor_kind] === event.anchor_hash) return result(context);
+      && ({ see: context.seeHash, spec: context.specHash, artifact: context.artifact, ...(context.rules === 3 && context.activePost?.kind === 'send' ? { send: context.activePost.version } : {}) })[event.anchor_kind] === event.anchor_hash) return result(context);
   if (event.type === 'checked_in' && person(who) && nonempty(event.note) && event.note.length <= 2000)
     return result(context);
   if (event.type === 'erased' && person(who)) return result(context);
@@ -105,16 +110,18 @@ export function step(state, event, who) {
       && nonempty(event.source_label) && event.source_label.length <= 120
       && ['observed', 'reported', 'documented'].includes(event.honesty_label)) return result(context);
   if (event.type === 'posted' && context.phase === 'SEEN' && !context.steward && context.rules === undefined
-      && person(who) && event.rules === CURRENT_RULES && nonempty(event.original) && event.original.length <= 4000) {
-    return result({ ...context, rules: CURRENT_RULES, steward: event.actor, originator: event.actor,
+      && person(who) && [2, 3].includes(event.rules) && nonempty(event.original) && event.original.length <= 4000) {
+    return result({ ...context, rules: event.rules, steward: event.actor, originator: event.actor,
       authors: [event.actor], seeHash: event.body_hash, seeVersion: 1,
+      ...(event.rules === 3 ? { activePost: { id: `see:${event.body_hash}`, kind: 'see', version: event.body_hash } } : {}),
       ineligibleHelpers: addIneligible(context, event.actor) });
   }
   if (event.type === 'forked' && context.phase === 'SEEN' && !context.steward && context.rules === undefined
-      && person(who) && event.rules === CURRENT_RULES && nonempty(event.original) && event.original.length <= 4000
+      && person(who) && [2, 3].includes(event.rules) && nonempty(event.original) && event.original.length <= 4000
       && event.parent && nonempty(event.parent.item) && Number.isInteger(event.parent.seq) && nonempty(event.parent.hash)) {
-    return result({ ...context, rules: CURRENT_RULES, steward: event.actor, originator: event.actor,
-      authors: [event.actor], seeHash: event.body_hash, seeVersion: 1, parent: event.parent,
+    return result({ ...context, rules: event.rules, steward: event.actor, originator: event.actor,
+      authors: [event.actor], seeHash: event.body_hash, seeVersion: 1,
+      ...(event.rules === 3 ? { activePost: { id: `see:${event.body_hash}`, kind: 'see', version: event.body_hash } } : {}), parent: event.parent,
       ineligibleHelpers: addIneligible(context, event.actor) });
   }
   if (event.type === 'revised' && context.rules >= 2 && steward(context, event, who)
@@ -123,6 +130,7 @@ export function step(state, event, who) {
     const invalidates = ['SUBMITTED', 'SENDING', 'TRYING'].includes(context.phase);
     const next = { ...context, phase: invalidates ? 'SPECCED' : context.phase,
       seeHash: event.body_hash, seeVersion: context.seeVersion + 1, sent: null,
+      ...(context.rules === 3 ? { activePost: { ...context.activePost, version: event.body_hash } } : {}),
       ...(invalidates ? { superseded: true, supersededArtifact: context.artifact || null } : {}) };
     return result(next, stopsBuild(context, next.phase, event.type));
   }
@@ -136,7 +144,7 @@ export function step(state, event, who) {
   }
   if (event.type === 'shelved' && nonempty(event.reason)
       && (leader(who) || steward(context, event, who))) {
-    return result({ ...context, phase: 'SHELVED' }, stopsBuild(context, 'SHELVED', event.type));
+    return result({ ...context, phase: 'SHELVED', ...(context.rules === 3 ? { activePost: null } : {}) }, stopsBuild(context, 'SHELVED', event.type));
   }
   if (event.type === 'checked' && !(context.rules >= 2) && context.phase === 'SEEN' && person(who)
       && nonempty(event.problem) && event.problem.length <= 2000
@@ -163,6 +171,7 @@ export function step(state, event, who) {
     const next = { ...context, phase: 'SPECCED', specAuthor: event.actor, specHash: event.body_hash || event.spec_hash,
       ...(context.rules >= 2 ? { specSeeHash: event.see_hash, specVersion: (context.specVersion || 0) + 1 } : {}),
       sent: null, artifact: null, helpers: [], superseded: false, supersededArtifact: null,
+      ...(context.rules === 3 ? { activePost: { id: context.activePost.kind === 'see' ? `spec:${event.body_hash}` : context.activePost.id, kind: 'spec', version: event.body_hash } } : {}),
       ineligibleHelpers: addIneligible(context, event.actor) };
     return result(next, stopsBuild(context, 'SPECCED', event.type));
   }
@@ -170,7 +179,8 @@ export function step(state, event, who) {
       && steward(context, event, who) && event.spec_hash === context.specHash
       && context.specSeeHash === context.seeHash && nonempty(event.packet_hash)
       && !(context.decided?.specHash === event.spec_hash && context.decided?.packetHash === event.packet_hash)) {
-    return result({ ...context, phase: 'SUBMITTED', sent: { specHash: event.spec_hash, packetHash: event.packet_hash } });
+    return result({ ...context, phase: 'SUBMITTED', sent: { specHash: event.spec_hash, packetHash: event.packet_hash },
+      ...(context.rules === 3 ? { activePost: { id: `send:${event.body_hash}`, kind: 'send', version: event.body_hash } } : {}) });
   }
   if (event.type === 'approved' && context.rules >= 2 && context.phase === 'SUBMITTED' && leader(who)
       && !context.authors.includes(event.actor) && event.spec_hash === context.sent?.specHash
@@ -189,6 +199,7 @@ export function step(state, event, who) {
       return fail('approval expiry must match its time window');
     const next = { ...context, phase: 'SENDING', approver: event.actor, capMicros: usdToMicros(event.cap_usd),
       quorum: event.quorum, spentMicros: 0, approval: context.approval + 1, iteration: 0,
+      ...(context.rules === 3 ? { activePost: { id: `artifact:${event.body_hash}`, kind: 'artifact', version: event.body_hash }, decisionId: `decision:${event.body_hash}` } : {}),
       leash: { maxIterations, expiresAt, windowMinutes }, decided: { disposition: 'approved', actor: event.actor, at: event.at,
         reason: event.reason, packetHash: event.packet_hash, specHash: event.spec_hash },
       ineligibleHelpers: addIneligible(context, event.actor) };
@@ -210,7 +221,9 @@ export function step(state, event, who) {
       && event.packet_hash === context.sent?.packetHash && nonempty(event.reason) && event.reason.length >= 12
       && (event.restricted_evidence === undefined || (nonempty(event.restricted_evidence) && event.restricted_evidence.startsWith('a restricted source exists; ask ')))
       && (event.pivot_note === undefined || nonempty(event.pivot_note)))
-    return result({ ...context, phase: 'SPECCED', sent: null, decided: { disposition: event.type, actor: event.actor,
+    return result({ ...context, phase: 'SPECCED', sent: null,
+      ...(context.rules === 3 ? { activePost: event.type === 'returned' ? { id: `spec:${event.body_hash}`, kind: 'spec', version: context.specHash } : null, decisionId: `decision:${event.body_hash}` } : {}),
+      decided: { disposition: event.type, actor: event.actor,
       at: event.at, reason: event.reason, packetHash: event.packet_hash, specHash: event.spec_hash,
       ...(event.restricted_evidence ? { restrictedEvidence: event.restricted_evidence } : {}),
       ...(event.pivot_note ? { pivotNote: event.pivot_note } : {}) } });
@@ -220,7 +233,8 @@ export function step(state, event, who) {
       && steward(context, event, who) && event.approval === context.approval && event.spec_hash === context.specHash
       && nonempty(event.instruction) && context.iteration + 1 <= (context.leash?.maxIterations ?? DEFAULT_MAX_ITERATIONS)
       && (!context.leash?.expiresAt || event.at < context.leash.expiresAt)) {
-    return result({ ...context, phase: 'SENDING', iteration: context.iteration + 1, artifact: null, helpers: [] },
+    return result({ ...context, phase: 'SENDING', iteration: context.iteration + 1, artifact: null, helpers: [],
+      ...(context.rules === 3 ? { activePost: { id: `artifact:${event.body_hash}`, kind: 'artifact', version: event.body_hash } } : {}) },
       stopsBuild(context, 'SENDING', event.type));
   }
   if (event.type === 'charged' && context.phase === 'SENDING' && who?.kind === 'gateway') {
@@ -236,14 +250,16 @@ export function step(state, event, who) {
     const bound = currentApproval(context, event);
     if (bound) return bound;
     if (context.rules >= 2 && event.iteration !== context.iteration) return fail('iteration does not match current iteration');
-    return result({ ...context, phase: 'TRYING', artifact: event.artifact_hash, helpers: [] },
+    return result({ ...context, phase: 'TRYING', artifact: event.artifact_hash, helpers: [],
+      ...(context.rules === 3 ? { activePost: { ...context.activePost, version: event.artifact_hash } } : {}) },
       stopsBuild(context, 'TRYING', event.type));
   }
   if (event.type === 'failed' && ['SENDING', 'TRYING'].includes(context.phase) && who?.kind === 'run') {
     const bound = currentApproval(context, event);
     if (bound) return bound;
     if (context.rules >= 2 && event.iteration !== context.iteration) return fail('iteration does not match current iteration');
-    return result({ ...context, phase: 'SPECCED', artifact: null, helpers: [] },
+    return result({ ...context, phase: 'SPECCED', artifact: null, helpers: [],
+      ...(context.rules === 3 ? { activePost: { id: `spec:${event.body_hash}`, kind: 'spec', version: context.specHash } } : {}) },
       stopsBuild(context, 'SPECCED', event.type));
   }
   if (event.type === 'helped' && context.phase === 'TRYING' && person(who)
@@ -251,7 +267,8 @@ export function step(state, event, who) {
       && nonempty(event.artifact_hash) && event.artifact_hash === context.artifact
       && evidenceList(event.evidence, event.actor)) {
     const helpers = context.helpers.includes(event.actor) ? context.helpers : [...context.helpers, event.actor];
-    return result({ ...context, helpers, phase: helpers.length >= context.quorum ? 'HELPS' : 'TRYING' });
+    return result({ ...context, helpers, phase: helpers.length >= context.quorum ? 'HELPS' : 'TRYING',
+      ...(context.rules === 3 && helpers.length >= context.quorum ? { activePost: null } : {}) });
   }
   return fail('event not allowed');
 }

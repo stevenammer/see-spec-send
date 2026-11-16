@@ -33,6 +33,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/pw" && cd "$RUNNER_TEMP/pw"
           npm init -y >/dev/null && npm install playwright@1.62.1 --no-audit --no-fund
+      - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:stage-freeze
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:vision
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:e2e
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:demo-vision

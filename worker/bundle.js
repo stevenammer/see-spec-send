@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { validateHtml } from './builder/index.js';
+import { posix } from 'node:path';
+import { validateBundleHtml } from './builder/index.js';
 
 export const BUNDLE_MAX_FILES = 32;
 export const BUNDLE_MAX_BYTES = 1024 * 1024;
@@ -43,7 +44,9 @@ export function validateBundle(root, manifest, { maxFiles = BUNDLE_MAX_FILES, ma
         const initial = fstatSync(fd, { bigint: true }); if (!same(info, initial)) fail('file changed'); const data = Buffer.alloc(entry.bytes + 1); const read = readSync(fd, data, 0, data.length, 0);
         const final = fstatSync(fd, { bigint: true }); if (read !== entry.bytes || !same(initial, final) || !same(final, lstatSync(file, { bigint: true })) || digest(data.subarray(0, read)) !== entry.sha256) fail('file changed or hash mismatch');
         const text = data.subarray(0, read).toString('utf8');
-        if (rel.endsWith('.html')) validateHtml(text);
+        // A page may link only files that are in this same bundle, resolved from its own folder.
+        if (rel.endsWith('.html')) validateBundleHtml(text, new Set([...expected.keys()].map(other => posix.relative(posix.dirname(rel), other)).filter(name => !name.startsWith('..'))));
+        if (/\b(?:eval|importScripts)\s*\(|\bnew\s+Function\b|\bFunction\s*\(|\bimport\s*\(|\bsendBeacon\b|\bEventSource\b|\bwindow\.open\b|\bdocument\.cookie\b/.test(text)) fail('disallowed script capability');
         // Static pages allow no external URL. Apply that to source files too, including JS/CSS/SVG.
         if (/\b(?:https?:)?\/\/|\b(?:fetch|XMLHttpRequest|WebSocket|importScripts)\s*\(/i.test(text)) fail('external URL or network script');
         files.push(Object.freeze({ path: rel, bytes: read, sha256: entry.sha256 }));

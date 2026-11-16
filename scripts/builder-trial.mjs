@@ -39,7 +39,7 @@ new Worker(store, { start() {}, status: () => ({ state: 'running' }), stop: () =
 const rate = priceRate({ model, inputMicrosPerMillion: useBedrock ? 60_000 : 0, outputMicrosPerMillion: useBedrock ? 240_000 : 0, framingTokens: 64 });
 const ledger = new Ledger(store, { rate });
 const MAX_CALLS = Number(process.env.TRIAL_MAX_CALLS || 40);
-ledger.configure(fixturePolicy({ input_bytes: 600_000, output_tokens: 16_384, response_bytes: 1_000_000, timeout_ms: 180_000,
+ledger.configure(fixturePolicy({ input_bytes: 600_000, output_tokens: 8_192, response_bytes: 1_000_000, timeout_ms: 180_000,
   max_calls_per_run: MAX_CALLS, max_tokens_per_run: 2_000_000, concurrency: 4 }));
 const provider = useBedrock ? bedrockConverse({ region: process.env.AWS_REGION || 'us-east-1', modelId: 'us.amazon.nova-lite-v1:0',
   credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY, sessionToken: process.env.AWS_SESSION_TOKEN } })

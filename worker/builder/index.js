@@ -24,6 +24,14 @@ export function approvedBuildInput(spec) {
     ...(spec.scope !== undefined ? { scope: { data_sources: spec.scope.data_sources, audiences: spec.scope.audiences } } : {}) };
 }
 
+// Bundle pages may link script and style files that are in the same bundle. Everything else stays banned.
+export function validateBundleHtml(html, links) {
+  if (typeof html !== 'string' || !/^<!doctype html>/i.test(html)) fail('builder response is not static HTML');
+  if (bytes(html) > cap) fail('builder response exceeds static HTML cap');
+  if (/\bon\w+\s*=|\b(?:https?:)?\/\//i.test(html) || !staticMarkupOnly(html, links)) fail('builder response is not a local static page');
+  return html;
+}
+
 export function validateHtml(html) {
   if (typeof html !== 'string' || !/^<!doctype html>/i.test(html)) fail('builder response is not static HTML');
   if (bytes(html) > cap) fail('builder response exceeds static HTML cap');
@@ -43,8 +51,15 @@ const ALLOWED_TAGS = new Set(['html', 'head', 'meta', 'title', 'style', 'body', 
   'pre', 'blockquote', 'figure', 'figcaption']);
 const ALLOWED_ATTRIBUTES = new Set(['class', 'id', 'style', 'lang', 'charset', 'name', 'content', 'colspan', 'rowspan', 'scope']);
 const TAG = /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[^\s"'>\/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*)\s*\/?>/y;
+// Extra allowance for multi-file bundles only: plain controls a small tool needs. No <form> (it could navigate),
+// no media, no frames. Their attributes cannot carry a URL: values containing ':' stay refused.
+const BUNDLE_CONTROLS = new Set(['textarea', 'input', 'button', 'label', 'select', 'option', 'canvas']);
+const BUNDLE_CONTROL_ATTRIBUTES = new Set(['type', 'value', 'placeholder', 'rows', 'cols', 'maxlength', 'for', 'disabled', 'checked', 'min', 'max', 'step', 'width', 'height']);
 const ATTRIBUTE = /\s+([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
-function staticMarkupOnly(html) {
+// `links` is null for the single-file static builder, which allows no script and no link at all. A multi-file
+// bundle passes the set of sibling file names it may reference; only <script src> and <link rel=stylesheet href>
+// naming one of those files is then allowed, and a script element must be empty (no inline code).
+function staticMarkupOnly(html, links = null) {
   if (/\\/.test(html)) return false;
   for (let at = html.indexOf('<'); at >= 0; at = html.indexOf('<', at + 1)) {
     const next = html[at + 1] || '';
@@ -59,8 +74,13 @@ function staticMarkupOnly(html) {
     if (!match) return false;
     const [, closing, name, attributes] = match;
     const tag = name.toLowerCase();
-    if (!ALLOWED_TAGS.has(tag)) return false;
+    const bundleTag = links && (tag === 'script' || tag === 'link');
+    if (!ALLOWED_TAGS.has(tag) && !bundleTag && !(links && BUNDLE_CONTROLS.has(tag))) return false;
     if (closing && attributes.trim()) return false;
+    if (tag === 'script' && !closing && bundleTag) {
+      const end = html.toLowerCase().indexOf('</script', match.index + match[0].length);
+      if (end < 0 || html.slice(match.index + match[0].length, end).trim()) return false;
+    }
     if (tag === 'style' && !closing) {
       // Style text is raw: nothing inside it is a tag, but it must not load anything or escape the sandbox.
       const start = match.index + match[0].length;
@@ -71,9 +91,13 @@ function staticMarkupOnly(html) {
     }
     for (const attribute of attributes.matchAll(ATTRIBUTE)) {
       const attributeName = attribute[1].toLowerCase();
-      if (!ALLOWED_ATTRIBUTES.has(attributeName)) return false;
+      const bundleAttribute = bundleTag && ((tag === 'script' && ['src', 'defer'].includes(attributeName)) || (tag === 'link' && ['rel', 'href'].includes(attributeName)));
+      const controlAttribute = links && BUNDLE_CONTROLS.has(tag) && BUNDLE_CONTROL_ATTRIBUTES.has(attributeName);
+      if (!ALLOWED_ATTRIBUTES.has(attributeName) && !bundleAttribute && !controlAttribute) return false;
       const value = attribute[2] ?? attribute[3] ?? attribute[4] ?? '';
       if (/[&\\]/.test(value)) return false;
+      if (bundleAttribute && (attributeName === 'src' || attributeName === 'href')) { if (!links.has(value)) return false; continue; }
+      if (bundleAttribute && attributeName === 'rel') { if (value !== 'stylesheet') return false; continue; }
       if (attributeName === 'style') {
         if (/url\s*\(|@import|expression\s*\(/i.test(value)) return false;
       } else if (value.includes(':')) return false;

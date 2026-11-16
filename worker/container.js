@@ -46,9 +46,9 @@ export class DockerCli {
   remove(name) { try { this.run(['rm', '-f', name]); } catch {} }
 }
 
-export function pinnedImage(file = new URL('./builder-image.digest', import.meta.url)) {
+export function pinnedImage(file = new URL('./builder-image.digest', import.meta.url), pattern = /^(node:22-alpine|alpine)@sha256:[a-f0-9]{64}$/) {
   const value = readFileSync(file, 'utf8').trim();
-  if (!/^(node:22-alpine|alpine)@sha256:[a-f0-9]{64}$/.test(value)) throw Error('builder image digest is invalid');
+  if (!pattern.test(value)) throw Error('builder image digest is invalid');
   return value;
 }
 

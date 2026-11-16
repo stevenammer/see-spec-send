@@ -2,7 +2,7 @@
 // adapters. The caller supplies short-lived credentials from its own
 // environment at run time; nothing here reads, stores or logs a secret.
 import { createHash, createHmac } from 'node:crypto';
-import { resolvePinned, pinnedFetch } from './safe-http.js';
+import { resolvePinned, pinnedFetch, redact } from './safe-http.js';
 
 const sha256 = data => createHash('sha256').update(data).digest('hex');
 const hmac = (key, data) => createHmac('sha256', key).update(data).digest();
@@ -83,7 +83,11 @@ export function bedrockConverse({ region, modelId, credentials, hosts, timeoutMs
     const reader = response.body.getReader(); const chunks = []; let bytes = 0;
     while (true) { const { done, value } = await reader.read(); if (done) break; bytes += value.length;
       if (bytes > responseBytes) { await reader.cancel(); throw Error('provider response byte limit'); } chunks.push(value); }
-    if (!response.ok) throw Error(`provider HTTP ${response.status}`);
+    if (!response.ok) {
+      // Bedrock's error body is a short validation message, never a credential; keep a redacted sample for operators.
+      let note = ''; try { note = redact(JSON.parse(Buffer.concat(chunks).toString('utf8')).message || '').slice(0, 200); } catch {}
+      throw Error(`provider HTTP ${response.status}${note ? `: ${note}` : ''}`);
+    }
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   }
   return { async chat(request) {

@@ -19,11 +19,11 @@ class Docker {
   remove(name) { this.calls.push(['rm', name]); }
 }
 class Ledger { constructor() { this.revoked = []; } mint(_id, _ttl, save) { save('c'.repeat(64)); return 'd'.repeat(43); } revokeDigest(value) { this.revoked.push(value); } }
-function adapter(t, extras = {}) { const root = mkdtempSync(join(tmpdir(), 'sss-opencode-')); const image = join(root, 'image'); writeFileSync(image, 'node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a\n'); const store = new Store(); t.after(() => store.close()); const docker = new Docker(); return { root, docker, a: new OpenCodeAdapter(store, { docker, ledger: new Ledger(), root, gatewaySocket: join(root, 'gateway.sock'), imageFile: image, ...extras }) }; }
+function adapter(t, extras = {}) { const root = mkdtempSync(join(tmpdir(), 'sss-opencode-')); const image = join(root, 'image'); writeFileSync(image, 'sha256:f466e0430d7eba33cde07b7fa8823ecac2bf8db2957703b893288c7784a159e4'); const store = new Store(); t.after(() => store.close()); const docker = new Docker(); return { root, docker, a: new OpenCodeAdapter(store, { docker, ledger: new Ledger(), root, gatewaySocket: join(root, 'gateway.sock'), imageFile: image, ...extras }) }; }
 
 test('OpenCode is opt-in, locked down, gets only approved fields, and validates its bundle before ready', t => {
   const { a, docker } = adapter(t); a.start(request); const args = docker.calls[0].join(' ');
-  for (const text of ['--network none', '--read-only', '--user 65532:65532', '--cap-drop ALL', '--pids-limit 32', '--memory 64m']) assert.match(args, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  for (const text of ['--network none', '--read-only', '--user 65532:65532', '--cap-drop ALL', '--pids-limit 256', '--memory 1g']) assert.match(args, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.equal(args.includes('raw-discussion-identity'), false); assert.equal(args.includes('provider') && args.includes('KEY'), false);
   assert.deepEqual(a.status(request.id).state, 'ready');
 });

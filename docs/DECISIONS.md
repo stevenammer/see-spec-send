@@ -18,3 +18,8 @@ Settled choices and the reason in one line. Newer rows replace older ones where 
 | 2026-11 | Mentoring stays between people and is not tracked or analyzed. | Trust. | An AI mentor-matching idea |
 | 2026-11 | The first coding-agent trial is one MIT-licensed open-source agent behind the metered proxy. | Measure before choosing a default. | |
 | 2026-11 | "Public" means the appropriate audience inside the organization. | Confidential cases need narrower channels. | |
+| 2026-11 | Model-built pages that need scripts run on a separate, isolated origin. Without one, testers get a script-free page. | A build's code is untrusted and must not reach the app's cookies or data. | Script-free only |
+| 2026-11 | A later result that touches an earlier decision becomes a dated, linked update. The earlier record never changes, and asking for a new decision opens a separate case. | Nobody is asked to change their mind, only to decide again on new information. | |
+| 2026-11 | A derived record can be challenged by anyone who can read it, and erasing a source removes what was built on it. The source is never edited. | Correctable memory without rewriting history. | |
+| 2026-11 | Questions to the organization are saved with their sources and criteria so anyone with the same access can re-run and contest them. Ranking or motive questions get criteria, outcomes and unknowns. | The same evidence standard at every level, with no scoring of people. | |
+| 2026-11 | Restricted work shows other people only that it exists and who to ask. | Departments need boundaries that hold before anything is retrieved. | Workspace-wide reading |

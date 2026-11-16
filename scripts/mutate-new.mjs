@@ -48,6 +48,10 @@ const mutants = [
   ['analysis: a reply that repeats the template is refused', 'intelligence/run.js', "if (repeatsTemplate(packet, checked.answer)) throw refused('answer repeats the template text instead of findings');", '', T(['prompt-shape'])],
   ['analysis: motive questions are refused before any model call', 'intelligence/run.js', '|\\bmotives?\\b|', '|', T(['prompt-shape'])],
   ['verify: one outer fence is accepted', 'reanalysis/verify.js', 'JSON.parse(unfence(raw))', 'JSON.parse(raw)', T(['prompt-shape'])],
+  ['security: restricted items are not readable through the generic item route', 'app/http.js', "if (store.readScope(match[1]) && !readable(match[1])) return json(res, 403, { error: 'request refused' });", '', T(['security-restricted-item-api-idOR'])],
+  ['security: restricted items do not leak through the related route', 'app/http.js', "if (store.readScope(relatedView[1]) && !readable(relatedView[1])) return json(res, 403, { error: 'request refused' });", '', T(['security-restricted-related-route-idor'])],
+  ['security: annex target readers must be able to read the source', 'reanalysis/match.js', '&& audienceCovers(scopeOf(delta.source.item), scopeOf(target.item));', ';', T(['security-reanalysis-cross-scope-annex'])],
+  ['security: open-thread readers must be able to read the source', 'reanalysis/open.js', 'if (!audienceCovers(store.readScope(delta.source.item), store.readScope(target.item))) continue;', '', T(['reanalysis-open'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 if (process.argv.includes('--check-sources')) {

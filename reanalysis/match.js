@@ -1,4 +1,4 @@
-import { canRead } from '../access/read.js';
+import { audienceCovers, canRead } from '../access/read.js';
 import { isChallenged } from '../knowledge/corrections.js';
 
 const stop = new Set(['the', 'and', 'for', 'with', 'that', 'this', 'from', 'into', 'have', 'has', 'was', 'were', 'are', 'not', 'new', 'old', 'our', 'their', 'your', 'will', 'can', 'need', 'needs', 'using']);
@@ -42,7 +42,8 @@ export function findImpacts(store, delta, { canRead: policy, ctx = newContext() 
     const sourceViewer = stewardOf(delta.source.item);
     const targetViewer = stewardOf(target.item);
     const allowed = canRead(sourceViewer, scopeOf(delta.source.item), policy) && canRead(targetViewer, scopeOf(target.item), policy)
-      && canRead(sourceViewer, scopeOf(target.item), policy);
+      && canRead(sourceViewer, scopeOf(target.item), policy)
+      && audienceCovers(scopeOf(delta.source.item), scopeOf(target.item));   // the target's readers must be able to read the source it quotes
     // A result never reanalyzes the case it came from (or any case in its own provenance).
     const ownSource = delta.source.item === target.item || provenance.some(root => memo(ctx.hashes, target.item, () => new Set(store.eventRows(target.item).map(row => row.hash))).has(root));
     const qualifies = common.length >= 3 && allowed && !duplicate && !ownSource && delta.generation <= 2;

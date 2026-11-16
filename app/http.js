@@ -479,6 +479,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       }
       const relatedView = url.pathname.match(/^\/items\/([^/]+)\/related$/);
       if (req.method === 'GET' && relatedView) {
+        if (store.readScope(relatedView[1]) && !readable(relatedView[1])) return json(res, 403, { error: 'request refused' });
         const first = store.events(relatedView[1])[0];
         if (!first) return json(res, 404, { error: 'not found' });
         const query = (first.original || first.problem || '').match(/[\p{L}\p{N}_-]+/gu)?.slice(0, 4).join(' ') || '';
@@ -818,6 +819,8 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       }
       const match = url.pathname.match(/^\/api\/items\/([^/]+)(?:\/events)?$/);
       if (!match) return json(res, 404, { error: 'not found' });
+      // Reading or writing an existing item requires read access to it. A missing item falls through to its normal error.
+      if (store.readScope(match[1]) && !readable(match[1])) return json(res, 403, { error: 'request refused' });
       if (req.method === 'GET')
         return json(res, 200, { state: store.read(match[1]), events: store.events(match[1]),
           spent_basis: 'state.context.spentMicros counts legacy charged events only',

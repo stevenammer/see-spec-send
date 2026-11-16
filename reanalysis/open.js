@@ -1,4 +1,4 @@
-import { canRead } from '../access/read.js';
+import { audienceCovers, canRead } from '../access/read.js';
 import { shared, sourceText } from './match.js';
 import { parseAt } from '../core/reconcile.js';
 
@@ -29,6 +29,7 @@ export function deliverToOpenThreads(store, delta, { now, canRead: policy, ctx =
     if ((delta.provenance_roots || []).some(root => (ctx.hashes ??= new Map(), ctx.hashes.has(target.item) ? ctx.hashes : ctx.hashes.set(target.item, new Set(store.eventRows(target.item).map(row => row.hash)))).get(target.item).has(root))) continue;
     const viewer = target.state.context.steward;
     if (!canRead(viewer, store.readScope(delta.source.item), policy) || !canRead(viewer, store.readScope(target.item), policy)) continue;
+    if (!audienceCovers(store.readScope(delta.source.item), store.readScope(target.item))) continue;   // the thread's readers must be able to read what is quoted
     const common = shared(text, target.entry.text);
     if (common.length < MIN_SHARED_TERMS || delta.generation > 2) continue;
     const pair = `open:${target.post.id}:${target.post.version}:${target.entry.id}`;

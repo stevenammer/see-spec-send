@@ -89,3 +89,22 @@ test('an open thread that shares fewer than three terms with the result gets no 
   assert.ok(danaComments.every(event => !/Parking validation/.test(event.comment)), 'a one-word overlap is never enough');
   assert.ok(out.openThreads.every(row => row.item !== 'lena'));
 });
+
+test('a restricted result never reaches an open thread whose readers cannot all read it', t => {
+  const s = new Store(); t.after(() => s.close());
+  for (const id of ['dana', 'sam', 'pat']) s.registerPerson(id); s.registerPerson('lee', { leader: true });
+  s.groupCreate('Reservations'); s.groupAdd('Reservations', 'sam'); s.groupAdd('Reservations', 'lee'); s.groupAdd('Reservations', 'dana'); // Dana (the steward) can read it; the thread's other readers cannot
+  let n = 0; const add = (item, event) => s.append(item, { ...event, at: stamp }, { idem: `rs-${++n}` });
+  const bind = item => ({ post_id: s.read(item).context.activePost?.id, post_version: s.read(item).context.activePost?.version });
+  // Dana's thread is open to everyone; Sam's result is restricted to Reservations, which includes Dana but not Pat.
+  add('dana', { type: 'posted', actor: 'dana', original: 'The handoff loses the caller note.', rules: 3 });
+  add('dana', { type: 'specced', actor: 'dana', see_hash: s.read('dana').context.seeHash, must: ['Keep note'], how_we_know: ['It appears'], out_of_scope: [], assumptions: ['The handoff needs a new integration to carry the caller note.'], open_questions: [], ...bind('dana') });
+  add('sam', { type: 'posted', actor: 'sam', original: 'Night shift export problem.', rules: 3, audience: ['Reservations'] });
+  add('sam', { type: 'specced', actor: 'sam', see_hash: s.read('sam').context.seeHash, must: ['Fix'], how_we_know: ['Works'], out_of_scope: [], assumptions: ['x marks the spot'], open_questions: [], ...bind('sam') });
+  const spec = s.read('sam').context.specHash, packet = s.putArtifact('sam', JSON.stringify({ specHash: spec }));
+  add('sam', { type: 'sent', actor: 'sam', spec_hash: spec, packet_hash: packet, ...bind('sam') });
+  add('sam', { type: 'decided', actor: 'lee', disposition: 'resolve_without_build', reason_code: 'existing', reason: 'The existing export already carries the caller note across the handoff, so no integration is needed.', metadata: { alternative: 'Use the export.', action_owner: 'sam' }, spec_hash: spec, packet_hash: packet, ...bind('sam') });
+  const out = runReanalysis(s, { now: later });
+  assert.equal(out.openThreads.length, 0, 'a thread open to everyone cannot receive text from a restricted case');
+  assert.equal(s.events('dana').filter(e => e.actor === 'effort').length, 0);
+});

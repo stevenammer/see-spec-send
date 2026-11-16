@@ -431,12 +431,18 @@ export function createHandler({ auth, store, integrations, questModel = null, se
         const post = store.db.prepare('SELECT * FROM stage_posts WHERE item=? AND post_id=? AND closed_seq IS NOT NULL').get(history[1], decodeURIComponent(history[2]));
         if (!post) return json(res, 404, { error: 'not found' });
         const job = store.db.prepare('SELECT state FROM closeout_jobs WHERE item=? AND post_id=? AND snapshot_hash=?').get(history[1], post.post_id, post.snapshot_hash);
-        return page(res, frozenPostPage(history[1], post, store.events(history[1]), job));
+        const active = store.read(history[1]).context.activePost;
+        const sources = active?.kind === 'spec' ? store.db.prepare("SELECT e.body_hash FROM events e JOIN bodies b ON b.hash=e.body_hash WHERE e.item=? AND e.type='commented' AND b.erased=0").all(history[1]).map(row => row.body_hash) : [];
+        return page(res, frozenPostPage(history[1], post, store.events(history[1]), job, sources));
       }
       const specView = url.pathname.match(/^\/items\/([^/]+)\/spec$/);
       if (req.method === 'GET' && specView) {
         const state = store.read(specView[1]);
-        return page(res, specPage({ id: specView[1], ...state, effortAllowance: effortAllowance(store, session.person, specView[1], clock),
+        const sourceHash = url.searchParams.get('source_comment');
+        const source = state.context.activePost?.kind === 'spec' && state.context.steward === session.person && /^[a-f0-9]{64}$/.test(sourceHash || '')
+          ? store.db.prepare("SELECT b.bytes FROM events e JOIN bodies b ON b.hash=e.body_hash JOIN stage_posts p ON p.item=e.item AND p.post_id=json_extract(b.bytes,'$.post_id') WHERE e.item=? AND e.type='commented' AND e.body_hash=? AND b.erased=0 AND p.closed_seq IS NOT NULL").get(specView[1], sourceHash) : null;
+        const sourceComment = source ? { ...JSON.parse(source.bytes), body_hash: sourceHash } : null;
+        return page(res, specPage({ id: specView[1], ...state, sourceComment, effortAllowance: effortAllowance(store, session.person, specView[1], clock),
           workspaceResearch: store.db.prepare("SELECT enabled FROM research_config WHERE source='this_workspace'").get()?.enabled === 1,
           effort: store.db.prepare("SELECT kind,state,last_error,post_id FROM effort_jobs WHERE item=? AND kind='spec_draft' ORDER BY created").all(specView[1]),
           specPostId: state.context.rules === 3 ? store.db.prepare("SELECT post_id FROM stage_posts WHERE item=? AND kind='spec' ORDER BY opened_seq DESC LIMIT 1").get(specView[1])?.post_id : null }, store.events(specView[1]), session.person));

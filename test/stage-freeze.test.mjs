@@ -269,6 +269,14 @@ test('steward can credit a frozen SEE comment in the active SPEC without changin
   const frozen = s.db.prepare('SELECT * FROM stage_posts WHERE post_id=?').get(initial.activePost.id);
   const snapshotEvents = s.events(id).slice(0, frozen.closed_seq);
   const current = s.read(id).context, opSpec = bind(op, current.activePost), peerSpec = bind(peer, current.activePost);
+  const get = async (path, headers) => {
+    const req = Readable.from([]); req.method = 'GET'; req.url = path; req.headers = headers; req.socket = { remoteAddress: '127.0.0.1' };
+    const res = { headers: {}, status: 200, text: '', setHeader(k,v) { this.headers[k.toLowerCase()] = v; }, writeHead(code,h={}) { this.status=code; Object.assign(this.headers,h); }, end(v='') { this.text+=v; } };
+    await handler(req,res); return res;
+  };
+  const sourceUrl = `/items/${id}/spec?source_comment=${source}`;
+  assert.match((await get(sourceUrl, op)).text, /data-include="historical-spec"/);
+  assert.doesNotMatch((await get(sourceUrl, peer)).text, /data-include="historical-spec"/);
   const update = { type: 'specced', see_hash: initial.seeHash, base_spec_hash: current.specHash, must: ['Keep the handoff', quote], how_we_know: ['Review it'], out_of_scope: [], credits: [{ comment: source, mode: 'quoted' }] };
   assert.equal((await call(`/api/items/${id}/events`, update, opSee)).status, 409, 'the old target is still frozen');
   assert.equal((await call(`/api/items/${id}/events`, update, peerSpec)).status, 409, 'only the steward can adopt');
@@ -279,6 +287,7 @@ test('steward can credit a frozen SEE comment in the active SPEC without changin
   assert.deepEqual(s.db.prepare('SELECT * FROM stage_posts WHERE post_id=?').get(initial.activePost.id), frozen);
   assert.deepEqual(s.events(id).slice(0, frozen.closed_seq), snapshotEvents);
   s.erase(id, source, 'peer', stamp);
+  assert.doesNotMatch((await get(sourceUrl, op)).text, /data-include="historical-spec"/);
   const after = s.read(id).context;
   const erased = { ...update, base_spec_hash: after.specHash };
   assert.equal((await call(`/api/items/${id}/events`, erased, bind(op, after.activePost))).status, 409, 'erased sources cannot be credited');

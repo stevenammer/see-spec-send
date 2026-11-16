@@ -97,7 +97,11 @@ document.addEventListener('submit', async event => {
       await post(`/api/items/${id}/steer`, { instruction: input.instruction, source: input.source, mode: 'paraphrased' });
     } else if (form.dataset.include) {
       const mode = event.submitter?.value === 'quoted' ? 'quoted' : 'paraphrased';
-      if (form.dataset.include === 'spec') {
+      if (form.dataset.include === 'historical-spec') {
+        const baseline = JSON.parse(input.baseline);
+        await post(`/api/items/${id}/events`, { type: 'specced', see_hash: input.see_hash, base_spec_hash: input.base_spec_hash,
+          ...baseline, must: [...baseline.must, input.source_text], credits: [{ comment: input.comment, mode }] });
+      } else if (form.dataset.include === 'spec') {
         const scopeForm = form.closest('main').querySelector('form[data-event="specced"]');
         const scopeInput = scopeForm ? value(scopeForm) : null;
         await post(`/api/items/${id}/events`, { type: 'specced', see_hash: input.see_hash, base_spec_hash: input.base_spec_hash,

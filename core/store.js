@@ -11,6 +11,8 @@ import { initializeMemory, syncMemory, rebuildMemory, verifyMemory, searchMemory
 import { initializeMentoring } from './mentoring.js';
 import { reconciliation, stewardInactivity, transferEligibility, parseAt, legacyInactive } from './reconcile.js';
 import { buildCloseout } from './closeout.js';
+import { normalizeLedger, rebuildLedger, validLedger } from '../knowledge/ledger.js';
+import { normalizeEstimates, validEstimates } from '../knowledge/estimate.js';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 // Fixed page size for the feed and the item API. There is no setting for it.
@@ -88,6 +90,13 @@ export class Store {
   migrateCloseoutReports() {
     const columns = this.db.prepare('PRAGMA table_info(closeout_jobs)').all().map(row => row.name);
     if (!columns.includes('artifact_hash')) this.db.exec('ALTER TABLE closeout_jobs ADD COLUMN artifact_hash TEXT');
+  }
+  migrateLedger() {
+    this.db.exec(`CREATE TABLE ledger_entries(item TEXT NOT NULL, ledger_id TEXT NOT NULL, kind TEXT NOT NULL,
+      text TEXT NOT NULL, status TEXT NOT NULL, refs TEXT NOT NULL, spec_hash TEXT NOT NULL, seq INTEGER NOT NULL,
+      PRIMARY KEY(item,ledger_id,spec_hash));
+      CREATE INDEX ledger_entries_item ON ledger_entries(item,seq);`);
+    rebuildLedger(this);
   }
   stageProjection(item) {
     let context = initial();
@@ -500,6 +509,18 @@ export class Store {
       }
     }
     if (event.type === 'specced' && event.scope !== undefined && !validScope(event.scope)) throw refused('invalid approved scope');
+    if (event.type === 'specced' && this.read(item).context.rules !== 3
+      && (event.ledger !== undefined || event.estimates !== undefined)) throw refused('working ledger is rules 3 only');
+    if (event.type === 'specced' && this.read(item).context.rules === 3
+      && (!validLedger(event.ledger, event.assumptions || [], event.open_questions || []) || !validEstimates(event.estimates || [])))
+      throw refused('invalid working ledger or estimates');
+    if (event.type === 'commented' && event.resolves !== undefined) {
+      const resolution = event.resolves;
+      if (!resolution || typeof resolution.ledger_id !== 'string' || !['answers', 'contradicts', 'supports'].includes(resolution.claim))
+        throw refused('invalid ledger resolution claim');
+      const ledger = this.events(item).filter(entry => entry.type === 'specced').at(-1)?.ledger || [];
+      if (!ledger.some(entry => entry.id === resolution.ledger_id)) throw refused('ledger resolution must name a current entry');
+    }
     if (event.type === 'steered' && event.scope !== undefined) {
       const specHash = this.read(item).context.specHash;
       const approved = this.events(item).find(entry => entry.type === 'specced' && entry.body_hash === specHash);
@@ -559,6 +580,11 @@ export class Store {
 
   appendInTransaction(item, event, options) {
     const { expectedSeq, idem, authoritySnapshot, authorityVersion = 1, bodyHash } = options;
+    if (event.type === 'specced' && this.read(item).context.rules === 3) {
+      const prior = this.events(item).filter(entry => entry.type === 'specced').at(-1)?.ledger || [];
+      event.ledger = normalizeLedger(item, event, prior);
+      event.estimates = normalizeEstimates(event.estimates, this.events(item).filter(entry => entry.type === 'specced').at(-1)?.estimates || []);
+    }
     const submittedHash = submittedEventHash(event, idem);
     const existing = this.db.prepare('SELECT * FROM events WHERE item=? AND idem=?').get(item, idem);
     if (existing) {
@@ -651,6 +677,7 @@ export class Store {
     }
     if (outcome.context.rules === 3) this.db.prepare('UPDATE effort_jobs SET post_id=?,post_version=? WHERE item=? AND trigger_seq=? AND post_id IS NULL').run(outcome.context.activePost?.id ?? null, outcome.context.activePost?.version ?? null, item, seq);
     syncMemory(this, item);
+    if (event.type === 'specced' && outcome.context.rules === 3) rebuildLedger(this);
     return { seq, hash, ...this.read(item), effects: outcome.effects };
   }
 

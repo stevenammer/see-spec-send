@@ -139,6 +139,23 @@ document.addEventListener('submit', async event => {
         for (const key of ['must', 'how_we_know', 'out_of_scope', ...['assumptions', 'open_questions'].filter(key => Object.hasOwn(input, key))]) {
           data[key] = String(data[key] ?? '').split('\n').filter(Boolean);
         }
+        if (input.estimate_dimension) {
+          data.estimates = [{ dimension: input.estimate_dimension, low: Number(input.estimate_low), high: Number(input.estimate_high), unit: input.estimate_unit,
+            basis: input.estimate_basis?.trim() ? [{ kind: input.estimate_basis_kind || 'author_judgment', ref: input.estimate_basis.trim() }] : [],
+            unknowns: String(input.estimate_unknowns || '').split('\n').filter(Boolean), alternatives: String(input.estimate_alternatives || '').split('\n').filter(Boolean) }];
+        }
+        if (input.ledger_json) {
+          const ledger = JSON.parse(input.ledger_json);
+          data.ledger = ledger.map(entry => ({ ...entry, status: input[`ledger_status_${entry.id}`] || entry.status,
+            refs: input[`ledger_ref_${entry.id}`] ? [...new Set([...(entry.refs || []), input[`ledger_ref_${entry.id}`]])] : entry.refs || [] }));
+        }
+        for (const key of ['estimate_dimension', 'estimate_low', 'estimate_high', 'estimate_unit', 'estimate_basis', 'estimate_basis_kind', 'estimate_unknowns', 'estimate_alternatives']) delete data[key];
+        delete data.ledger_json;
+        for (const key of Object.keys(data)) if (key.startsWith('ledger_status_') || key.startsWith('ledger_ref_')) delete data[key];
+      }
+      if (data.type === 'commented' && input.resolves_ledger_id) {
+        data.resolves = { ledger_id: input.resolves_ledger_id, claim: input.resolves_claim };
+        delete data.resolves_ledger_id; delete data.resolves_claim;
       }
       await post(`/api/items/${id}/events`, data);
     }

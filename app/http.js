@@ -178,9 +178,11 @@ const validEvent = input => {
       && stringList(input.found) && ['already_have', 'setting', 'free', 'pay', 'build_needed'].includes(input.verdict)
       && (input.evidence === undefined || Array.isArray(input.evidence));
     case 'specced': return (exactKeys(input, ['type', 'must', 'how_we_know', 'out_of_scope']) ||
-        (exactKeys(input, ['type', 'see_hash', 'base_spec_hash', 'must', 'how_we_know', 'out_of_scope', 'assumptions', 'open_questions', 'credits', 'scope'])
+        (exactKeys(input, ['type', 'see_hash', 'base_spec_hash', 'must', 'how_we_know', 'out_of_scope', 'assumptions', 'open_questions', 'ledger', 'estimates', 'credits', 'scope'])
           && hex(input.see_hash) && (input.assumptions === undefined || stringList(input.assumptions))
           && (input.open_questions === undefined || stringList(input.open_questions))
+          && (input.ledger === undefined || Array.isArray(input.ledger))
+          && (input.estimates === undefined || Array.isArray(input.estimates))
           && (input.base_spec_hash === undefined || hex(input.base_spec_hash))
           && (input.credits === undefined || (Array.isArray(input.credits) && input.credits.every(credit => credit && hex(credit.comment) && ['quoted', 'paraphrased'].includes(credit.mode))))))
       && stringList(input.must) && stringList(input.how_we_know) && input.how_we_know.length > 0 && stringList(input.out_of_scope)
@@ -220,11 +222,14 @@ const validEvent = input => {
         (exactKeys(input, ['type', 'text', 'base_hash', 'credits']) && Array.isArray(input.credits)
           && input.credits.every(credit => credit && hex(credit.comment) && ['quoted', 'paraphrased'].includes(credit.mode))))
       && text(input.text, 4000) && hex(input.base_hash);
-    case 'commented': return exactKeys(input, ['type', 'comment', 'anchor_kind', 'anchor_hash', 'parent', 'kind'])
+    case 'commented': return exactKeys(input, ['type', 'comment', 'anchor_kind', 'anchor_hash', 'parent', 'kind', 'resolves'])
       && text(input.comment, 4000) && ((input.anchor_kind === undefined && input.anchor_hash === undefined)
         || (['see', 'spec', 'artifact', 'send'].includes(input.anchor_kind) && hex(input.anchor_hash)))
       && (input.parent === undefined || hex(input.parent))
-      && (input.kind === undefined || ['comment', 'question', 'concern', 'alternative', 'decline'].includes(input.kind));
+      && (input.kind === undefined || ['comment', 'question', 'concern', 'alternative', 'decline'].includes(input.kind))
+      && (input.resolves === undefined || (input.resolves && typeof input.resolves === 'object'
+        && typeof input.resolves.ledger_id === 'string' && /^ledger:[a-f0-9]{24}$/.test(input.resolves.ledger_id)
+        && ['answers', 'contradicts', 'supports'].includes(input.resolves.claim)));
     case 'sent': case 'forked': case 'steered': return false;
     default: return false;
   }
@@ -579,7 +584,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           .flatMap(event => event.credits || []);
         const userEvidence = events.filter(event => ['posted', 'revised', 'specced', 'commented'].includes(event.type))
           .flatMap(event => event.evidence || []).map(evidence => ({ ...evidence }));
-        const packet = buildPacket({ original: first.original, see, spec: { ...spec, hash: input.spec_hash }, credits,
+        const packet = buildPacket({ original: first.original, see, spec: { ...spec, hash: input.spec_hash, rules: store.read(send[1]).context.rules }, credits,
           comments: events.filter(event => event.type === 'commented'), userEvidence, gatewayPolicy: {}, sandboxLimits: {},
           estimate: input.estimate ? { label: 'OP estimate, not independently verified', author: session.person, text: input.estimate } : undefined,
           researched: events.filter(event => event.type === 'researched').at(-1)?.sources,

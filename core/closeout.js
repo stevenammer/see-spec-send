@@ -43,6 +43,7 @@ export function buildCloseout(events, post, snapshot) {
     reported_claims: evidence.filter(value => value.evidence_kind === 'reported'),
     assumptions: frozen.flatMap(event => (event.assumptions || []).map(value => entry(event, { value, status: erased(event) ? 'erased' : 'recorded' }))),
     open_questions: frozen.flatMap(event => (event.open_questions || []).map(value => entry(event, { value, status: erased(event) ? 'erased' : 'recorded' }))),
+    ledger_entries: frozen.flatMap(event => (event.ledger || []).map(value => entry(event, { ...value, status: erased(event) ? 'erased' : value.status }))),
     discussion: frozen.filter(event => event.type === 'commented' && ['question', 'concern', 'alternative'].includes(event.kind))
       .map(event => entry(event, { type: event.kind, text: erased(event) ? '[erased]' : event.comment,
         reconciliation_status: event.kind === 'alternative' ? reconciliationByHash.get(event.body_hash)?.status || 'not_applicable' : 'not_applicable' })),

@@ -11,8 +11,10 @@ export function buildPacket({ original, see, spec, credits = [], comments = [], 
     const comment = comments.find(entry => entry.body_hash === credit.comment);
     return { ...credit, author: comment?.actor || 'unknown', text: comment?.comment || '[erased or unavailable]' };
   });
+  const ledger = spec.ledger || [];
+  const version = spec.rules === 3 || ledger.length || spec.estimates?.length ? 3 : 2;
   return {
-    v: 2,
+    v: version,
     original,
     see,
     spec,
@@ -23,6 +25,12 @@ export function buildPacket({ original, see, spec, credits = [], comments = [], 
     researched: researched || Object.fromEntries(RESEARCH_SOURCES.map(source => [source, { status: 'not connected', finding: 'nothing checked' }])),
     estimate: estimate || 'No estimate',
     lineage,
+    ...(version === 3 ? {
+      ledger,
+      estimates: spec.estimates || [],
+      openQuestions: ledger.filter(entry => entry.kind === 'question' && entry.status === 'open'),
+      unverifiedAssumptions: ledger.filter(entry => entry.kind === 'assumption' && entry.status === 'unverified'),
+    } : {}),
     worstCaseSpendMicros: Number.isSafeInteger(gatewayPolicy.worstCaseSpendMicros) && gatewayPolicy.worstCaseSpendMicros >= 0
       ? gatewayPolicy.worstCaseSpendMicros : null,
     spendEstimateStatus: Number.isSafeInteger(gatewayPolicy.worstCaseSpendMicros) && gatewayPolicy.worstCaseSpendMicros >= 0

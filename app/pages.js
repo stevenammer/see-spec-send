@@ -228,7 +228,11 @@ export function itemPage(item, events, person, leader) {
     // A model-built try gets no script permission in its frame. A hand-delivered try keeps its frame.
     const modelTry = events.some(event => event.type === 'tried' && event.artifact_hash === context.artifact && event.model_output === true);
     const frameSandbox = modelTry ? 'sandbox=""' : 'sandbox="allow-scripts"';
-    action = `<iframe title="Playable try" ${frameSandbox} src="/api/items/${encodeURIComponent(item.id)}/artifact/${encodeURIComponent(context.artifact)}"></iframe>${canVote ? `<form data-event="helped"><input type="hidden" name="artifact_hash" value="${escape(context.artifact)}"><button>It helps</button></form>` : '<p>You helped shape this one, so others say whether it helps.</p>'}${context.steward === person ? '<form data-steer="true"><h2>Adopt as builder instruction</h2><label>Instruction<textarea name="instruction" required></textarea></label><button>Adopt as builder instruction</button></form>' : ''}`;
+    // allow-same-origin is safe here only because bundleFrameUrl is a different origin from the app.
+    const frame = item.bundleFrameUrl && modelTry
+      ? `<iframe title="Playable try" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" src="${escape(item.bundleFrameUrl)}"></iframe>`
+      : `<iframe title="Playable try" ${frameSandbox} src="/api/items/${encodeURIComponent(item.id)}/artifact/${encodeURIComponent(context.artifact)}"></iframe>`;
+    action = `${frame}${canVote ? `<form data-event="helped"><input type="hidden" name="artifact_hash" value="${escape(context.artifact)}"><button>It helps</button></form>` : '<p>You helped shape this one, so others say whether it helps.</p>'}${context.steward === person ? '<form data-steer="true"><h2>Adopt as builder instruction</h2><label>Instruction<textarea name="instruction" required></textarea></label><button>Adopt as builder instruction</button></form>' : ''}`;
   }
   if (item.state === 'HELPS')
     action = '<p class="helps">People who do this work said it helps.</p>';

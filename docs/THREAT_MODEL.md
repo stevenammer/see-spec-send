@@ -2,6 +2,12 @@
 
 ## F7 and F8 drafting and organizational evidence (2026-11-15)
 
+## S4 separate-origin OpenCode bundles (2026-11-16)
+
+An OpenCode bundle is model-built and untrusted. When `serve --bundle-port` is enabled, its validated files are served only from a signed, per-artifact subdomain of the configured bundle host suffix. That origin cannot read the app's cookies, API, or storage, and its CSP has no network connections. Bundle storage is isolated per bundle because every artifact has a different host label. The legacy artifact route remains script-free and is used when the separate server is not enabled.
+
+This does not make the build trustworthy. Its script can change or navigate its own frame and draw anything on screen. Text a tester enters into a model-built page is visible to that page and must not be treated as private. The browser proof is `test/e2e/bundle-origin.e2e.mjs`.
+
 The current steward may request a structured SPEC draft bound to the current SEE. The complete curated text is supplied; an oversized governing post fails visibly. Discussion and research stay labeled evidence. Drafting uses the existing gateway and spend caps, and only a matching draft job gets the larger output allowance. A changed SEE or steward prevents late draft publication. The model can append only a validated advisory comment; a person edits and publishes the SPEC separately.
 
 Organizational investigation uses an explicitly selected question, objectives, constraints, work items and UTC period. Every package and pasted-answer review rechecks the signed-in person's existing workspace read access. No per-item visibility tiers are claimed: all enabled workspace people can currently read work posts. Private mentoring and private evidence never enter the packet, including sponsor-shared evidence. Frozen report bodies and artifact binaries are excluded and disclosed as missing coverage. No model vendor is called by this flow; copying a packet into another AI is a separate human action.

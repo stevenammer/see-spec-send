@@ -431,7 +431,9 @@ export class Store {
   }
 
   putArtifact(item, html) {
-    if (typeof html !== 'string' || Buffer.byteLength(html, 'utf8') > 256 * 1024) {
+    // Bundle source itself is capped at 1 MiB by validateBundle; base64 transport adds overhead.
+    const bundle = typeof html === 'string' && html.startsWith('{"sss_bundle":1');
+    if (typeof html !== 'string' || Buffer.byteLength(html, 'utf8') > (bundle ? 1536 * 1024 : 256 * 1024)) {
       throw refused('artifact too large');
     }
     const hash = scopedBodyHash(item, html);
@@ -443,6 +445,17 @@ export class Store {
     const row = this.db.prepare('SELECT bytes FROM bodies WHERE hash=?').get(hash);
     if (!row || scopedBodyHash(item, row.bytes) !== hash) return null;
     return row.bytes;
+  }
+
+  artifactByHashPrefix(prefix) {
+    if (typeof prefix !== 'string' || !/^[a-f0-9]{32,64}$/.test(prefix)) return null;
+    const rows = this.db.prepare('SELECT hash,bytes FROM bodies WHERE hash LIKE ? LIMIT 2').all(`${prefix}%`)
+      .filter(row => /^[a-f0-9]{64}$/.test(row.hash));
+    if (rows.length !== 1) return null;
+    const row = rows[0];
+    const item = this.db.prepare("SELECT e.item FROM events e JOIN bodies b ON b.hash=e.body_hash WHERE e.type='tried' AND json_extract(b.bytes,'$.artifact_hash')=? LIMIT 2").all(row.hash);
+    if (item.length !== 1 || scopedBodyHash(item[0].item, row.bytes) !== row.hash) return null;
+    return { item: item[0].item, hash: row.hash, bytes: row.bytes };
   }
 
   // One fixed-size page, keyed by item ID. `next` is the cursor for the following page, or null.

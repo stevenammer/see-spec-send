@@ -22,6 +22,7 @@ import { redact } from './provider/safe-http.js';
 import { SYSTEM_PROMPT } from './worker/builder/index.js';
 import { Auth } from './app/auth.js';
 import { createServerFor, isLoopback } from './app/http.js';
+import { createBundleServer } from './app/bundle-origin.js';
 import { Integrations, recoverStaleSending } from './app/integrations.js';
 import { questModelService } from './provider/quest-service.js';
 import { QUEST_SYSTEM } from './provider/vision-quest.js';
@@ -148,8 +149,14 @@ export function serveSettings(args, env = {}) {
     fail('refused: --insecure-cookies is for plain HTTP on loopback only; it cannot be used with a non-loopback host, TLS, or a trusted proxy.');
   }
   const origin = value('--origin') || `${tls ? 'https' : 'http'}://127.0.0.1:${port}`;
+  const bundlePortValue = value('--bundle-port');
+  const bundlePort = bundlePortValue === undefined ? null : Number(bundlePortValue);
+  const bundleHostSuffix = value('--bundle-host-suffix') || 'localhost';
+  if (bundlePort !== null && (!Number.isInteger(bundlePort) || bundlePort < 1 || bundlePort > 65535 || !/^[a-z0-9.-]+$/i.test(bundleHostSuffix))) fail('refused: invalid bundle listener settings');
+  const appUrl = new URL(origin);
+  if (bundlePort !== null && (appUrl.hostname.toLowerCase() === bundleHostSuffix.toLowerCase() || appUrl.hostname.toLowerCase().endsWith(`.${bundleHostSuffix.toLowerCase()}`)) && Number(appUrl.port || (appUrl.protocol === 'https:' ? 443 : 80)) === bundlePort) fail('refused: bundle origin could equal the app origin');
   return {
-    port, host, origin, secure: !insecure, trustedProxy,
+    port, host, origin, secure: !insecure, trustedProxy, bundlePort, bundleHostSuffix,
     tls: tls ? { cert: readFileSync(tlsCert), key: readFileSync(tlsKey) } : null,
   };
 }
@@ -470,7 +477,7 @@ async function run(argv, env, write) {
     const manifest = writeBackup(store, target, { keyFile });
     write(JSON.stringify({ backup: target, events: manifest.events, items: manifest.items, sha256: manifest.sha256 }));
   } else if (command === 'serve') {
-    const { port, host, origin, secure, trustedProxy, tls } = served;
+    const { port, host, origin, secure, trustedProxy, tls, bundlePort, bundleHostSuffix } = served;
     let questModel = null;
     if (args.includes('--enable-quest-model')) {
       const name = value('--quest-provider') || readProviders(env).defaults.default || fail('missing --quest-provider or configured default');
@@ -507,9 +514,12 @@ async function run(argv, env, write) {
       const effort = new EffortWorker(store, gateway);
       effort.tick(); effortTimer = setInterval(() => { effort.tick(); }, 1000);
     }
-    const server = createServerFor({ store, auth, integrations, questModel, secure, origin, trustedProxy, tls });
+    const bundleServer = bundlePort === null ? null : createBundleServer({ store, secret: randomBytes(32), hostSuffix: bundleHostSuffix, appOrigin: origin });
+    if (bundleServer) await new Promise(resolve => bundleServer.listen(bundlePort, host, resolve));
+    const server = createServerFor({ store, auth, integrations, questModel, secure, origin, trustedProxy, tls, bundleServer });
     await new Promise(resolve => server.listen(port, host, resolve));
     stopOnSignal(server, store);
+    if (bundleServer) { process.once('SIGTERM', () => bundleServer.close()); process.once('SIGINT', () => bundleServer.close()); }
     if (effortTimer) { process.once('SIGTERM', () => clearInterval(effortTimer)); process.once('SIGINT', () => clearInterval(effortTimer)); }
     write(`Serving ${origin}${tls ? ' over direct HTTPS' : ''}${trustedProxy ? ' behind one trusted loopback proxy' : ''}`);
     if (!secure) write('WARNING: insecure cookies are enabled for local HTTP development only.');

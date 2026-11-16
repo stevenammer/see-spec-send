@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -52,7 +52,7 @@ import { composeBundleDocument } from '../worker/bundle.js';
 test('the reviewable try is one script-free document with the stylesheet inlined and a visible note', () => {
   const b = bundle(good);
   const checked = validateBundle(b.root, b.manifest);
-  const html = composeBundleDocument(b.root, checked.manifest);
+  const html = composeBundleDocument(checked.manifest, path => readFileSync(join(b.root, path), 'utf8'));
   assert.match(html, /<style>body\{margin:0\}<\/style>/);
   assert.doesNotMatch(html, /<script/i, 'scripts are not part of the delivered try');
   assert.doesNotMatch(html, /href="style\.css"|src="app\.js"/);

@@ -17,6 +17,7 @@
     "test:vision": "node test/e2e/vision-journey.e2e.mjs",
     "test:reanalysis": "node test/e2e/reanalysis-journey.e2e.mjs",
     "test:artifact-origin": "node test/e2e/artifact-origin.e2e.mjs",
+    "test:bundle-origin": "node test/e2e/bundle-origin.e2e.mjs",
     "test:container": "node --test test/container.acceptance.mjs",
     "sync:demo": "node scripts/sync-demo.mjs",
     "check:demo": "node scripts/sync-demo.mjs --check",

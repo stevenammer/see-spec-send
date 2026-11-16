@@ -84,11 +84,11 @@ const headers = (res, secure = false) => {
   res.setHeader('cross-origin-opener-policy', 'same-origin');
   res.setHeader('cross-origin-resource-policy', 'same-origin');
 };
-const page = (res, html) => {
+const page = (res, html, csp = htmlHeaders) => {
   res.writeHead(200, {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
-    'content-security-policy': htmlHeaders,
+    'content-security-policy': csp,
   });
   res.end(html);
 };
@@ -241,7 +241,8 @@ const validEvent = input => {
 
 const postBinding = req => ({ post_id: req.headers['x-post-id'], post_version: req.headers['x-post-version'] });
 
-export function createHandler({ auth, store, integrations, questModel = null, analysisAskModel = null, analysisGateway = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, trustedProxy = false, canRead: readPolicy = defaultCanRead }) {
+export function createHandler({ auth, store, integrations, questModel = null, analysisAskModel = null, analysisGateway = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, trustedProxy = false, canRead: readPolicy = defaultCanRead, bundleServer = null }) {
+  if (bundleServer && (!bundleServer.hostSuffix || typeof bundleServer.bundleUrl !== 'function')) throw new Error('invalid bundle server configuration');
   integrations ||= new Integrations(store, { origin });
   const mentoring = new Mentoring(store, { clock });
   // Fixed one-minute windows per signed-in member. Memory holds one entry per member.
@@ -515,11 +516,15 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         }
         const state = store.read(view[1]);
         const events = store.events(view[1]);
+        const artifactBytes = state.context.artifact && store.artifact(view[1], state.context.artifact);
+        const bundleFrameUrl = bundleServer && typeof artifactBytes === 'string' && artifactBytes.startsWith('{"sss_bundle":1')
+          ? bundleServer.bundleUrl(state.context.artifact) : null;
+        if (bundleFrameUrl && new URL(bundleFrameUrl).origin === new URL(origin).origin) throw new Error('bundle origin must differ from app origin');
         if (state.state === 'SPECCED' && leader && state.context.steward !== session.person)
           auth.reviewApproval(sessionToken, view[1], state.context.specHash, events.length);
         return page(
           res,
-          itemPage({ id: view[1], ...state,
+          itemPage({ id: view[1], ...state, bundleFrameUrl,
             packet: (state.context.sent?.packetHash || state.context.decided?.packetHash)
               ? store.artifact(view[1], state.context.sent?.packetHash || state.context.decided.packetHash) : null,
             decisionPackets: Object.fromEntries(events.filter(event => ['approved', 'returned', 'not_built', 'decided'].includes(event.type) && event.packet_hash)
@@ -528,6 +533,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
             stagePosts: store.db.prepare('SELECT * FROM stage_posts WHERE item=? ORDER BY opened_seq, post_id').all(view[1]),
             annexes: store.knowledge.entries('annex').filter(row => row.body.parent?.item === view[1]),
             effort: store.db.prepare('SELECT kind,state,last_error,requester,created FROM effort_jobs WHERE item=? ORDER BY created').all(view[1]) }, events, session.person, leader),
+          bundleFrameUrl ? htmlHeaders.replace("frame-src 'self'", `frame-src ${new URL(bundleFrameUrl).origin}`) : htmlHeaders,
         );
       }
       const updates = url.pathname.match(/^\/api\/items\/([^/]+)\/updates$/);

@@ -36,6 +36,12 @@ command prints a warning when it is used. For HTTPS, omit it and give the public
 `--host` needs `--tls-cert` and `--tls-key` (direct HTTPS) or `--trusted-proxy` (one loopback TLS front end).
 `serve` refuses to start otherwise. SIGTERM closes the listener and then the database.
 
+### Playable OpenCode bundles
+
+Use `serve --bundle-port 8081` to enable script-capable, model-built bundle tries on a separate origin. `--bundle-host-suffix` defaults to `localhost`, so browsers resolve signed per-bundle labels to loopback. The bundle listener has a random, process-local signing secret and never logs it. It serves only GET and HEAD for files listed in a validated manifest.
+
+This origin protects the app's cookies, API, and local storage from model-built code. It does not make that code safe to trust: it can render or navigate inside its own frame, and anything a tester types into the build is visible to it. Do not enter sensitive data.
+
 Old-format authority is captured once from the registry during migration. Its original
 hashes are preserved, so those historical roles cannot be independently authenticated
 from the old chain. Migration rebuilds the derived context cache in the same transaction.
@@ -60,8 +66,8 @@ By default the adapter is the fake. It makes a tiny static try without a model o
 Two long-running processes and one Docker image. All use the same `SSS_DB`.
 
 ```
-node cli.js provider add --file provider.json        # your provider; the key stays in an env var or key file
-node cli.js gateway fixture-enable                   # sets the fixed default caps (see GATEWAY.md)
+node cli.js provider add --file provider.json
+node cli.js gateway fixture-enable
 node cli.js gateway serve --socket /srv/sss/run/gateway.sock --name yourprovider
 node cli.js worker --builder container --gateway-socket /srv/sss/run/gateway.sock
 ```
@@ -91,15 +97,9 @@ Those global receipts aren't part of an item's hash chain.
 
 I keep the database and its adjacent kill file together, with one canonical path.
 Don't use different symlink paths to the same database. A latch read error blocks
-work. A failed clear can leave the file set; check status after fixing the error.
-The database backup includes worker rows, but not the separate latch file. JSONL
+work. The database backup includes worker rows, but not the separate latch file. JSONL
 export includes referenced SEND/TRY artifacts but not live worker/gateway state or private mentoring, so it isn't a full database backup.
 Don't restore an old database into a running worker. Stop it and set kill first.
-
-Database symlinks resolve to the real database path before selecting the independent
-kill file, so opening the same database through a symbolic link observes the same
-stop latch. The SQLite backup still does not include that file.
-
 
 ## Local fixture gateway
 
@@ -117,7 +117,7 @@ Node 22.19 or newer with SQLite FTS5 is required. Search and contribution record
 Internal prior-work research starts off. `node cli.js research status` reports it. An operator can use `node cli.js research enable --source this_workspace` or `disable` to change it; changes enter the admin audit. It performs no network or model call. External sources remain disconnected. Refreshing a SPEC research record states what was checked, gives source identities, and preserves the snapshot used at SEND.
 
 Erasure removes the target from the active search index and leaves a contribution tombstone. It does not purge text already copied into another record, a frozen packet, or a previous backup. Contribution pages show records, never employee rankings or performance scores.
+
 # Reanalysis
 
 `node cli.js reanalysis run [--limit N]` processes synthetic recorded knowledge against frozen posts and records linked annexes plus in-app digest entries. It does not schedule work, send an outbound message, approve anything, spend money, or start a build.
-

@@ -80,7 +80,7 @@ export class Worker {
     const run = this.db.prepare('SELECT * FROM runs WHERE id=?').get(id);
     if (run.status === 'stop_requested') return this.stop(run);
     const observed = this.adapter.status(id);
-    if (observed.state === 'ready') this.deliver(id, observed.html ?? JSON.stringify(observed.bundle));
+    if (observed.state === 'ready') this.deliver(id, observed.bundleArtifact ?? observed.html ?? JSON.stringify(observed.bundle));
     else if (terminal(observed.state)) this.stop(run);
   }
 

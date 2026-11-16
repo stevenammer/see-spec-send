@@ -1,12 +1,14 @@
 # See / Spec / Send
 
+**Where this stands:** [Vision](docs/VISION.md) · [Roadmap](docs/ROADMAP.md) · [Decisions](docs/DECISIONS.md) · [Status](docs/STATUS.md)
+
 Product direction: **E.F.F.O.R.T. for Organizations** is the working umbrella name, with **See / Spec / Send** as its improvement workflow. Build the forum first as the complete product experience. Microsoft Teams / Microsoft 365 will be the first external integrations, bringing that same workflow into existing collaboration channels. The name is provisional; Teams integration is not shipped.
 
 Organizations should be able to operate their own data stores, choose their models, and connect their preferred coding harness or custom agent. These are portability requirements, not claims of current compatibility. The workflow retains authority over frozen records, human decisions, approved scope, spending and independent evaluation across every interface. See [the implementation trace](docs/PRODUCT_VISION_TRACE.md) for current limits.
 
 Status: reviewable SPEC drafting, source-linked organizational investigation, the current conversation demo and optional private mentoring now accompany workspace memory: post a SEE without Vision Quest, discuss it with Effort queued first, write a separate SPEC, send one frozen packet for a reasoned leader decision, fork, and adopt OP-only builder instructions. The browser walkthrough uses a labeled fixture. The optional container builder is verified with a local mock model.
 
-Rules 3 applies to newly created branches. SEE, SPEC, SEND review and superseded TRY posts freeze as work advances, with a pending closeout job for each frozen snapshot. No closing report is generated yet. Existing rules 1 and 2 records retain their original behavior; their history is not retroactively labeled frozen. See `docs/STAGE_POSTS.md`.
+Rules 3 applies to newly created branches. SEE, SPEC, SEND review and superseded TRY posts freeze as work advances, with a closeout report generated for each frozen snapshot (deterministic and source-linked; no model). Existing rules 1 and 2 records retain their original behavior; their history is not retroactively labeled frozen. See `docs/STAGE_POSTS.md`.
 
 Rules 2 verification (2026-11-14): unit, public-file and demo-parity checks run locally. The separate CI browser job runs the Vision and E2E journeys. See `docs/INVARIANTS.md` for the stale-state authorization chain. Effort is always shown first as an honest status or reply. Vision Quest is optional.
 

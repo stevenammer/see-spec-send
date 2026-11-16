@@ -1,5 +1,31 @@
 const open = new Set(['SEEN', 'CHECKED', 'SPECCED', 'SUBMITTED', 'SENDING', 'TRYING']);
 const verdicts = new Set(['already_have', 'setting', 'free', 'pay', 'build_needed']);
+export const DECISION_OUTCOMES = new Set(['return_for_revision', 'defer', 'redirect', 'resolve_without_build', 'decline', 'prohibited']);
+export function validDateOnly(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return year >= 1 && month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1];
+}
+const decisionMetadataValid = (disposition, metadata) => {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false;
+  const fields = {
+    return_for_revision: ['needed', 'next_reviewer'], defer: ['owner', 'review_by', 'trigger', 'interim_work'],
+    redirect: ['destination', 'accepted', 'follow_up_owner'], resolve_without_build: ['alternative', 'action_owner'],
+    decline: ['reconsider_if'], prohibited: ['policy_class'],
+  }[disposition];
+  if (!fields || Object.keys(metadata).some(key => !fields.includes(key))) return false;
+  const has = key => nonempty(metadata[key]) && metadata[key].length <= 2000;
+  if (disposition === 'return_for_revision') return has('needed') && has('next_reviewer');
+  if (disposition === 'defer') return has('owner') && (has('review_by') || has('trigger'))
+    && (!metadata.review_by || validDateOnly(metadata.review_by))
+    && (metadata.interim_work === undefined || has('interim_work'));
+  if (disposition === 'redirect') return has('destination') && has('follow_up_owner') && typeof metadata.accepted === 'boolean';
+  if (disposition === 'resolve_without_build') return has('alternative') && has('action_owner');
+  if (disposition === 'decline') return metadata.reconsider_if === undefined || has('reconsider_if');
+  return has('policy_class');
+};
 const MICROS_PER_USD = 1_000_000;
 export const CURRENT_RULES = 3;
 export const NOT_BUILT_LABEL = 'Not building';
@@ -201,9 +227,24 @@ export function step(state, event, who) {
       quorum: event.quorum, spentMicros: 0, approval: context.approval + 1, iteration: 0,
       ...(context.rules === 3 ? { activePost: { id: `artifact:${event.body_hash}`, kind: 'artifact', version: event.body_hash }, decisionId: `decision:${event.body_hash}` } : {}),
       leash: { maxIterations, expiresAt, windowMinutes }, decided: { disposition: 'approved', actor: event.actor, at: event.at,
-        reason: event.reason, packetHash: event.packet_hash, specHash: event.spec_hash },
+        reason: event.reason, packetHash: event.packet_hash, specHash: event.spec_hash,
+        ...(context.rules === 3 ? { bodyHash: event.body_hash } : {}) },
       ineligibleHelpers: addIneligible(context, event.actor) };
     return result(next, [{ kind: 'build.start', approval: next.approval, spec_hash: event.spec_hash, cap_usd: event.cap_usd }]);
+  }
+  if (event.type === 'decided' && context.rules === 3 && context.phase === 'SUBMITTED' && leader(who)
+      && !context.authors.includes(event.actor) && DECISION_OUTCOMES.has(event.disposition)
+      && event.spec_hash === context.sent?.specHash && event.packet_hash === context.sent?.packetHash
+      && nonempty(event.reason) && event.reason.length >= 12 && nonempty(event.reason_code)
+      && event.reason_code.length <= 120 && decisionMetadataValid(event.disposition, event.metadata)) {
+    const next = { ...context, phase: 'SPECCED', sent: null,
+      ...(context.rules === 3 ? { activePost: event.disposition === 'return_for_revision'
+        ? { id: `spec:${event.body_hash}`, kind: 'spec', version: context.specHash } : null,
+        decisionId: `decision:${event.body_hash}` } : {}),
+      decided: { disposition: event.disposition, actor: event.actor, at: event.at, reason: event.reason,
+        reasonCode: event.reason_code, metadata: event.metadata, packetHash: event.packet_hash, specHash: event.spec_hash,
+        bodyHash: event.body_hash } };
+    return result(next);
   }
   if (event.type === 'approved' && !(context.rules >= 2) && context.phase === 'SPECCED' && leader(who)
       && event.actor !== context.steward && nonempty(event.spec_hash)
@@ -226,7 +267,22 @@ export function step(state, event, who) {
       decided: { disposition: event.type, actor: event.actor,
       at: event.at, reason: event.reason, packetHash: event.packet_hash, specHash: event.spec_hash,
       ...(event.restricted_evidence ? { restrictedEvidence: event.restricted_evidence } : {}),
-      ...(event.pivot_note ? { pivotNote: event.pivot_note } : {}) } });
+      ...(event.pivot_note ? { pivotNote: event.pivot_note } : {}),
+      ...(context.rules === 3 ? { bodyHash: event.body_hash } : {}) } });
+  if (event.type === 'experiment_not_helpful' && context.rules === 3 && context.phase === 'TRYING' && leader(who)
+      && !context.authors.includes(event.actor) && event.approval === context.approval
+      && event.spec_hash === context.specHash && event.artifact_hash === context.artifact
+      && nonempty(event.reason) && event.reason.length >= 12 && nonempty(event.evidence_summary) && nonempty(event.evidence_limits))
+    return result({ ...context, phase: 'SPECCED', artifact: null, helpers: [], activePost: null,
+      decisionId: `decision:${event.body_hash}`, decided: { disposition: 'experiment_did_not_help', actor: event.actor,
+        at: event.at, reason: event.reason, evidenceSummary: event.evidence_summary, evidenceLimits: event.evidence_limits,
+        packetHash: context.sent?.packetHash || null, specHash: event.spec_hash, artifactHash: event.artifact_hash, bodyHash: event.body_hash } },
+      stopsBuild(context, 'SPECCED', event.type));
+  if (event.type === 'op_withdrew' && context.rules === 3 && open.has(context.phase)
+      && steward(context, event, who) && nonempty(event.reason))
+    return result({ ...context, phase: 'SHELVED', activePost: null, artifact: null, helpers: [],
+      decisionId: `decision:${event.body_hash}`, decided: { disposition: 'op_withdrew', actor: event.actor,
+        at: event.at, reason: event.reason, bodyHash: event.body_hash } }, stopsBuild(context, 'SHELVED', event.type));
   if (event.type === 'returned' && !(context.rules >= 2) && context.phase === 'SPECCED' && leader(who)
       && nonempty(event.note)) return result({ ...context, phase: 'CHECKED' });
   if (event.type === 'steered' && context.rules >= 2 && ['SENDING', 'TRYING'].includes(context.phase)

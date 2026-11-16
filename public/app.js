@@ -72,6 +72,17 @@ document.addEventListener('submit', async event => {
       if (input.packet_hash) Object.assign(approval, { packet_hash: input.packet_hash, reason: input.reason });
       else approval.expected_seq = Number(input.expected_seq);
       await post(`/api/items/${id}/events`, approval);
+    } else if (form.dataset.decision) {
+      const disposition = input.disposition;
+      const fields = {
+        return_for_revision: ['needed', 'next_reviewer'], defer: ['owner', 'review_by', 'trigger', 'interim_work'],
+        redirect: ['destination', 'accepted', 'follow_up_owner'], resolve_without_build: ['alternative', 'action_owner'],
+        decline: ['reconsider_if'], prohibited: ['policy_class'],
+      }[disposition];
+      const metadata = Object.fromEntries(fields.filter(key => input[key]?.trim())
+        .map(key => [key, key === 'accepted' ? input[key] === 'true' : input[key].trim()]));
+      await post(`/api/items/${id}/events`, { type: 'decided', disposition, reason_code: input.reason_code,
+        reason: input.reason, metadata, spec_hash: input.spec_hash, packet_hash: input.packet_hash });
     } else if (form.dataset.specPrepare) {
       await post(`/api/items/${id}/spec-draft`, { see_hash: input.see_hash });
     } else if (form.dataset.research) {
@@ -116,6 +127,7 @@ document.addEventListener('submit', async event => {
       await post(`/api/items/${id}/artifact`, { html: input.html });
     } else {
       const data = { type: form.dataset.event, ...input };
+      if (data.type === 'experiment_not_helpful') data.approval = Number(data.approval);
       if (['returned', 'not_built'].includes(data.type)) {
         for (const key of ['restricted_evidence', 'pivot_note']) if (!data[key]?.trim()) delete data[key];
       }

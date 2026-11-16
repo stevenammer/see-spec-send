@@ -11,7 +11,7 @@ import { Integrations } from './integrations.js';
 import { feedPage, frozenPostPage, htmlHeaders, itemPage, newItemPage, passwordPage, questPage, redeemPage, signInPage } from './pages.js';
 import { invalid, kindOf, refused, tooLarge as tooLargeError } from '../core/errors.js';
 import { redact } from '../provider/safe-http.js';
-import { CURRENT_RULES } from '../core/machine.js';
+import { CURRENT_RULES, validDateOnly } from '../core/machine.js';
 import { buildPacket } from '../core/packet.js';
 import { specPage } from './pages-spec.js';
 import { researchRecord } from '../research/connectors.js';
@@ -150,6 +150,25 @@ const hex = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const text = (value, limit) => typeof value === 'string' && value.length > 0 && value.length <= limit;
 const stringList = (value, limit = 100) => Array.isArray(value) && value.length <= limit && value.every(line => text(line, 2000));
 const exactKeys = (value, keys) => Object.keys(value).every(key => keys.includes(key));
+const decisionMetadataValid = (disposition, metadata) => {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false;
+  const fields = {
+    return_for_revision: ['needed', 'next_reviewer'], defer: ['owner', 'review_by', 'trigger', 'interim_work'],
+    redirect: ['destination', 'accepted', 'follow_up_owner'], resolve_without_build: ['alternative', 'action_owner'],
+    decline: ['reconsider_if'], prohibited: ['policy_class'],
+  }[disposition];
+  if (!fields || !exactKeys(metadata, fields)) return false;
+  const has = key => text(metadata[key], 2000);
+  if (disposition === 'return_for_revision') return has('needed') && has('next_reviewer');
+  if (disposition === 'defer') return has('owner') && (has('review_by') || has('trigger'))
+    && (!metadata.review_by || validDateOnly(metadata.review_by))
+    && (metadata.interim_work === undefined || has('interim_work'));
+  if (disposition === 'redirect') return has('destination') && has('follow_up_owner')
+    && typeof metadata.accepted === 'boolean';
+  if (disposition === 'resolve_without_build') return has('alternative') && has('action_owner');
+  if (disposition === 'decline') return metadata.reconsider_if === undefined || has('reconsider_if');
+  return has('policy_class');
+};
 const validEvent = input => {
   if (!input || typeof input !== 'object') return false;
   switch (input.type) {
@@ -179,6 +198,15 @@ const validEvent = input => {
       && text(input.reason, 2000) && (input.restricted_evidence === undefined || text(input.restricted_evidence, 2000))
       && (input.pivot_note === undefined || text(input.pivot_note, 2000))
       && (input.spec_hash === undefined || hex(input.spec_hash)) && (input.packet_hash === undefined || hex(input.packet_hash));
+    case 'decided': return exactKeys(input, ['type', 'disposition', 'reason_code', 'reason', 'metadata', 'spec_hash', 'packet_hash'])
+      && ['return_for_revision', 'defer', 'redirect', 'resolve_without_build', 'decline', 'prohibited'].includes(input.disposition)
+      && text(input.reason_code, 120) && text(input.reason, 2000) && hex(input.spec_hash) && hex(input.packet_hash)
+      && decisionMetadataValid(input.disposition, input.metadata);
+    case 'experiment_not_helpful': return exactKeys(input, ['type', 'approval', 'spec_hash', 'artifact_hash', 'reason', 'evidence_summary', 'evidence_limits'])
+      && Number.isInteger(input.approval) && input.approval >= 1 && hex(input.spec_hash) && hex(input.artifact_hash)
+      && text(input.reason, 2000) && text(input.evidence_summary, 2000)
+      && text(input.evidence_limits, 2000);
+    case 'op_withdrew': return exactKeys(input, ['type', 'reason']) && text(input.reason, 2000);
     case 'credit_note': return exactKeys(input, ['type', 'person', 'source', 'note']) && text(input.person, 64) && hex(input.source) && text(input.note, 2000);
     case 'shelved': case 'checked_in':
       return exactKeys(input, input.type === 'checked_in' ? ['type', 'note', 'consent'] : ['type', input.type === 'shelved' ? 'reason' : 'note'])
@@ -458,7 +486,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           itemPage({ id: view[1], ...state,
             packet: (state.context.sent?.packetHash || state.context.decided?.packetHash)
               ? store.artifact(view[1], state.context.sent?.packetHash || state.context.decided.packetHash) : null,
-            decisionPackets: Object.fromEntries(events.filter(event => ['approved', 'returned', 'not_built'].includes(event.type) && event.packet_hash)
+            decisionPackets: Object.fromEntries(events.filter(event => ['approved', 'returned', 'not_built', 'decided'].includes(event.type) && event.packet_hash)
               .map(event => [event.packet_hash, store.artifact(view[1], event.packet_hash)])),
             effortAllowance: effortAllowance(store, session.person, view[1], clock),
             stagePosts: store.db.prepare('SELECT * FROM stage_posts WHERE item=? ORDER BY opened_seq, post_id').all(view[1]),
@@ -555,7 +583,7 @@ export function createHandler({ auth, store, integrations, questModel = null, se
           estimate: input.estimate ? { label: 'OP estimate, not independently verified', author: session.person, text: input.estimate } : undefined,
           researched: events.filter(event => event.type === 'researched').at(-1)?.sources,
           lineage: first.type === 'forked' ? { ...first.parent, from: first.from || null, reason: first.reason || 'No reason recorded',
-            parentDecision: store.events(first.parent.item).slice(0, first.parent.seq).filter(event => ['approved', 'returned', 'not_built'].includes(event.type)).at(-1) || null } : null });
+            parentDecision: store.events(first.parent.item).slice(0, first.parent.seq).filter(event => ['approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew'].includes(event.type)).at(-1) || null } : null });
         const packet_hash = store.putArtifact(send[1], JSON.stringify(packet));
         const result = store.append(send[1], { type: 'sent', actor: session.person, spec_hash: input.spec_hash, packet_hash, ...postBinding(req),
           at: new Date().toISOString() }, { idem: req.headers['idempotency-key'] || randomUUID() });

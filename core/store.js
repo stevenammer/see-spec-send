@@ -103,14 +103,14 @@ export class Store {
           const closingEventIncluded = ['helped', 'shelved', 'failed'].includes(event.type);
           const snapshotSeq = closingEventIncluded ? row.seq : row.seq - 1;
           const snapshotHash = closingEventIncluded ? row.hash : previous;
-          const decisionId = ['approved', 'returned', 'not_built'].includes(event.type) ? `decision:${row.body_hash}` : null;
+          const decisionId = ['approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew'].includes(event.type) ? `decision:${row.body_hash}` : null;
           Object.assign(post, { closed_seq: snapshotSeq, snapshot_hash: snapshotHash, successor_post_id: decisionId ?? after?.id ?? null });
           jobs.push({ item, post_id: post.post_id, snapshot_hash: snapshotHash });
           if (after) {
             const successor = { item, post_id: after.id, kind: after.kind, opened_seq: row.seq, previous_post_id: decisionId ?? before.id, closed_seq: null, snapshot_hash: null, successor_post_id: null };
             posts.push(successor); byId.set(successor.post_id, successor);
           }
-          if (['approved', 'returned', 'not_built'].includes(event.type)) {
+          if (['approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew'].includes(event.type)) {
             const decision = { item, post_id: decisionId, kind: 'decision', opened_seq: row.seq, previous_post_id: before.id, closed_seq: row.seq, snapshot_hash: row.hash, successor_post_id: after?.id ?? null };
             posts.push(decision); jobs.push({ item, post_id: decision.post_id, snapshot_hash: row.hash });
           }
@@ -447,7 +447,7 @@ export class Store {
         const target = this.db.prepare('SELECT type, actor FROM events WHERE item=? AND body_hash=?').get(item, event.body_hash);
         if (!target) { if (!privileged) throw refused('event not allowed'); }
         else {
-          if (['posted', 'forked', 'approved', 'returned', 'not_built', 'sent'].includes(target.type)) throw refused('decision records and original SEEs cannot erase');
+          if (['posted', 'forked', 'approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew', 'sent'].includes(target.type)) throw refused('decision records and original SEEs cannot erase');
           if (target.actor !== event.actor) {
             if (!privileged) throw refused('event not allowed');
             if (!['privacy', 'legal', 'safety', 'customer or employee personal data'].includes(event.ground)) throw refused('erase ground required');
@@ -589,14 +589,14 @@ export class Store {
         const closingEventIncluded = ['helped', 'shelved', 'failed'].includes(event.type);
         const snapshotSeq = closingEventIncluded ? seq : currentSeq;
         const snapshotHash = closingEventIncluded ? hash : previous;
-        const decisionId = ['approved', 'returned', 'not_built'].includes(event.type) ? `decision:${hashOfBody}` : null;
+        const decisionId = ['approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew'].includes(event.type) ? `decision:${hashOfBody}` : null;
         const changed = this.db.prepare('UPDATE stage_posts SET closed_seq=?,snapshot_hash=?,successor_post_id=? WHERE item=? AND post_id=? AND closed_seq IS NULL')
           .run(snapshotSeq, snapshotHash, decisionId ?? after?.id ?? null, item, before.id);
         if (changed.changes !== 1) throw refused('post freeze inconsistent');
         this.db.prepare('INSERT INTO closeout_jobs(item,post_id,snapshot_hash) VALUES(?,?,?)').run(item, before.id, snapshotHash);
         if (after) this.db.prepare('INSERT INTO stage_posts(item,post_id,kind,opened_seq,previous_post_id) VALUES(?,?,?,?,?)')
           .run(item, after.id, after.kind, seq, decisionId ?? before.id);
-        if (['approved', 'returned', 'not_built'].includes(event.type)) {
+        if (['approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew'].includes(event.type)) {
           const decision = decisionId;
           this.db.prepare('INSERT INTO stage_posts(item,post_id,kind,opened_seq,previous_post_id,closed_seq,snapshot_hash,successor_post_id) VALUES(?,?,?,?,?,?,?,?)')
             .run(item, decision, 'decision', seq, before.id, seq, hash, after?.id ?? null);
@@ -756,7 +756,7 @@ export class Store {
       const target = this.db.prepare('SELECT * FROM events WHERE item=? AND body_hash=?').get(item, targetHash);
       if (!target) throw new Error('body is not part of item');
       const rules2 = this.read(item).context.rules >= 2;
-      if (rules2 && ['posted', 'forked', 'approved', 'returned', 'not_built', 'sent'].includes(target.type)) throw refused('decision records and original SEEs cannot erase');
+      if (rules2 && ['posted', 'forked', 'approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew', 'sent'].includes(target.type)) throw refused('decision records and original SEEs cannot erase');
       const authority = this.actor(actor, item);
       if (!rules2 && !(authority?.leader || actor === this.read(item).context.steward)) throw refused('event not allowed');
       if (rules2 && target.actor !== actor) {

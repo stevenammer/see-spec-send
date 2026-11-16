@@ -57,3 +57,15 @@ test('runner delivers a bundle artifact and retains model-output attribution', (
     assert.equal(event.model_output, true); assert.equal(f.store.artifact('item', event.artifact_hash), bytes);
   } finally { f.store.close(); }
 });
+
+test('a label with the right artifact prefix but a wrong signature is refused', async () => {
+  const f = readyBundle(); const secret = randomBytes(32); const server = createBundleServer({ store: f.store, secret, hostSuffix: 'localhost', appOrigin: 'http://127.0.0.1:8080' });
+  const good = new URL(bundleUrl(secret, f.artifactHash, 'localhost', 9090)).host;
+  assert.equal((await call(server, 'GET', good, '/')).status, 200);
+  const [label, ...rest] = good.split('.');
+  const forged = `${label.slice(0, 32)}${label.slice(32).split('').reverse().join('')}.${rest.join('.')}`;
+  assert.notEqual(forged, good);
+  assert.equal((await call(server, 'GET', forged, '/')).status, 404, 'knowing the artifact prefix is not enough');
+  const otherSecret = new URL(bundleUrl(randomBytes(32), f.artifactHash, 'localhost', 9090)).host;
+  assert.equal((await call(server, 'GET', otherSecret, '/')).status, 404, 'a label minted with another secret is refused');
+});

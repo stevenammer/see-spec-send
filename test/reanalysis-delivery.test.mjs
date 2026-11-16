@@ -168,3 +168,22 @@ test('a correction can target a source event, as the closing-report button does,
   assert.equal(entry.actor, 'pat'); assert.equal(entry.target, decision.body_hash);
   assert.deepEqual(store.eventRows('dana').map(row => row.hash), before);
 });
+
+test('not relevant removes a digest entry only for the steward; other recipients keep theirs', async t => {
+  const { store, call } = await world(t);
+  runReanalysis(store, { now: later });
+  const hash = store.knowledge.entries('annex')[0].hash;
+  assert.equal((await call('POST', `/api/annexes/${hash}/response`, 'lee', { kind: 'not_relevant' })).status, 201);
+  assert.equal(store.db.prepare("SELECT COUNT(*) AS n FROM digest_entries WHERE person='lee'").get().n, 1, 'the decider is not the steward, so the entry stays');
+  assert.equal(store.db.prepare("SELECT COUNT(*) AS n FROM digest_entries WHERE person='dana'").get().n, 1, 'dana has not responded');
+});
+
+test('a renewal must use an annex that targets the case being renewed', async t => {
+  const { store, call } = await world(t);
+  runReanalysis(store, { now: later });
+  const annex = store.knowledge.entries('annex')[0];
+  const foreign = recordAnnex(store, { ...annex.body, parent: { ...annex.body.parent, item: 'sam' }, what_is_new: ['A result about a different case.'] }, { at: later });
+  const refused = await call('POST', '/api/items/dana/renew', 'dana', { annex: foreign.hash, what_is_new: 'Something new.', reason: 'Trying an annex from another case.' });
+  assert.notEqual(refused.status, 201, 'an annex about another case cannot start a renewal here');
+  assert.equal((await call('POST', '/api/items/dana/renew', 'dana', { annex: annex.hash, what_is_new: 'Something new.', reason: 'The right annex.' })).status, 201);
+});

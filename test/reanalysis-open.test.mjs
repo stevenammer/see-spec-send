@@ -78,3 +78,14 @@ test('the comment is attributed to Effort as an agent, so a person cannot be mis
   assert.ok(!('person' in comment));
   assert.equal(s.read('dana').context.steward, 'dana');
 });
+
+test('an open thread that shares fewer than three terms with the result gets no comment', t => {
+  const { s, decide } = world(t);
+  // A rewrite of the result that shares only "integration" with Dana's assumption.
+  s.db.exec("DELETE FROM reanalysis_pairs");
+  decide('lena', 'Parking validation integration is out of scope.');
+  const out = runReanalysis(s, { now: later });
+  const danaComments = s.events('dana').filter(event => event.actor === 'effort');
+  assert.ok(danaComments.every(event => !/Parking validation/.test(event.comment)), 'a one-word overlap is never enough');
+  assert.ok(out.openThreads.every(row => row.item !== 'lena'));
+});

@@ -160,3 +160,21 @@ test('a gateway call whose provider reports OpenAI-style usage settles instead o
   assert.equal(result.status, 200);
   assert.equal(ledger.receipts().at(-1).state, 'settled');
 });
+
+test('a failure after the event stream has started ends that stream and the server survives', async t => {
+  const { store, ledger, token } = fixture(); t.after(() => store.close());
+  const chatGateway = { ledger, async stream(_raw, _idem, _input, send, begin) { begin(); send({ partial: true }); throw new Error('late failure'); }, call: async () => ({ status: 200, body: {} }) };
+  const server = createGatewayServer(new Gateway(ledger, fixtureProvider), chatGateway);
+  server.listen(0, '127.0.0.1');
+  try { await once(server, 'listening'); } catch (error) {
+    if (error.code === 'EPERM') { t.skip('sandbox blocks loopback listeners'); return; }
+    throw error;
+  }
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const url = `http://127.0.0.1:${server.address().port}/v1/chat/completions`;
+  const headers = { 'content-type': 'application/json', authorization: `Bearer ${token}` };
+  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(chat({ stream: true })) });
+  assert.equal(res.status, 200); assert.match(await res.text(), /partial/);
+  const after = await fetch(url, { method: 'POST', headers, body: JSON.stringify(chat()) });
+  assert.equal(after.status, 200, 'the gateway process is still serving');
+});

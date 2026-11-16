@@ -5,6 +5,7 @@ import { Store } from '../core/store.js';
 import { runReanalysis } from '../reanalysis/run.js';
 import { findImpacts } from '../reanalysis/match.js';
 import { extractDeltas } from '../knowledge/delta.js';
+import { challengeClaim } from '../knowledge/corrections.js';
 
 const stamp = '2026-11-10T12:00:00.000Z';
 const later = '2026-11-16T12:00:00.000Z';
@@ -139,4 +140,22 @@ test('static: reanalysis never reads the leader flag, counts people, or touches 
     assert.doesNotMatch(code, /mentor_/, `${file} must not read mentoring tables`);
     assert.doesNotMatch(code, /GROUP\s+BY\s+actor|count\s*\(.*actor/i, `${file} must not count per person`);
   }
+});
+
+test('a result a person has challenged stops being support for new matches', t => {
+  const { s, decideSam } = org(t);
+  decideSam();
+  const delta = extractDeltas(s, { now: later }).find(row => row.source.item === 'sam');
+  assert.ok(findImpacts(s, delta, {}).checked.length > 0, 'unchallenged, it matches the old decline');
+  challengeClaim(s, { target: delta.hash, actor: 'dana', note: 'This result does not apply to us.', at: later });
+  const after = findImpacts(s, delta, {});
+  assert.equal(after.checked.length, 0); assert.equal(after.held.length, 0);
+  assert.equal(runReanalysis(s, { now: later }).annexes.length, 0, 'nothing is announced from a challenged result');
+});
+
+test('the same-case guard works on its own, without the provenance fallback', t => {
+  const { s } = org(t);
+  const own = extractDeltas(s, { now: later }).find(delta => delta.source.item === 'dana');
+  const result = findImpacts(s, { ...own, provenance_roots: [] }, {});
+  assert.ok(result.checked.every(impact => impact.target.item !== 'dana'), 'a result is never checked against its own case');
 });

@@ -13,6 +13,7 @@ import { reconciliation, stewardInactivity, transferEligibility, parseAt, legacy
 import { buildCloseout } from './closeout.js';
 import { normalizeLedger, rebuildLedger, validLedger } from '../knowledge/ledger.js';
 import { normalizeEstimates, validEstimates } from '../knowledge/estimate.js';
+import { KnowledgeLog } from '../knowledge/chain.js';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 // Fixed page size for the feed and the item API. There is no setting for it.
@@ -97,6 +98,14 @@ export class Store {
       PRIMARY KEY(item,ledger_id,spec_hash));
       CREATE INDEX ledger_entries_item ON ledger_entries(item,seq);`);
     rebuildLedger(this);
+  }
+  migrateReanalysis() {
+    this.db.exec(`CREATE TABLE knowledge_log(seq INTEGER PRIMARY KEY, kind TEXT NOT NULL, body TEXT NOT NULL,
+      body_hash TEXT NOT NULL, prev_hash TEXT NOT NULL, hash TEXT NOT NULL, at TEXT NOT NULL,
+      UNIQUE(kind,body_hash));
+      CREATE TABLE reanalysis_cursor(item TEXT PRIMARY KEY, seq INTEGER NOT NULL);
+      CREATE TABLE reanalysis_pairs(delta_hash TEXT NOT NULL, item TEXT NOT NULL, decision_hash TEXT NOT NULL DEFAULT '',
+        provenance TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(delta_hash,item,decision_hash));`);
   }
   stageProjection(item) {
     let context = initial();
@@ -210,6 +219,9 @@ export class Store {
       throw error;
     }
     attach(this, file);
+    // This separate append-only log is deliberately not part of item replay.
+    // It remains available after import/rebuild without changing legacy hashes.
+    this.knowledge = new KnowledgeLog(this);
   }
 
   migrateActorKinds() {

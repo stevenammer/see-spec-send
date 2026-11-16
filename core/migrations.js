@@ -19,6 +19,7 @@ export const MIGRATIONS = Object.freeze([
   { name: 'rules 3 stage post projections and pending closeouts', up: store => store.migrateStagePosts() },
   { name: 'closeout report artifact pointers', up: store => store.migrateCloseoutReports() },
   { name: 'S1 working ledger projection', up: store => store.migrateLedger() },
+  { name: 'S2A knowledge log and reanalysis cursor', up: store => store.migrateReanalysis() },
 ]);
 export const SCHEMA_VERSION = MIGRATIONS.length;
 

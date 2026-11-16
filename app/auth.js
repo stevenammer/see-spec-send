@@ -175,6 +175,7 @@ export class Auth {
       if (actor.kind !== 'person') throw new Error('OIDC identity collision');
     } catch (error) {
       if (error.message !== 'unknown actor') throw error;
+      if (!this.oidc.autoProvision) throw new Error('OIDC person is not provisioned');
       this.store.registerPerson(identity.id, { leader: false });
     }
     this.revokePerson(identity.id);

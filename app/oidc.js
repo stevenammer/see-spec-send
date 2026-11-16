@@ -6,10 +6,12 @@ const sha256 = value => createHash('sha256').update(value).digest('base64url');
 const subjectId = (issuer, subject) => `oidc-${createHash('sha256')
   .update(`${issuer}\0${subject}`).digest('hex').slice(0, 32)}`;
 const maxPending = 1024;
-const validUrl = (value, name) => {
+const validUrl = (value, name, allowInsecureLoopback = false) => {
   let url;
   try { url = new URL(value); } catch { throw new Error(`OIDC ${name} must be a URL`); }
-  if (url.protocol !== 'https:' || url.username || url.password || url.hash || url.search) {
+  const insecureLoopback = allowInsecureLoopback && url.protocol === 'http:'
+    && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if ((url.protocol !== 'https:' && !insecureLoopback) || url.username || url.password || url.hash || url.search) {
     throw new Error(`OIDC ${name} must be a clean HTTPS URL`);
   }
   return url.toString().replace(/\/$/, '');
@@ -20,13 +22,16 @@ export class OidcLogin {
     if (!config || typeof config.exchange !== 'function' || typeof config.verifyIdToken !== 'function') {
       throw new Error('OIDC exchange and ID-token verifier required');
     }
-    this.issuer = validUrl(config.issuer, 'issuer');
-    this.authorizationEndpoint = validUrl(config.authorizationEndpoint, 'authorization endpoint');
-    this.redirectUri = validUrl(config.redirectUri, 'redirect URI');
+    this.issuer = validUrl(config.issuer, 'issuer', config.allowInsecureLoopbackForDevelopment);
+    this.authorizationEndpoint = validUrl(config.authorizationEndpoint, 'authorization endpoint', config.allowInsecureLoopbackForDevelopment);
+    this.redirectUri = validUrl(config.redirectUri, 'redirect URI', config.allowInsecureLoopbackForDevelopment);
     if (typeof config.clientId !== 'string' || !config.clientId) throw new Error('OIDC client ID required');
     this.clientId = config.clientId;
     this.exchange = config.exchange;
     this.verifyIdToken = config.verifyIdToken;
+    this.scopes = Array.isArray(config.scopes) && config.scopes.length ? config.scopes : ['openid', 'email'];
+    this.autoProvision = config.autoProvision === true;
+    this.clockSkewSeconds = Number.isInteger(config.clockSkewSeconds) ? config.clockSkewSeconds : 60;
     this.clock = clock;
     this.pending = new Map();
   }
@@ -46,7 +51,7 @@ export class OidcLogin {
     this.pending.set(state, { nonce, verifier, binderHash: sha256(binder), expires: this.clock() + 10 * 60_000 });
     const url = new URL(this.authorizationEndpoint);
     url.search = new URLSearchParams({ response_type: 'code', client_id: this.clientId,
-      redirect_uri: this.redirectUri, scope: 'openid', state, nonce,
+      redirect_uri: this.redirectUri, scope: this.scopes.join(' '), state, nonce,
       code_challenge: sha256(verifier), code_challenge_method: 'S256' }).toString();
     return url.toString();
   }
@@ -63,7 +68,7 @@ export class OidcLogin {
     const response = await this.exchange({ code, clientId: this.clientId,
       redirectUri: this.redirectUri, codeVerifier: pending.verifier });
     if (!response?.id_token) throw new Error('OIDC response refused');
-    const claims = await this.verifyIdToken(response.id_token);
+    const claims = await this.verifyIdToken(response.id_token, { nonce: pending.nonce });
     this.validate(claims, pending.nonce);
     return { id: subjectId(this.issuer, claims.sub), issuer: this.issuer, subject: claims.sub };
   }
@@ -74,8 +79,9 @@ export class OidcLogin {
     if (!claims || claims.iss !== this.issuer || !audience.includes(this.clientId)
       || (audience.length > 1 && claims.azp !== this.clientId)
       || claims.nonce !== nonce || typeof claims.sub !== 'string' || !claims.sub
-      || !Number.isInteger(claims.exp) || claims.exp <= now
-      || !Number.isInteger(claims.iat) || claims.iat > now + 60
+      || !Number.isInteger(claims.exp) || claims.exp < now - this.clockSkewSeconds
+      || (claims.nbf !== undefined && (!Number.isInteger(claims.nbf) || claims.nbf > now + this.clockSkewSeconds))
+      || !Number.isInteger(claims.iat) || claims.iat > now + this.clockSkewSeconds
       || claims.exp - claims.iat > 60 * 60) {
       throw new Error('OIDC token refused');
     }
@@ -99,7 +105,7 @@ export class FakeOidcProvider {
 
   configuration(redirectUri) {
     return { issuer: this.issuer, clientId: this.clientId,
-      authorizationEndpoint: `${this.issuer}/authorize`, redirectUri,
+      authorizationEndpoint: `${this.issuer}/authorize`, redirectUri, autoProvision: true,
       exchange: request => this.exchange(request), verifyIdToken: token => this.verify(token) };
   }
 

@@ -242,7 +242,7 @@ const validEvent = input => {
 
 const postBinding = req => ({ post_id: req.headers['x-post-id'], post_version: req.headers['x-post-version'] });
 
-export function createHandler({ auth, store, integrations, questModel = null, analysisAskModel = null, analysisGateway = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, trustedProxy = false, canRead: readPolicy = defaultCanRead, bundleServer = null, metricsToken = null, databaseSize = () => 0, readiness = null }) {
+export function createHandler({ auth, store, integrations, questModel = null, analysisAskModel = null, analysisGateway = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, trustedProxy = false, canRead: readPolicy = defaultCanRead, bundleServer = null, metricsToken = null, databaseSize = () => 0, readiness = null, disablePasswordLogin = false }) {
   if (bundleServer && (!bundleServer.hostSuffix || typeof bundleServer.bundleUrl !== 'function')) throw new Error('invalid bundle server configuration');
   integrations ||= new Integrations(store, { origin });
   const mentoring = new Mentoring(store, { clock });
@@ -367,6 +367,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         return res.end();
       }
       if (req.method === 'POST' && url.pathname === '/api/login') {
+        if (disablePasswordLogin) return json(res, 404, { error: 'not found' });
         const login = await outcome(context, 'sign_in', () => auth.login(input.id, input.password, ip),
           { person: accountOf(input.id), account: accountOf(input.id) });
         res.setHeader('set-cookie', cookie(login.value));
@@ -378,7 +379,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         res.setHeader('set-cookie', cookie(login.value));
         return json(res, 201, { csrf: login.csrf });
       }
-      if (req.method === 'GET' && url.pathname === '/signin') return page(res, signInPage({ oidc: Boolean(auth.oidc) }));
+      if (req.method === 'GET' && url.pathname === '/signin') return page(res, signInPage({ oidc: Boolean(auth.oidc), password: !disablePasswordLogin }));
       if (req.method === 'GET' && url.pathname === '/redeem') return page(res, redeemPage());
       if (req.method === 'POST' && url.pathname === '/api/logout') {
         auth.revoke(sessionToken);
@@ -390,7 +391,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
           ? json(res, 200, { id: session.person, csrf: session.csrf })
           : json(res, 403, { error: 'request refused' });
       if (!session) {
-        if (req.method === 'GET' && url.pathname === '/') return page(res, signInPage({ oidc: Boolean(auth.oidc) }));
+        if (req.method === 'GET' && url.pathname === '/') return page(res, signInPage({ oidc: Boolean(auth.oidc), password: !disablePasswordLogin }));
         return json(res, 403, { error: 'request refused' });
       }
       if (change && !spend(session.person, clock()))

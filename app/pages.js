@@ -58,10 +58,10 @@ export function renderEffortAllowance(allowance) {
   return allowance ? `<section><h2>Effort allowance remaining</h2><p>UTC day ${escape(allowance.day)}. ${allowance.enabled ? 'AI spending enabled.' : 'AI spending disabled or stopped.'}</p><p>You can request ${escape(allowance.mention_requests_person)} more mention replies; this item can accept ${escape(allowance.mention_requests_item)} more. Model calls for mentions and SPEC drafts: ${escape(allowance.on_demand_person)} remaining for you, ${escape(allowance.on_demand_item)} for this item. Automatic first replies: ${escape(allowance.automatic_person)} remaining for you, ${escape(allowance.automatic_item)} for this item.</p><p>Metered budget headroom, including charged holds: ${dollars(allowance.person_micros)} for your Effort calls today, ${dollars(allowance.day_micros)} shared today, ${dollars(allowance.global_micros)} shared overall. Queued work is not reserved yet. Request size, other queued calls, provider availability and money caps can still prevent a reply.</p></section>` : `<p>Effort daily limits: ${EFFORT_LIMITS.calls_per_person_day} mention replies per person, ${EFFORT_LIMITS.calls_per_item_day} per item. Startup replies have a separate limit of ${EFFORT_LIMITS.automatic_calls_per_person_day} per person, ${EFFORT_LIMITS.automatic_calls_per_item_day} per item. Remaining allowances are unavailable in this view. All replies still stop at the shared spend caps.</p>`;
 }
 
-export function signInPage({ oidc = false } = {}) {
+export function signInPage({ oidc = false, password = true } = {}) {
   return shell(
     'Sign in',
-    `<h1>Sign in</h1><form data-api="/api/login" data-next="/"><label>Your ID<input name="id" required autocomplete="username"></label><label>Password<input name="password" type="password" required autocomplete="current-password"></label><button>Sign in</button></form>${oidc ? '<p><a class="button" href="/api/oidc/start">Sign in with your organization</a></p>' : ''}<p><a href="/redeem">Redeem an invite</a></p>`,
+    `<h1>Sign in</h1>${password ? '<form data-api="/api/login" data-next="/"><label>Your ID<input name="id" required autocomplete="username"></label><label>Password<input name="password" type="password" required autocomplete="current-password"></label><button>Sign in</button></form>' : ''}${oidc ? '<p><a class="button" href="/api/oidc/start">Sign in with your organization</a></p>' : ''}<p><a href="/redeem">Redeem an invite</a></p>`,
   );
 }
 

@@ -21,6 +21,8 @@ import { readProviders, saveProviders, validateProvider, providerFor, meteredPro
 import { redact } from './provider/safe-http.js';
 import { SYSTEM_PROMPT } from './worker/builder/index.js';
 import { Auth } from './app/auth.js';
+import { OidcLogin } from './app/oidc.js';
+import { OidcProvider } from './app/oidc-provider.js';
 import { createServerFor, isLoopback } from './app/http.js';
 import { createBundleServer } from './app/bundle-origin.js';
 import { Integrations, recoverStaleSending } from './app/integrations.js';
@@ -147,6 +149,7 @@ export function serveSettings(args, env = {}) {
   if (Boolean(tlsCert) !== Boolean(tlsKey)) fail('refused: --tls-cert and --tls-key must be given together');
   const trustedProxy = args.includes('--trusted-proxy');
   const insecure = args.includes('--insecure-cookies');
+  if (args.includes('--disable-password-login') && !args.includes('--oidc-config')) fail('refused: --disable-password-login requires --oidc-config');
   const loopback = isLoopback(host);
   const tls = Boolean(tlsCert);
   if (!loopback && !tls && !trustedProxy) {
@@ -556,6 +559,15 @@ async function run(argv, env, write) {
     write(JSON.stringify({ backup: target, events: manifest.events, items: manifest.items, sha256: manifest.sha256 }));
   } else if (command === 'serve') {
     const { port, host, origin, secure, trustedProxy, tls, bundlePort, bundleHostSuffix } = served;
+    let oidc = null;
+    if (args.includes('--oidc-config')) {
+      const configFile = value('--oidc-config') || fail('missing --oidc-config FILE');
+      let oidcConfig;
+      try { oidcConfig = JSON.parse(readFileSync(configFile, 'utf8')); } catch { fail('OIDC configuration is invalid'); }
+      const provider = await OidcProvider.create(oidcConfig, { secure, env });
+      oidc = new OidcLogin(provider.loginConfig());
+    }
+    auth.oidc = oidc;
     let questModel = null;
     let analysisGateway = null;
     if (args.includes('--analysis-provider')) {
@@ -612,7 +624,8 @@ async function run(argv, env, write) {
     }
     const bundleServer = bundlePort === null ? null : createBundleServer({ store, secret: randomBytes(32), hostSuffix: bundleHostSuffix, appOrigin: origin });
     if (bundleServer) await new Promise(resolve => bundleServer.listen(bundlePort, host, resolve));
-    const server = createServerFor({ store, auth, integrations, questModel, analysisGateway, secure, origin, trustedProxy, tls, bundleServer, env, databasePath: file });
+    const server = createServerFor({ store, auth, integrations, questModel, analysisGateway, secure, origin, trustedProxy, tls, bundleServer, env, databasePath: file,
+      disablePasswordLogin: args.includes('--disable-password-login') });
     await new Promise(resolve => server.listen(port, host, resolve));
     stopOnSignal(server, store, { timers: [effortTimer].filter(Boolean), stops: [() => reanalysisSchedule?.stop()], bundleServer });
     write(`Serving ${origin}${tls ? ' over direct HTTPS' : ''}${trustedProxy ? ' behind one trusted loopback proxy' : ''}`);

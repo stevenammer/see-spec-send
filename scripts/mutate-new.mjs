@@ -16,7 +16,8 @@ const mutants = [
   ['standby: a live lock holder excludes another replicator', 'core/standby.js', "if (pidAlive(holder.pid)) throw new Error(`replicator already running (pid ${holder.pid})`);", '', T(['standby'])],
   ['standby: newest backup is never pruned', 'core/standby.js', 'if (!Number.isInteger(keep) || keep < 1)', 'if (!Number.isInteger(keep) || keep < 0)', T(['standby'])],
   ['ops-pack: CEF never includes audit detail', 'core/audit.js', "suser=${esc(row.who)} outcome=${esc(row.outcome)}", "suser=${esc(row.who)} detail=${esc(JSON.stringify(row.detail))} outcome=${esc(row.outcome)}", T(['ops-pack'])],
-  ['ops-pack: audit log is append-only', 'app/http.js', "flag: 'a'", "flag: 'w'", T(['ops-pack'])],
+  ['ops-pack: sign-in audit log is append-only', 'app/http.js', "request_id: entry.rid })}\\n`, { encoding: 'utf8', mode: 0o600, flag: 'a' }", "request_id: entry.rid })}\\n`, { encoding: 'utf8', mode: 0o600, flag: 'w' }", T(['audit-file'])],
+  ['ops-pack: request audit log is append-only', 'app/http.js', "request_id: context.rid })}\\n`, { encoding: 'utf8', mode: 0o600, flag: 'a' }", "request_id: context.rid })}\\n`, { encoding: 'utf8', mode: 0o600, flag: 'w' }", T(['audit-file'])],
   // name, file, find, replace, tests that must fail
   ['fork: a pending alternative may not fork', 'core/reconcile.js', "const FORKABLE = new Set(['declined', 'unresolved_at_freeze', 'unresolved_after_window']);", "const FORKABLE = new Set(['pending', 'declined', 'unresolved_at_freeze', 'unresolved_after_window']);", reconcile],
   ['fork: the 14-day window is enforced', 'core/reconcile.js', 'age >= RECONCILE_DAYS * DAY_MS ? ', 'age >= 0 ? ', reconcile],

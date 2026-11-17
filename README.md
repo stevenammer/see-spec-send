@@ -44,6 +44,7 @@ Early, and I'm building it in public. It isn't ready to drop into a big company 
 
 - The core loop above, in a real web app and in the demo.
 - Over 700 automated tests on every push, plus walkthroughs in a real browser and an accessibility check.
+- The AI builder works on small tasks. On three made-up workplace tools, judged in a real browser, one run each, Claude Haiku 4.5 built all three correctly for about six cents each. The write-up is [docs/BUILDER_EVAL.md](docs/BUILDER_EVAL.md), including why that's thin evidence.
 - Hostile text can't trick it into approving or spending. I test that with 60 nasty strings (fake instructions, look-alike letters, hidden scripts) through every place an AI reads text.
 - People only see what their department lets them see.
 - Sign in with the company's existing login (any standard OIDC provider).
@@ -55,7 +56,7 @@ Early, and I'm building it in public. It isn't ready to drop into a big company 
 - Not yet tested against a real Okta, Entra or Google login.
 - No automatic failover and no Postgres version. A person decides when to switch to the copy. [The plan for Postgres](docs/POSTGRES_PLAN.md) is written down, and the dependency question is settled: SQLite stays the dependency-free default, and Postgres would be an optional extra.
 - No Teams or Microsoft 365 integration yet. That's planned.
-- The AI parts are tested with stand-in models. You plug in your own model, and I've only run a real one by hand, once, on a free tier.
+- The AI parts are mostly tested with stand-in models. You plug in your own model. The builder has had a first real test (below), and the rest hasn't.
 - **No real pilot with real employees.** That's the one that matters most, and it's what I'd like to do next.
 
 The complete, honest table is [docs/STATUS.md](docs/STATUS.md).

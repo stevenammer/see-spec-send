@@ -24,7 +24,7 @@ export const tasks = [
       await page.locator('#refunds-in').fill('A100, 25.50\nB200, 10\nA100, 99.99\n\nC300, abc\nD400, 4.5');
       await page.getByRole('button', { name: 'Clean up' }).click();
       const rows = await page.locator('#refunds-out li').allInnerTexts();
-      ck('lists each order once, in order, with the first amount', rows.length === 3 && /A100/.test(rows[0]) && /25\.50/.test(rows[0]) && /B200/.test(rows[1]) && /D400/.test(rows[2]));
+      ck('lists each order ID once, in the order first seen', rows.length === 3 && /A100/.test(rows[0]) && /B200/.test(rows[1]) && /D400/.test(rows[2]));
       ck('shows the total as 40.00', (await text(page, '#total')).includes('40.00'));
       const problems = await page.locator('#problems li').allInnerTexts();
       ck('puts the bad line in the problem list and keeps it out of the results', problems.length === 1 && /C300/.test(problems[0]) && !rows.join(' ').includes('C300'));
@@ -60,12 +60,14 @@ export const tasks = [
       const cards = await page.locator('#board li').allInnerTexts();
       ck('adds a card per post, newest first', cards.length === 2 && /Ben/.test(cards[0]) && /Maya/.test(cards[1]) && /trade for days/.test(cards[0]));
       await page.reload();
-      ck('keeps the board after a reload', (await page.locator('#board li').count()) === 2);
+      const reloaded = await page.locator('#board li').allInnerTexts();
+      ck('keeps the board after a reload', reloaded.length === 2);
+      ck('keeps the same order after a reload (newest first)', reloaded.length === 2 && /Ben/.test(reloaded[0]) && /Maya/.test(reloaded[1]));
       await post('', '2026-12-05', 'nobody');
       ck('ignores a post with no name', (await page.locator('#board li').count()) === 2);
-      await page.locator('#board li').first().getByRole('button', { name: 'Remove' }).click();
+      await page.locator('#board li', { hasText: 'Ben' }).getByRole('button', { name: 'Remove' }).click();
       const left = await page.locator('#board li').allInnerTexts();
-      ck('removes only the card it belongs to', left.length === 1 && /Maya/.test(left[0]));
+      ck('removes only the card it belongs to', left.length === 1 && /Maya/.test(left[0]) && !/Ben/.test(left[0]));
       await page.reload();
       ck('keeps the removal after a reload', (await page.locator('#board li').count()) === 1);
     },

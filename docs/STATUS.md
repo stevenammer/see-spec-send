@@ -6,7 +6,7 @@ An honest table. A row says **Shipped and tested** only when a named test in thi
 | --- | --- | --- | --- |
 | SEE, SPEC, SEND workflow with frozen stages | Shipped and tested | `test/stage-freeze.test.mjs`, `test/vision-03.test.mjs` | Local SQLite store |
 | Nine decision outcomes | Shipped and tested | `test/decision-outcomes.test.mjs` | Older generic no's stay unclassified |
-| Fork on disagreement, decline, 14-day window | Shipped and tested | `test/reconcile.test.mjs` | Unavailable-author path not built |
+| Fork on disagreement, decline, 14-day window | Shipped and tested | `test/reconcile.test.mjs` | When an author has left, a leader reassigns the post (owner decision, Nov 17). That uses the existing steward handoff, which waits 14 days of inactivity. A "mark as left" shortcut is not built |
 | Stewardship transfer | Shipped and tested | `test/steward-transfer.test.mjs` | A leader decides the transfer |
 | Closeout reports | Shipped and tested | `test/closeout.test.mjs`, `test/corrections.test.mjs` | Template-based, no analysis. A readable page with a way to challenge or add context |
 | Private opt-in mentoring | Shipped and tested | `test/sliceF6-mentoring.test.mjs` | Not wired to anything else, by design |

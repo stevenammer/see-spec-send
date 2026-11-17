@@ -40,6 +40,17 @@ Use the report to ask modest questions: Were decisions recorded? Did the group u
 
 Set these before beginning. A reasonable success signal is that the department can record a few real problems, decisions, and reasons without the process getting in the way. A stop signal is a read-scope mistake, a security concern, a team member feeling pressured to participate, or the process consuming more attention than it returns. Stop immediately for an access incident, preserve evidence, and follow the incident steps in RUNBOOK.md.
 
+## Four policies to set before week 1
+
+These are the organization's calls, not the tool's. These are the defaults I'd start a pilot with. Change them if your policy says otherwise.
+
+| Question | Default for the pilot | What to know |
+| --- | --- | --- |
+| How long do we keep comments, closeout reports and spend receipts? | Keep everything and review once a year. | The tool deletes nothing on its own. A leader can set a period and review proposals. |
+| Someone asks to erase their words, but the item is under a legal hold. | The hold wins. Tell them the request is under review and when the hold releases. | The tool already refuses erasure on held items. The wording of the message is yours, with your counsel. |
+| The person who posted a problem has left. | A leader reassigns the post. Their credit stays on it. | A leader can reassign after 14 days of inactivity, with a public note. There's no "mark as left" shortcut yet. |
+| Who counts as a leader? | An administrator names a short list. | Leaders can't approve their own specs. Promote and demote need a fresh sign-in check. |
+
 ## Data and privacy
 
 The database holds item text, comments, decisions, account and group records, artifacts, and logs described in SECURITY.md. It doesn't collect individual productivity scores, rankings, private reflection text, or model prompts unless an operator deliberately enables an optional model lane. Logs contain ids and route/status data, not request bodies.

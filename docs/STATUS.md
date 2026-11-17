@@ -50,7 +50,7 @@ Single sign-on step-up (approvals in sign-in-only mode): built and tested agains
 | Administration page, leader-only, step-up gated, audited, no self-lockout | Built | `test/admin-http.test.mjs`, `docs/ROUTE_TABLE.md` |
 | Retention and legal hold | Built, off by default, proposes and never deletes by itself | `docs/RETENTION.md`, `test/admin-retention.test.mjs` |
 | Audit export for a SIEM, SBOM, dependency audit, hardened container image | Built; the image was built and run read-only with all capabilities dropped | `docs/AUDIT_LOG.md`, `docs/DEPLOY.md`, `test/ops-pack.test.mjs` |
-| Prompt-injection test set | 40 hostile strings through six model-facing paths with a model that obeys them | `docs/PROMPT_INJECTION.md` |
+| Prompt-injection test set | 60 hostile strings in 15 classes through six model-facing paths with a model that obeys them, plus a real-Chrome check that each renders as inert text | `docs/PROMPT_INJECTION.md` |
 | Pilot kit, usage report, production handoff package, security questionnaire answers | Built | `docs/PILOT_GUIDE.md`, `docs/HANDOFF.md`, `docs/VENDOR_QUESTIONNAIRE.md` |
 | Current threat review | Written down, with open items | `docs/SECURITY_WATCH.md` |
 

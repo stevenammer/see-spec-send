@@ -25,14 +25,14 @@ Not yet, and I'd rather say so up front. It's early, and I'm building it in publ
 - Models can draft and explain, but they can't approve, spend or decide. Spending is metered and capped. A set of 60 hostile strings (fake instructions, look-alike characters, hidden script, fake tool calls) goes through every place a model sees text, and a real Chrome test checks that each one shows up as plain text and never runs.
 - People only see what their department's scope lets them see, across pages, search, exports and what gets sent to a model.
 - Builds run in a locked container with no network. The only way out is a socket to the gateway that holds the key and counts the money.
-- Sign-in works with any standard OIDC provider, tested against an independent one. If the server dies, a warm standby comes up from verified backups (about half a second in my drill, and it loses anything written since the last backup, which the [HA doc](docs/HA.md) says plainly).
+- Sign-in works with any standard OIDC provider, tested against an independent one. If the server dies, you can bring it back from a copy that follows the database about once a second (Litestream, optional). In my drill it was back in under a second and lost the last couple of seconds of writes. The [HA doc](docs/HA.md) says plainly what that does and doesn't give you, including that a person still makes the call.
 - CodeQL runs on every push, and two rounds of software security review found real problems. All of them are fixed, and each fix has a test that fails without it.
 
 **What isn't done (and no amount of code finishes it):**
 
 - No outside penetration test. No SOC 2. No human screen-reader test.
 - No test against a real Okta, Entra or Google tenant yet.
-- No high-availability database. It's SQLite with a standby. There's a seam for Postgres and nothing behind it.
+- No automatic failover and no Postgres. It's SQLite with a live copy, and a person decides when to switch. There's a seam for Postgres and nothing behind it.
 - No Teams or Microsoft 365 integration. That's planned, and not shipped.
 - No real pilot with real employees. That's the one that matters most.
 

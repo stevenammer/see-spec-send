@@ -1,0 +1,12 @@
+# Continuous streaming replication of the SQLite database with Litestream (https://litestream.io).
+# The server keeps the database in WAL mode; Litestream reads the WAL and ships new frames about once a second.
+# Replace the file replica with object storage you control (S3, Azure Blob, GCS). Keep the replica on separate
+# hardware from the database. Recovery: docs/HA.md, "Streaming replication".
+dbs:
+  - path: /data/sss.db
+    replicas:
+      - type: file
+        path: /replica/sss
+        sync-interval: 1s
+        snapshot-interval: 6h
+        retention: 72h

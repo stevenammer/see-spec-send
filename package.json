@@ -20,6 +20,7 @@
     "test:a11y": "node scripts/a11y-audit.mjs",
     "drill": "sh scripts/drill.sh",
     "test:failover": "node scripts/failover-drill.mjs",
+    "test:failover-stream": "node scripts/failover-drill-stream.mjs",
     "load": "node scripts/load.mjs",
     "test:hostile-render": "node test/e2e/hostile-render.e2e.mjs",
     "test:artifact-origin": "node test/e2e/artifact-origin.e2e.mjs",

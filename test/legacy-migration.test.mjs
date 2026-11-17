@@ -95,3 +95,43 @@ test('legacy authority is captured once and survives demotion, reopen and a new 
     fixture.close();
   }
 });
+
+test('upgrading an old database rewrites the stored context cache from the events', () => {
+  const fixture = legacyDatabase();
+  let store;
+  try {
+    const raw = new DatabaseSync(fixture.file);
+    const legacy = JSON.parse(raw.prepare("SELECT context FROM items WHERE item='i'").get().context);
+    raw.close();
+    assert.equal(legacy.specAuthor, undefined, 'the fixture really is an old-shape cache');
+    store = new Store(fixture.file);
+    const stored = JSON.parse(store.db.prepare("SELECT context FROM items WHERE item='i'").get().context);
+    assert.equal(stored.specAuthor, 'author', 'the cache was rebuilt, not just left as the old rows had it');
+    assert.deepEqual(stored.ineligibleHelpers, ['author', 'leader']);
+    // The step itself must refresh the cache, even though a later upgrade step would also do it.
+    store.db.prepare("UPDATE items SET context=? WHERE item='i'").run(JSON.stringify(legacy));
+    store.backfillAuthoritySnapshots();
+    const refreshed = JSON.parse(store.db.prepare("SELECT context FROM items WHERE item='i'").get().context);
+    assert.equal(refreshed.specAuthor, 'author', 'the backfill step rebuilds the derived cache by itself');
+  } finally {
+    store?.db.close();
+    fixture.close();
+  }
+});
+
+test('running the authority backfill again never overwrites the roles captured the first time', () => {
+  const fixture = legacyDatabase();
+  let store;
+  try {
+    store = new Store(fixture.file);
+    const snapshot = () => store.db.prepare('SELECT seq,actor_kind,actor_leader,authority_version FROM events ORDER BY seq').all();
+    const first = snapshot();
+    assert.equal(first.at(-1).actor_leader, 1, 'the leader was a leader when the registry was first captured');
+    store.registerPerson('leader', { leader: false });
+    store.backfillAuthoritySnapshots();
+    assert.deepEqual(snapshot(), first, 'a later backfill does not rewrite the roles it already captured');
+  } finally {
+    store?.db.close();
+    fixture.close();
+  }
+});

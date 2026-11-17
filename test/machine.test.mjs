@@ -22,3 +22,16 @@ test('machine needs separately resolved authority', () => {
   assert.deepEqual(step(sending, { type: 'specced', actor: 's', must: ['x'], how_we_know: ['x'], out_of_scope: [] }, person).effects,
     [{ kind: 'build.stop', reason: 'specced' }]);
 });
+
+test('a problem must be present and at most 2000 characters, whether a person checks it or a source reports it', () => {
+  const source = { kind: 'source' };
+  const seen = { type: 'seen', actor: 'src', problem: 'x', source_label: 'Help desk', honesty_label: 'reported' };
+  assert.ok(step(initial(), seen, source).context, 'a plain reported problem is accepted');
+  assert.ok(step(initial(), checked, person).context, 'a plain checked problem is accepted');
+  for (const problem of ['', 'x'.repeat(2001), undefined, 42]) {
+    assert.ok(step(initial(), { ...seen, problem }, source).refusal, `a reported problem of ${JSON.stringify(problem)?.slice(0, 12)} is refused`);
+    assert.ok(step(initial(), { ...checked, problem }, person).refusal, `a checked problem of ${JSON.stringify(problem)?.slice(0, 12)} is refused`);
+  }
+  assert.ok(step(initial(), { ...seen, problem: 'x'.repeat(2000) }, source).context, 'exactly 2000 is accepted (reported)');
+  assert.ok(step(initial(), { ...checked, problem: 'x'.repeat(2000) }, person).context, 'exactly 2000 is accepted (checked)');
+});

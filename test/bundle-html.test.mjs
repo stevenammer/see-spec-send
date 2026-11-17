@@ -74,3 +74,14 @@ test('the reviewable view leaves no script behind, even for nested, inline, uncl
     assert.doesNotMatch(html, /<script/i, `still has a script: ${page}`);
   }
 });
+
+test('the doctype check ignores case in both validators, and a page with no doctype is refused', () => {
+  for (const doctype of ['<!doctype html>', '<!DOCTYPE html>', '<!DocType HTML>']) {
+    const html = `${doctype}<html><head><meta charset="utf-8"><title>T</title></head><body><p>hi</p></body></html>`;
+    assert.equal(validateBundleHtml(html, links), html, `bundle validator, ${doctype}`);
+    assert.equal(validateHtml(html), html, `single-file validator, ${doctype}`);
+  }
+  const bare = '<html><head><title>T</title></head><body><p>hi</p></body></html>';
+  assert.throws(() => validateBundleHtml(bare, links), /not static HTML/);
+  assert.throws(() => validateHtml(bare), /not static HTML/);
+});

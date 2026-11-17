@@ -76,13 +76,13 @@ node cli.js serve --port 8787 --insecure-cookies
 
 ```sh
 npm test               # the whole suite
-npm run check:mutants  # break controls on purpose to see if the tests notice (slow, hours)
+npm run check:mutants  # break controls on purpose to see if the tests notice (hours on a laptop; CI splits it up)
 npm run check:public   # scans files and git history for secrets and private paths
 npm run test:listen    # real server, short end-to-end
 npm run test:container # needs Docker; uses a local mock model, never a real one
 ```
 
-I break the controls on purpose (about 500 deliberate breaks so far) because a test that can't fail doesn't count. Right now I run that by hand. It isn't in CI yet, and I want it there. The browser tests (`npm run test:e2e`, `test:vision`, `test:hostile-render` and friends) need Playwright and Chrome. Set `PLAYWRIGHT_DIR` to the folder that holds Playwright.
+I break the controls on purpose (about 500 deliberate breaks so far) because a test that can't fail doesn't count. A weekly CI job runs them split into parallel pieces (about an hour in total), and you can start it any time from the Actions tab. So far I've run one piece of the full set and all of the newer set there. The first scheduled run is the next Sunday. The browser tests (`npm run test:e2e`, `test:vision`, `test:hostile-render` and friends) need Playwright and Chrome. Set `PLAYWRIGHT_DIR` to the folder that holds Playwright.
 
 **Security and trust.** It has no runtime dependencies. Start with [SECURITY.md](SECURITY.md) (how to report a problem), then the [threat model](docs/THREAT_MODEL.md), [threats being watched right now](docs/SECURITY_WATCH.md), the [vendor questionnaire](docs/VENDOR_QUESTIONNAIRE.md), the [pilot guide](docs/PILOT_GUIDE.md) and the generated [table of every route and how it's authenticated](docs/ROUTE_TABLE.md). Failover, backups and what erasure does to a replica are in [docs/HA.md](docs/HA.md).
 

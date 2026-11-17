@@ -40,6 +40,19 @@ Both models' failures were the same bug on the same task: after a reload, the sw
 
 Total spend across every run, including the failed attempts: about $2.30 of a $10 cap. Costs are the gateway's own meter at list prices.
 
+## Second batch: after the host changes (Nov 17, 2026)
+
+Between the batches I made three changes: bundles may use `<form>`, `<fieldset>` and `<legend>` (no action, method or target), the host now gets one repair pass that tells the agent exactly why a build was refused, and the swap-board spec says the order must survive a reload. Then I ran the cheap models and Haiku again.
+
+| Model | Valid runs | Accepted by the host | Shipped | Rescued by the repair pass |
+| --- | --- | --- | --- | --- |
+| Claude Haiku 4.5 | 9 | 9 | **9** (swap board 3 of 3) | 0 needed |
+| Amazon Nova Pro | 6 | **6** (was 3 of 6) | 2 | 2 |
+| Amazon Nova Lite | 6 | **6** (was 3 of 6) | 3 | 0 |
+| Claude Sonnet 4.5 | 0 (6 lost to the AWS "Legacy" access error) | | | |
+
+Haiku averaged about 4.5 cents a build. The form change and the repair pass fixed what they were meant to fix: the host stopped refusing correct pages. What's left for the Nova models is that the pages are wrong, which only a better model fixes. The metered cost field counts the worst-case hold on calls that failed at AWS, so it overstates the real bill on the Sonnet runs.
+
 ## What it means
 
 - **The AI part works.** The cheap model (Haiku) shipped 11 of 12 builds at about five cents each, usually in under half a minute.

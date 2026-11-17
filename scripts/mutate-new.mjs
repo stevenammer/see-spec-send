@@ -126,6 +126,11 @@ const mutants = [
   ["opencode: the first capability is revoked before a repair", "worker/opencode.js", "this.revoke(row); this.docker.remove(row.container_name);\n      const ms", "this.docker.remove(row.container_name);\n      const ms", T(['opencode-adapter'])],
   ["opencode: a repair configures the new capability", "worker/opencode.js", "writeFileSync(paths.config, JSON.stringify(this.config(JSON.parse(row.input), token)), { mode: 0o644 });", "", T(['opencode-adapter'])],
   ["opencode: the stale manifest is cleared before a repair", "worker/opencode.js", "rmSync(paths.manifest, { force: true });", "", T(['opencode-adapter'])],
+  ["models: the analysis answer cap lets a thorough model finish", "gateway/analysis.js", "output_tokens: 4096,", "output_tokens: 1024,", T(['model-caps'])],
+  ["models: Effort is told to write plain text", "effort/prompt.js", "plain text only, with no markdown", "free text", T(['model-caps'])],
+  ["models: Effort is told not to invent", "effort/prompt.js", "Do not invent a team, number, process, or cause.", "", T(['model-caps'])],
+  ["models: Effort is told to check what exists first", "effort/prompt.js", "say to check that first, before anyone builds anything", "say nothing about it", T(['model-caps'])],
+  ["models: Effort declines authority plainly", "effort/prompt.js", "say plainly that you cannot and that people decide those things", "say nothing", T(['model-caps'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 // --shard K/N runs every Nth mutant starting at K, so CI can spread the set across parallel jobs.

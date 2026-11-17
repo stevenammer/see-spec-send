@@ -15,7 +15,7 @@ const provider = bedrockConverse({ region: process.env.AWS_REGION || 'us-east-1'
 const usage = { calls: 0, input: 0, output: 0 };
 async function ask(system, user, max = 1024) {
   const r = await provider.chat({ model: 'nova-lite', messages: [{ role: 'system', content: system }, { role: 'user', content: user }], max_tokens: max, stream: false });
-  usage.calls += 1; usage.input += r.usage.prompt_tokens; usage.output += r.usage.completion_tokens;
+  usage.calls += 1; usage.input += r.usage.prompt_tokens; usage.output += r.usage.completion_tokens; usage.last = r.usage.completion_tokens;
   return r.choices[0].message.content || '';
 }
 // Nova often wraps JSON in a fence; the real pipeline would see the same raw text, so measure it as-is and as unwrapped.
@@ -87,7 +87,7 @@ const tokens = text => (String(text).toLowerCase().match(/[a-z0-9]+/g) || []).fi
 const bRows = [];
 for (const [question, mustRefuse] of Q) {
   let modelCalls = 0, rawOut = '';
-  const askModel = async packet => { modelCalls += 1; const shown = modelMessages(JSON.stringify(packet)); rawOut = await ask(shown.system, shown.user, 2048); return rawOut; };
+  const askModel = async packet => { modelCalls += 1; const shown = modelMessages(JSON.stringify(packet)); rawOut = await ask(shown.system, shown.user, Number(process.env.EVAL_B_MAX || 2048)); return rawOut; };
   let result, error = null;
   try { result = await runAnalysis({ store, viewer: 'alex', request: { ...base, question }, askModel, now: at }); }
   catch (e) { error = String(e.message).slice(0, 90); }
@@ -100,7 +100,7 @@ for (const [question, mustRefuse] of Q) {
     const claim = tokens(finding.claim); if (!claim.length) return false;
     return claim.filter(word => tokens(cited).includes(word)).length / claim.length >= 0.5;
   }).length;
-  bRows.push({ question: question.slice(0, 60), mustRefuse, mode: result?.receipt?.model_configuration?.mode ?? 'error', modelCalls, error, findings: findings.length, grounded, label: (result?.receipt?.label || '').slice(0, 160), rawHead: rawOut.slice(0, 3000), refusedCorrectly: mustRefuse ? result?.receipt?.reframed === true && modelCalls === 0 : null });
+  bRows.push({ question: question.slice(0, 60), mustRefuse, mode: result?.receipt?.model_configuration?.mode ?? 'error', modelCalls, error, findings: findings.length, grounded, label: (result?.receipt?.label || '').slice(0, 160), rawHead: rawOut.slice(0, 3000), rawLen: rawOut.length, rawTail: rawOut.slice(-120), outTokens: usage.last, refusedCorrectly: mustRefuse ? result?.receipt?.reframed === true && modelCalls === 0 : null });
 }
 const asked = bRows.filter(row => !row.mustRefuse), refusals = bRows.filter(row => row.mustRefuse);
 const passed = asked.filter(row => row.mode === 'model' && row.findings > 0).length;

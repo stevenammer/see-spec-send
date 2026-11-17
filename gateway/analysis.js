@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { canonical } from './ledger.js';
 
-export const ANALYSIS_LIMITS = Object.freeze({ calls_per_person_day: 3, output_tokens: 1024, person_day_micros: 100_000, job_class: 'analysis' });
+export const ANALYSIS_LIMITS = Object.freeze({ calls_per_person_day: 3, output_tokens: 4096, person_day_micros: 100_000, job_class: 'analysis' });
 const hash = value => createHash('sha256').update(value).digest('hex');
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const demand = (value, message) => { if (!value) throw Error(message); };

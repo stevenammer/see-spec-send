@@ -122,6 +122,7 @@ async function runOnce({ task, providerName, model, wallMs, maxCalls }) {
   const inputTokens = usage.reduce((n, u) => n + (u.input_tokens || 0), 0), outputTokens = usage.reduce((n, u) => n + (u.output_tokens || 0), 0);
   const costMicros = receipts.reduce((n, row) => n + row.charged_micros, 0);
   const bundle = adapter.paths(run.id).bundle;
+  const repairFile = adapter.paths(run.id).repair; const repairReason = existsSync(repairFile) ? readFileSync(repairFile, 'utf8').slice(0, 200) : null;
   const logFile = join(adapter.paths(run.id).work, 'agent.log'); if (existsSync(logFile)) agentLog = readFileSync(logFile, 'utf8').slice(-3500);
   const hostAccepted = status.state === 'ready';
   // The host's own validator decides what a user would ever see. Judge the raw output too when it was refused, so
@@ -132,7 +133,7 @@ async function runOnce({ task, providerName, model, wallMs, maxCalls }) {
   const refusal = hostAccepted ? null : (() => { try { validateBundle(bundle, manifestFor(bundle)); return null; } catch (error) { return String(error.message).slice(0, 120); } })();
   try { adapter.stop(run.id); } catch { /* already finished */ }
   server.close(); store.close();
-  return { task: task.id, provider: providerName, model, builder_state: status.state, host_accepted: hostAccepted, host_refusal: refusal,
+  return { task: task.id, provider: providerName, model, builder_state: status.state, repaired: Boolean(repairReason), repair_reason: repairReason, host_accepted: hostAccepted, host_refusal: refusal,
     judged: judged && !judged.error ? { passed: judged.passed, total: judged.total, ok: judged.ok, failed: judged.checks.filter(c => !c.ok).map(c => c.name), outside: judged.outside.length, page_errors: judged.errors.length } : judged,
     product_ok: Boolean(hostAccepted && judged && judged.ok), calls: receipts.length, input_tokens: inputTokens, output_tokens: outputTokens, cost_usd: Number((costMicros / 1e6).toFixed(4)), seconds, files, upstream_errors: errors.slice(0, 3), turns, agent_log: process.argv.includes('--logs') ? agentLog : undefined, dir };
 }

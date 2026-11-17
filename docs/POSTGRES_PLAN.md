@@ -21,7 +21,9 @@ The repo says "no runtime dependencies," and that's true today. Talking to Postg
 
 ## Slices, in order
 
-1. **One async door.** Add `core/db.js` with `get`, `all`, `run`, `exec` and `tx`, all returning promises. The SQLite version wraps the current calls. No behavior change. Convert `gateway/ledger.js` (35 calls, few dependents) to prove the pattern, with the full suite still green.
+1. **One async door.**
+   - **1a, done:** `core/db.js` with `get`, `all`, `run`, `exec` and `tx`, all promises, tested and mutation-checked. Transactions get their own scoped handle, and calls made on the door while one is open wait for it, so another request's statements can't land inside it. I first tried to *detect* that after the fact and my own test showed the detection was unreliable, so it now prevents it. One caveat stays until the Store itself is converted (slice 4): code that still uses the connection directly isn't held back, so a transaction's work shouldn't wait on real I/O yet.
+   - **1b, next:** convert `gateway/ledger.js` (35 calls) and every caller to use the door (about 60 call sites in source and 144 in tests), with no behavior change and the suite green.
 2. **Leaf modules.** `app/integrations.js`, `core/mentoring.js`, `knowledge/*`, `notifications/*`, `worker/*`, `channels/*`. Each is its own commit with the full suite green.
 3. **Auth and sessions.** `app/auth.js` (58 calls). Login, step-up and invite redemption are security-critical, so this gets its own mutation checks before and after.
 4. **The store core.** `core/store.js` (156 calls) and the event append path. Add the ordering guarantee Postgres needs (a per-item advisory lock inside the transaction) so the chain can't fork.

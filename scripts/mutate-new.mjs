@@ -110,6 +110,11 @@ const mutants = [
   ['bundle view: script blocks are removed until none are left', 'worker/bundle.js', "for (let before = ''; before !== html;) {", "for (let before = ''; false;) {", T(['bundle-html'])],
   ['bundle view: a leftover <script is neutralized', 'worker/bundle.js', "html = html.replace(/<script/gi, '&lt;script');", '', T(['bundle-html'])],
   ['oidc check: a provider without S256 is a blocker', 'app/oidc-provider.js', "adv.code_challenge_methods_supported.includes('S256') ? 'ok' : 'fail'", "'ok'", T(['oidc-provider'])],
+  ["db door: statements wait for an open transaction", 'core/db.js', "async run(sql, ...params) { while (this.#active) await this.#active; return super.run(sql, ...params); }", "async run(sql, ...params) { return super.run(sql, ...params); }", T(['db-door'])],
+  ["db door: transactions run one after the other", 'core/db.js', "    while (this.#active) await this.#active;\n    this.#raw.exec('BEGIN IMMEDIATE');", "    this.#raw.exec('BEGIN IMMEDIATE');", T(['db-door'])],
+  ["db door: a throwing transaction rolls back", 'core/db.js', "try { this.#raw.exec('ROLLBACK'); } catch { /* the transaction already ended */ }", "/* no rollback */", T(['db-door'])],
+  ["db door: transactions do not nest", 'core/db.js', "async tx() { throw new Error('transactions do not nest'); }", "async tx(work) { return work(this); }", T(['db-door'])],
+  ["db door: run reports rows changed", 'core/db.js', "changes: Number(result.changes)", "changes: 0", T(['db-door'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 // --shard K/N runs every Nth mutant starting at K, so CI can spread the set across parallel jobs.

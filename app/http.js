@@ -21,7 +21,7 @@ import { requestSpecDraft } from '../effort/spec.js';
 import { evidencePackage, readAnalysisAnswer } from '../intelligence/evidence.js';
 import { challengeAnalysisReceipt, readAnalysisReceipt, runAnalysis } from '../intelligence/run.js';
 import { intelligencePage } from './pages-intelligence.js';
-import { adminPage, adminRefusedPage } from './pages-admin.js';
+import { adminPage, adminRefusedPage, unavailablePage } from './pages-admin.js';
 import { effortAllowance } from '../gateway/effort.js';
 import { Mentoring } from '../core/mentoring.js';
 import { mentoringHome, mentoringRequest, mentoringEvidence } from './pages-mentoring.js';
@@ -66,6 +66,12 @@ const routeOf = raw => {
 // A try a model wrote runs no script at all. A hand-delivered try keeps its existing frame.
 const MODEL_TRY_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; script-src 'none'";
 const json = (res, status, value) => {
+  // A person who opens a page in a browser and is refused gets a page, not a line of JSON.
+  if (res.browserPage && (status === 403 || status === 404)) {
+    if (!res.browserPage.signedIn) { res.writeHead(302, { location: '/signin', 'cache-control': 'no-store' }); return res.end(); }
+    res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': htmlHeaders });
+    return res.end(unavailablePage());
+  }
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
   res.end(JSON.stringify(value));
 };
@@ -160,7 +166,7 @@ const checked = input => {
   return { problem: input.problem, looked, found: [], verdict: input.verdict };
 };
 const hex = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
-const text = (value, limit) => typeof value === 'string' && value.length > 0 && value.length <= limit;
+const text = (value, limit) => typeof value === 'string' && value.trim().length > 0 && value.length <= limit;
 const stringList = (value, limit = 100) => Array.isArray(value) && value.length <= limit && value.every(line => text(line, 2000));
 const exactKeys = (value, keys) => Object.keys(value).every(key => keys.includes(key));
 const decisionMetadataValid = (disposition, metadata) => {
@@ -332,6 +338,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       const sessionToken = cookies(req)[cookieName];
       const session = sessionToken && auth.session(sessionToken);
       if (session) context.person = session.person;
+      if (req.method === 'GET' && !url.pathname.startsWith('/api/') && /text\/html/.test(req.headers.accept || '')) res.browserPage = { signedIn: Boolean(session) };
       if (req.method === 'GET' && url.pathname === '/metrics-lite') {
         const authorization = req.headers.authorization;
         const bearer = typeof authorization === 'string' && authorization.startsWith('Bearer ') && authorization.slice(7);

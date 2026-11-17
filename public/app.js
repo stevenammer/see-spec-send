@@ -2,6 +2,37 @@ const value = form => Object.fromEntries(new FormData(form));
 const scopeValue = input => ({ data_sources: String(input.scope_data_sources || '').split('\n').map(value => value.trim()).filter(Boolean), audiences: String(input.scope_audiences || '').split('\n').map(value => value.trim()).filter(Boolean) });
 const sessionless = new Set(['/api/login', '/api/invite/redeem']);
 
+// Say what went wrong in words a person can act on. Sign-in and invite failures stay vague on purpose, so nobody can
+// use them to find out which IDs exist.
+function explain(path, status) {
+  if (path === '/api/login') return "That ID and password didn't work. If you just made a wrong try, wait about 10 seconds and try again, because each wrong try makes the next wait longer. Check that caps lock is off.";
+  if (path === '/api/invite/redeem') return "That invite didn't work. Check that you copied all of it. It may have been used already, it may have expired, or that ID may be taken. If it keeps failing, ask whoever sent it for a new one.";
+  if (path === '/api/stepup') return "That password didn't work, so nothing was changed. Check that caps lock is off and try again.";
+  if (status === 409) return 'This post may have frozen or changed. Copy your draft and refresh before trying again.';
+  if (status === 401 || status === 403) return "You may have been signed out, or you don't have permission to do this. Sign in again in a new tab, then come back and press the button again. What you typed is still here.";
+  if (status === 413) return 'That is too long to send. Shorten it and try again.';
+  if (status === 429) return 'Too many tries too fast. Wait a minute, then try again.';
+  if (status >= 500) return 'Something went wrong on the server. Nothing you typed was lost. Try again in a moment.';
+  return 'That did not go through. Check the form and try again.';
+}
+
+// A password prompt that hides what you type (the browser's built-in pop-up shows it in plain text).
+function askPassword(message) {
+  return new Promise(resolve => {
+    const dialog = document.createElement('dialog');
+    const label = document.createElement('label'); label.textContent = message;
+    const input = document.createElement('input'); input.type = 'password'; input.autocomplete = 'current-password'; label.append(input);
+    const ok = document.createElement('button'); ok.textContent = 'Confirm';
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'Cancel';
+    const form = document.createElement('form'); form.method = 'dialog'; form.append(label, ok, cancel); dialog.append(form);
+    let answer = '';
+    form.addEventListener('submit', () => { answer = input.value; });
+    cancel.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => { dialog.remove(); resolve(answer); });
+    document.body.append(dialog); dialog.showModal(); input.focus();
+  });
+}
+
 // Every other POST needs the session's CSRF token, so fetch it first.
 async function post(path, input, idempotencyKey) {
   const headers = { 'content-type': 'application/json' };
@@ -12,8 +43,10 @@ async function post(path, input, idempotencyKey) {
     const me = await (await fetch('/api/me')).json();
     headers['x-csrf-token'] = me.csrf;
   }
-  const response = await fetch(path, { method: 'POST', headers, body: JSON.stringify(input) });
-  if (!response.ok) throw new Error(response.status === 409 ? 'This post may have frozen or changed. Copy your draft and refresh before trying again.' : 'That did not go through.');
+  let response;
+  try { response = await fetch(path, { method: 'POST', headers, body: JSON.stringify(input) }); }
+  catch { throw new Error("Couldn't reach the server. Check your connection, then try again. What you typed is still here."); }
+  if (!response.ok) throw new Error(explain(path, response.status));
   return response.status === 204 ? {} : response.json();
 }
 
@@ -45,18 +78,63 @@ document.addEventListener('click', event => {
   } catch { showError(form, 'This draft could not be read. You can write the spec yourself.'); }
 });
 
+// Sign out ends the session on the server, then returns to the sign-in page.
+document.addEventListener('click', async event => {
+  if (!event.target.closest?.('[data-signout]')) return;
+  try { await post('/api/logout', {}); } catch { /* already signed out: still go to the sign-in page */ }
+  location.href = '/signin';
+});
+
+// Long boxes cut text off at their limit. Say so, instead of losing the end of a paste in silence.
+function limitNote(field) {
+  let note = field.parentElement.querySelector('.limit-note');
+  if (!note) { note = document.createElement('small'); note.className = 'limit-note'; note.setAttribute('role', 'status'); field.insertAdjacentElement('afterend', note); }
+  return note;
+}
+document.addEventListener('input', event => {
+  const field = event.target;
+  if (!field.matches?.('textarea[maxlength]')) return;
+  const max = Number(field.maxLength), used = field.value.length;
+  if (max >= 200 && used >= max * 0.8) limitNote(field).textContent = used >= max ? `${used.toLocaleString()} of ${max.toLocaleString()} characters. This is the limit.` : `${used.toLocaleString()} of ${max.toLocaleString()} characters.`;
+  else field.parentElement.querySelector('.limit-note')?.remove();
+});
+document.addEventListener('paste', event => {
+  const field = event.target;
+  if (!field.matches?.('textarea[maxlength]')) return;
+  const text = event.clipboardData?.getData('text') || '';
+  const room = Number(field.maxLength) - (field.value.length - (field.selectionEnd - field.selectionStart));
+  if (text.length > room) setTimeout(() => { limitNote(field).textContent = `What you pasted was longer than the ${Number(field.maxLength).toLocaleString()}-character limit, so the end was cut off. Shorten it or split it into two posts.`; }, 0);
+});
+
 document.addEventListener('submit', async event => {
   const form = event.target;
   if (!form.matches('form') || form.hasAttribute('data-quest-form')) return;
+  if (form.closest?.('dialog')?.tagName === 'DIALOG') return;  // the password pop-up closes itself
   event.preventDefault();
+  let release = () => {};
+  if (form.dataset.busy) return;  // a second click or Enter while the first is still going
   try {
     const input = value(form);
+    for (const field of form.querySelectorAll?.('textarea[required],input[type=text][required]') || []) {
+      if (!field.value.trim()) { field.focus(); throw new Error('Write something in the box first. A blank answer cannot be sent.'); }
+    }
+    form.dataset.busy = '1';
+    const buttons = [...(form.querySelectorAll?.('button') || [])].filter(button => !button.disabled);
+    for (const button of buttons) button.disabled = true;
+    release = () => { delete form.dataset.busy; for (const button of buttons) button.disabled = false; };
+    if (typeof setTimeout === 'function') setTimeout(() => release(), 20000);
     if (form.dataset.admin) {
       const path = form.dataset.admin === 'person' ? '/api/admin/person' : form.dataset.admin === 'retention' ? '/api/admin/retention' : '/api/admin/hold';
       if (input.action === undefined && form.dataset.admin === 'hold') input.action = 'set';
+      // A button's value is not part of the form data, so read it from the button that was pressed.
+      if (input.action === undefined && form.dataset.admin === 'person') input.action = event.submitter?.value;
       const me = await (await fetch('/api/me')).json();
       if (me.auth_method === 'oidc') { if (!me.stepup_fresh) { location.href = '/api/oidc/stepup/start?next=/admin'; return; } }
-      else await post('/api/stepup', { password: prompt('Enter your password to confirm this administration change') || '' });
+      else {
+        const password = await askPassword('Enter your password to confirm this administration change');
+        if (!password) throw new Error('Nothing was changed, because no password was entered.');
+        await post('/api/stepup', { password });
+      }
       await post(path, input); location.reload(); return;
     }
     if (form.dataset.api) {
@@ -180,6 +258,8 @@ document.addEventListener('submit', async event => {
     }
     location.reload();
   } catch (error) {
+    release();
     showError(form, error.message || 'That did not go through. Check the form and try again.');
   }
 });
+

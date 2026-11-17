@@ -25,3 +25,26 @@ All of this is pinned by `test/ui-clarity.test.mjs` and 14 mutants. The real-bro
 - **The Vision Quest** beyond its first screen.
 - **The leader's other decision forms.** "Record another decision" has a long outcome list and reason codes I didn't walk.
 - **Real users.** I read this as a stranger would, but I am not one. Watching two or three real people try it, with no help, will find things I can't.
+
+## Using it carelessly (Nov 17, 2026)
+
+After the cold read, I used the app the way a careless or hostile person would, in a real browser and against the API: script tags and broken markup in every text box, 300,000-character pastes, null bytes, double clicks, the back button, a session that ends in the middle of a comment, wrong passwords, pages that don't exist, forged requests, and a member trying to approve, promote or impersonate. The security side held: every forged or out-of-role request was refused, nothing injected ran, and the server never crashed or returned a 500. The usability side did not. What I found, and what changed:
+
+| What I did | What happened | Fixed |
+| --- | --- | --- |
+| Opened any private page while signed out (a bookmark, an expired session) | A line of raw JSON: `{"error":"request refused"}` | A browser is sent to the sign-in page. Scripts still get JSON. |
+| Opened a page that doesn't exist, or isn't mine | The same raw JSON | A page that says what happened and links back |
+| Double-clicked Post | Two identical problems | One. Buttons stay off while a request is in flight. |
+| Posted only spaces | Accepted | Refused, with a plain message, in the browser and on the server |
+| Pasted more than the limit | The end was cut off with no word | A count near the limit, and a note when a paste was cut |
+| Typed a wrong password, or a bad invite | "That did not go through." | Says what to try. It still never says which half was wrong. |
+| Let my session end, then pressed Post | The same vague message | Says you may have been signed out, and keeps what you typed |
+| Looked for a way to sign out | There wasn't one | A Sign out button |
+| Pressed Disable, Promote, Demote or Enable on the admin page | **Nothing worked. The buttons never sent which action was wanted, so the server refused every one.** The API worked, which is why the tests passed. | Fixed, and covered by a real-browser journey that fails without the fix |
+| Confirmed the admin password | It was asked with the browser's own pop-up, which shows the password in plain text | A masked box in the page |
+
+The last two rows were not UI polish. Sign-out was missing, and the administration page could not do its job. Both were invisible to unit tests and obvious to someone clicking.
+
+Pinned by `test/break-it.test.mjs`, `test/e2e/break-it.e2e.mjs` (also in CI) and 14 mutants.
+
+**Not checked:** a screen reader, a very slow connection, a browser other than Chrome, and anything that needs a real identity provider.

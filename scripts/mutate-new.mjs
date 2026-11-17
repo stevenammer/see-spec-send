@@ -200,6 +200,23 @@ const mutants = [
   ["ui: Investigate says what the two buttons do", "app/pages-intelligence.js", "builds a bundle of the sources for you to paste into an AI you choose, and makes no AI call", "builds a bundle.", T(['ui-clarity'])],
   ["ui: Investigate takes a pasted address", "public/intelligence.js", "const m = /\\/items\\/([^/?#\\s]+)/.exec(line); return m ? decodeURIComponent(m[1]) : line;", "return line;", T(['ui-clarity'])],
   ["ui: Investigate states the no-rating rule", "app/pages-intelligence.js", "This tool won't rate people, guess at motives or advise on personnel decisions.", "", T(['ui-clarity'])],
+  ["break: a second submit while one is in flight is ignored", "public/app.js", "  if (form.dataset.busy) return;", "  ", T(['break-it'])],
+  ["break: the buttons come back after a failure", "public/app.js", "  } catch (error) {\n    release();", "  } catch (error) {\n    ", T(['break-it'])],
+  ["break: the form is marked busy", "public/app.js", "form.dataset.busy = '1';", "", T(['break-it'])],
+  ["break: a signed-out browser is sent to sign in", "app/http.js", "if (!res.browserPage.signedIn) {", "if (false) {", T(['break-it'])],
+  ["break: the API never redirects", "app/http.js", "req.method === 'GET' && !url.pathname.startsWith('/api/') && /text", "req.method === 'GET' && /text", T(['break-it'])],
+  ["break: a refused page is a page", "app/http.js", "return res.end(unavailablePage());", "return res.end(JSON.stringify({ error: 'request refused' }));", T(['break-it'])],
+  ["break: a post of only spaces is refused", "app/http.js", "value.trim().length > 0 && value.length <= limit;", "value.length > 0 && value.length <= limit;", T(['break-it'])],
+  ["break: sign-in failure says what to do", "public/app.js", "each wrong try makes the next wait longer", "", T(['break-it'])],
+  ["break: signed-out failure says so", "public/app.js", "You may have been signed out, or you don't have permission to do this.", "That did not go through.", T(['break-it'])],
+  ["break: a lost connection says so", "public/app.js", "Couldn't reach the server. Check your connection", "That did not go through.", T(['break-it'])],
+  ["break: the admin password box is masked", "public/app.js", "input.type = 'password';", "input.type = 'text';", T(['break-it'])],
+  ["break: a cut-off paste is announced", "public/app.js", "so the end was cut off", "", T(['break-it'])],
+  ["break: there is a sign-out button", "app/pages.js", "<button type=\"button\" class=\"linklike\" data-signout>Sign out</button>", "", T(['break-it'])],
+  ["break: sign out leaves the page", "public/app.js", "  location.href = '/signin';\n});\n\n// Long boxes", "\n});\n\n// Long boxes", T(['break-it'])],
+  ["break: the admin buttons send which action", "public/app.js", "input.action = event.submitter?.value;", "input.action = undefined;", T(['break-it'])],
+  ["break: the password pop-up can close", "public/app.js", "if (form.closest?.('dialog')?.tagName === 'DIALOG') return;", "", T(['break-it'])],
+  ["break: a wrong admin password says so", "public/app.js", "That password didn't work, so nothing was changed.", "That did not go through.", T(['break-it'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 // --shard K/N runs every Nth mutant starting at K, so CI can spread the set across parallel jobs.

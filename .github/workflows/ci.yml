@@ -34,6 +34,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/pw" && cd "$RUNNER_TEMP/pw"
           npm init -y >/dev/null && npm install playwright@1.62.1 axe-core@4.14.1 oidc-provider@9.15.0 --no-audit --no-fund
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:decision-outcomes
+      - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:break-it
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:stage-freeze
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:vision
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:reanalysis

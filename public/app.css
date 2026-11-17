@@ -147,3 +147,4 @@ main p, main li, main h1, main h2, main h3, main small, main span, main summary,
 main details { margin: .75rem 0; }
 main details > summary { cursor: pointer; font-weight: 600; padding: .35rem 0; }
 label small { display: block; font-weight: normal; color: #4a5663; margin: .1rem 0 .3rem; }
+header .linklike { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; text-decoration: underline; cursor: pointer; min-height: 44px; }

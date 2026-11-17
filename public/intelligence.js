@@ -1,4 +1,6 @@
 let currentPackage = null;
+// A pasted page address or a bare code both work.
+const itemCode = line => { const m = /\/items\/([^/?#\s]+)/.exec(line); return m ? decodeURIComponent(m[1]) : line; };
 const lines = value => String(value || '').split('\n').map(line => line.trim()).filter(Boolean);
 const node = (tag, text) => { const element = document.createElement(tag); element.textContent = text; return element; };
 function error(form, message) {
@@ -22,7 +24,7 @@ document.addEventListener('submit', async event => {
       currentPackage = null;
       document.querySelector('[data-analysis-export]').hidden = true;
       document.querySelector('[data-analysis-answer]').hidden = true;
-      const request = { question: input.question, objectives: lines(input.objectives), constraints: lines(input.constraints), items: lines(input.items),
+      const request = { question: input.question, objectives: lines(input.objectives), constraints: lines(input.constraints), items: lines(input.items).map(itemCode),
         from: new Date(input.from + 'Z').toISOString(), to: new Date(input.to + 'Z').toISOString() };
       currentPackage = await post('/api/intelligence/package', request);
       document.querySelector('[data-analysis-prompt]').value = JSON.stringify(currentPackage, null, 2);
@@ -30,7 +32,7 @@ document.addEventListener('submit', async event => {
     } else if (form.hasAttribute('data-analysis-review') && currentPackage) {
       document.querySelector('[data-analysis-answer]').hidden = true;
       const result = await post('/api/intelligence/review', { request: currentPackage.request, package_hash: currentPackage.hash, answer: input.answer });
-      const panel = document.querySelector('[data-analysis-answer]'); panel.replaceChildren(node('h2', 'Review the model answer'), node('p', result.label));
+      const panel = document.querySelector('[data-analysis-answer]'); panel.replaceChildren(node('h2', 'Review the answer'), node('p', result.label));
       const answer = result.answer;
       panel.append(node('h3', 'Question'), node('p', answer.question));
       for (const key of ['objectives', 'constraints', 'coverage_notes', 'tradeoffs', 'missingness']) {
@@ -47,7 +49,7 @@ document.addEventListener('submit', async event => {
     }
     form.querySelector('[role=alert]')?.remove();
   } catch {
-    error(form, 'This could not be checked. Use observable work questions, complete objectives and constraints, existing item IDs, and a past UTC range. Answers need the exact supplied format and source hashes. If sources changed, prepare a fresh packet.');
+    error(form, 'This could not be checked. Ask about how work gets done (not about people), fill in every box, use problems you can open, and pick a date range in the past. Answers need the exact supplied format and source hashes. If sources changed, prepare a fresh packet.');
   }
 });
 document.addEventListener('click', async event => {
@@ -61,11 +63,11 @@ document.addEventListener('click', async event => {
   const form = document.querySelector('[data-analysis-package]');
   try {
     const input = Object.fromEntries(new FormData(form));
-    const request = { question: input.question, objectives: lines(input.objectives), constraints: lines(input.constraints), items: lines(input.items),
+    const request = { question: input.question, objectives: lines(input.objectives), constraints: lines(input.constraints), items: lines(input.items).map(itemCode),
       from: new Date(input.from + 'Z').toISOString(), to: new Date(input.to + 'Z').toISOString() };
     const result = await post('/api/intelligence/run', request);
     const panel = document.querySelector('[data-analysis-answer]');
     panel.replaceChildren(node('h2', 'Saved analysis receipt'), node('p', result.receipt.label), node('p', `Receipt ${result.receipt.hash}. It can be reopened by coworkers with the same read scope.`));
     panel.hidden = false;
-  } catch { error(form, 'This could not run. Use complete criteria, a valid past range, and records you can read.'); }
+  } catch { error(form, 'This could not run. Fill in every box, pick a date range in the past, and only list problems you are able to open.'); }
 });

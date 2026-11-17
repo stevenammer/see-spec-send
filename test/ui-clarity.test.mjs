@@ -4,6 +4,8 @@ import { Store } from '../core/store.js';
 import { feedPage, itemPage, newItemPage, passwordPage, redeemPage, signInPage } from '../app/pages.js';
 import { specPage } from '../app/pages-spec.js';
 import { adminRefusedPage } from '../app/pages-admin.js';
+import { intelligencePage } from '../app/pages-intelligence.js';
+import { readFileSync } from 'node:fs';
 
 // Findings from walking the app cold as a first-time user (Nov 17, 2026), pinned so they are not quietly undone.
 const at = n => `2026-11-17T00:00:${String(n).padStart(2, '0')}.000Z`;
@@ -105,4 +107,19 @@ test('on a current-style item, the frozen-stage form and the plain stage history
   const frozen = itemPage({ ...base, stagePosts: [{ kind: 'see', post_id: 'p1', closed_seq: 3, snapshot_hash: 'a'.repeat(64) }, { kind: 'spec', post_id: 'p2', closed_seq: null, snapshot_hash: null }] }, store.events('r3'), 'maya', false);
   assert.match(frozen, /Fork a frozen stage/); assert.match(text(frozen), /SEE\s*: locked at step 3; a closing report is being prepared/); assert.match(text(frozen), /SPEC: in progress/);
   assert.doesNotMatch(text(frozen), /a{64}/, 'the hash is not shown in the stage line');
+});
+
+test('the Investigate page explains itself in plain words, and accepts a pasted address for a problem', () => {
+  const page = text(intelligencePage());
+  assert.match(page, /ask a question across several problems at once/);
+  assert.match(page, /Prepare evidence packet builds a bundle of the sources for you to paste into an AI you choose/);
+  assert.match(page, /Paste the page address of each problem, or just the code at the end of it/);
+  assert.match(page, /won't rate people, guess at motives or advise on personnel decisions/);
+  assert.doesNotMatch(page, /Work item IDs|Copy IDs from the addresses/);
+  const script = readFileSync(new URL('../public/intelligence.js', import.meta.url), 'utf8');
+  assert.equal((script.match(/lines\(input\.items\)\.map\(itemCode\)/g) || []).length, 2, 'both the packet and the run path clean pasted addresses');
+  const itemCode = new Function(`${/const itemCode = [^\n]+/.exec(script)[0]}; return itemCode;`)();
+  assert.equal(itemCode('https://x.example/items/abc-DEF_1?x=1'), 'abc-DEF_1');
+  assert.equal(itemCode('abc-DEF_1'), 'abc-DEF_1');
+  assert.equal(itemCode('/items/a%2Fb'), 'a/b');
 });

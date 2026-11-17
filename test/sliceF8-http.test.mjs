@@ -29,7 +29,7 @@ test('F8 analysis HTTP rechecks session access, CSRF, exact snapshot and citatio
  assert.equal((await call(handler, 'GET', '/intelligence')).status, 403);
  assert.equal((await call(handler, 'POST', '/api/intelligence/package', request)).status, 403);
  assert.equal((await call(handler, 'POST', '/api/intelligence/package', request, { cookie: headers.cookie, origin: headers.origin })).status, 403);
- const page = await call(handler, 'GET', '/intelligence', null, headers); assert.equal(page.status, 200); assert.match(page.text, /makes no model call/);
+ const page = await call(handler, 'GET', '/intelligence', null, headers); assert.equal(page.status, 200); assert.match(page.text, /makes no AI call/);
  const result = await call(handler, 'POST', '/api/intelligence/package', request, headers); assert.equal(result.status, 200);
  const packet = result.body, review = { request, package_hash: packet.hash, answer: JSON.stringify(packet.answer_contract) };
  assert.equal((await call(handler, 'POST', '/api/intelligence/review', review, headers)).status, 200);

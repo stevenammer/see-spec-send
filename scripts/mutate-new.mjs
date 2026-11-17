@@ -196,6 +196,10 @@ const mutants = [
   ["ui: the approval form explains the cap", "app/pages.js", "The most the AI may spend building this. It stops when it reaches it.", "", T(['ui-clarity'])],
   ["ui: the spec page says what happens next", "app/pages-spec.js", "<strong>Sent.</strong> A leader who didn't write it decides", "<strong>Sent.</strong>", T(['ui-clarity'])],
   ["ui: a member gets an explanation at the admin page", "app/pages-admin.js", "This page is for leaders. If you think you should have access", "", T(['ui-clarity'])],
+  ["ui: Investigate says what it is for", "app/pages-intelligence.js", "Use this to ask a question across several problems at once", "Use this.", T(['ui-clarity'])],
+  ["ui: Investigate says what the two buttons do", "app/pages-intelligence.js", "builds a bundle of the sources for you to paste into an AI you choose, and makes no AI call", "builds a bundle.", T(['ui-clarity'])],
+  ["ui: Investigate takes a pasted address", "public/intelligence.js", "const m = /\\/items\\/([^/?#\\s]+)/.exec(line); return m ? decodeURIComponent(m[1]) : line;", "return line;", T(['ui-clarity'])],
+  ["ui: Investigate states the no-rating rule", "app/pages-intelligence.js", "This tool won't rate people, guess at motives or advise on personnel decisions.", "", T(['ui-clarity'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 // --shard K/N runs every Nth mutant starting at K, so CI can spread the set across parallel jobs.

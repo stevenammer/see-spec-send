@@ -72,7 +72,7 @@ export function composeBundleDocument(manifest, read, known = new Set(manifest.f
   html = html.replace(/<link\s+rel="stylesheet"\s+href="([^"]+)"\s*\/?>/gi, (_m, href) => known.has(resolve(href)) ? `<style>${read(resolve(href)).replace(/<\/style/gi, '<\\/style')}</style>` : '');
   // Remove script blocks until nothing changes (one pass can leave a new block behind: `<scr<script></script>ipt>`), then
   // neutralize any `<script` that is still there. The page is also served under a script-free policy; this is the second layer.
-  for (let before = ''; before !== html;) { before = html; html = html.replace(/<script\b[\s\S]*?<\/script\s*>/gi, ''); }
+  for (let before = ''; before !== html;) { before = html; html = html.replace(/<script\b[\s\S]*?<\/script[^>]*>/gi, ''); }
   html = html.replace(/<script/gi, '&lt;script');
   return html.replace(/<\/body>/i, '<p><small>This build includes scripts. They are not run in the viewer.</small></p></body>');
 }

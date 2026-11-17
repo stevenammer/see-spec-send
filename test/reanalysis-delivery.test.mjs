@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { readdirSync, readFileSync } from 'node:fs';
 import { Store } from '../core/store.js';
+import { CURRENT_RULES } from '../core/machine.js';
 import { Auth } from '../app/auth.js';
 import { createHandler } from '../app/http.js';
 import { runReanalysis } from '../reanalysis/run.js';
@@ -117,6 +118,7 @@ test('a new decision is a renewal on new information; the old case is untouched'
   const child = made.json().id;
   const first = store.events(child)[0];
   assert.equal(first.relation, 'renewal'); assert.equal(first.basis.annex, annex);
+  assert.equal(first.rules, CURRENT_RULES, 'the server stamps the current rules on a renewal');
   assert.equal(store.read(child).context.approval, 0, 'a renewal inherits no approval');
   assert.equal(store.db.prepare('SELECT relation FROM lineage_relations WHERE child=?').get(child).relation, 'renewal');
   const again = await call('POST', '/api/items/dana/renew', 'dana', { ...body, what_is_new: 'Same annex again.' });

@@ -44,3 +44,13 @@ test('a comment can anchor to the SPEC only while that SPEC still describes the 
   assert.ok(step({ ...base, specSeeHash: 'see-1' }, onSpec, member).refusal, 'a SPEC written against an older SEE is stale and cannot be');
   assert.ok(step({ ...base, specSeeHash: 'see-1' }, { ...onSpec, anchor_kind: 'see', anchor_hash: 'see-2' }, member).context, 'the current SEE can always be discussed');
 });
+
+test('a leader changing the steward must give a real reason on a rules 2 item', () => {
+  const leaderWho = { kind: 'person', leader: true };
+  const base = { ...initial(), rules: 2, phase: 'CHECKED', steward: 's', seeHash: 'see-1', helpers: [], ineligibleHelpers: [], authors: ['s'] };
+  const change = reason => ({ type: 'steward_changed', actor: 'l', steward: 'new', ...(reason === undefined ? {} : { reason }) });
+  assert.ok(step(base, change('The current steward is on leave.'), leaderWho).context, 'a real reason is accepted');
+  for (const reason of [undefined, '', 'short', 'x'.repeat(11)]) assert.ok(step(base, change(reason), leaderWho).refusal, `a reason of ${JSON.stringify(reason)} is refused`);
+  assert.ok(step(base, change('x'.repeat(12)), leaderWho).context, 'twelve characters is the minimum');
+  assert.ok(step(base, change('The current steward is on leave.'), { kind: 'person', leader: false }).refusal, 'only a leader may change it');
+});

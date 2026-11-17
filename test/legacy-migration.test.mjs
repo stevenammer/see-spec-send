@@ -151,3 +151,21 @@ test('the copy taken before an upgrade is owner-only, even under a permissive um
     fixture.close();
   }
 });
+
+test('verifyAll finds an item that has events but no cache row, memory rows or lineage', () => {
+  const fixture = legacyDatabase();
+  let store;
+  try {
+    store = new Store(fixture.file);
+    assert.deepEqual(store.verifyAll().map(row => row.item), ['i']);
+    store.db.prepare("DELETE FROM items WHERE item='i'").run();
+    for (const [table, column] of [['search_docs', 'item'], ['contributions', 'item'], ['lineage', 'child']]) {
+      try { store.db.prepare(`DELETE FROM ${table} WHERE ${column}='i'`).run(); } catch { /* the table may not exist in this schema */ }
+    }
+    const found = store.verifyAll();
+    assert.ok(found.some(row => row.item === 'i'), 'the orphaned events cannot hide from a full verification');
+  } finally {
+    store?.db.close();
+    fixture.close();
+  }
+});

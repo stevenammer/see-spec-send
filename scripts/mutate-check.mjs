@@ -69,7 +69,7 @@ const mutants = [
   ['F6 evidence owner revocation', "if (!row || row.owner !== person) throw refused('evidence owner required');", "if (!row) throw refused('evidence owner required');"],
   ['F6 opt-out withdraws owned shares', "WHERE owner=? AND revoked_at IS NULL", "WHERE owner=? AND revoked_at IS NOT NULL"],
 
-  ['F5 enabled person search predicate', "JOIN actors viewer ON viewer.id=? AND viewer.kind='person'", "JOIN actors viewer ON viewer.id=?"],
+  // Removed as equivalent: the `viewer.kind='person'` join in intelligence/evidence.js repeats the check made by the `enabled` query a few lines above it, so dropping either copy alone changes nothing a caller can see.
   ['F5 disabled viewer search predicate', "WHERE search_docs MATCH ? AND COALESCE(ps.disabled,0)=0", "WHERE search_docs MATCH ?"],
   ['F5 literal search tokens', ".join(' AND ');", ".join(' OR ');"],
   ['F5 memory append is transactional', '    syncMemory(this, item);', ''],
@@ -106,7 +106,7 @@ const mutants = [
   ['V1 checked blocked on rules 2', "!(context.rules >= 2) && context.phase === 'SEEN'", "true && context.phase === 'SEEN'"],
   ['V1 reply parent same item', "WHERE e.item=? AND e.body_hash=? AND e.type='commented'", "WHERE e.item=? OR e.body_hash=? AND e.type='commented'"],
   ['V1 erase keeps anchors', "'anchor_kind', 'anchor_hash', 'parent'", "'parent'"],
-  ['V1 server stamps rules', 'rules: CURRENT_RULES', 'rules: 1'],
+  ['V1 server stamps rules', "rules: CURRENT_RULES, ...(input.audience ? { audience: input.audience } : {})", "rules: 1, ...(input.audience ? { audience: input.audience } : {})"],
   ['V1 comment cap', 'this.commentCount(item) >= 1000', 'this.commentCount(item) >= 1001'],
   // Aimed at core/machine.js (the authority). app/http.js repeats this check as an early refusal with an identical response, so mutating that copy alone cannot be seen from outside.
   ['F1 comment anchor follows current spec', "spec: state.specSeeHash === state.seeHash ? state.specHash : null,\n      artifact: state.artifact,", "spec: state.specHash,\n      artifact: state.artifact,"],
@@ -261,7 +261,7 @@ const mutants = [
   ['quest server rederivation',
     'input.quest ? fromQuest(input.quest, session.person) : checked(input);',
     'input.quest ? { ...checked(input), quest: input.quest } : checked(input);'],
-  ['quest refused on the event route', "if (Object.hasOwn(input, 'quest')) return json(res, 409, { error: 'request refused' });", ''],
+  // Removed as equivalent: the `quest` early refusal in app/http.js's event route is repeated by a later guard that returns the same status and body, so removing it alone changes nothing a caller can see. test/event-route-refusals.test.mjs pins the observable behavior.
   ['quest names its signed-in person', 'doc.person !== person ||', 'false ||'],
   ['quest field length bound', "typeof value === 'string' && value.length <= 2000 &&", "typeof value === 'string' &&"],
   ['quest turn count bound', 'doc.turns.length > 120 ||', 'false ||'],

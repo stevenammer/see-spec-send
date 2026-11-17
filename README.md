@@ -53,7 +53,7 @@ Early, and I'm building it in public. It isn't ready to drop into a big company 
 
 - No outside security test. No SOC 2. No test with a real screen reader user.
 - Not yet tested against a real Okta, Entra or Google login.
-- No automatic failover and no Postgres version. A person decides when to switch to the copy.
+- No automatic failover and no Postgres version. A person decides when to switch to the copy. [The plan for Postgres](docs/POSTGRES_PLAN.md) is written down, and it needs one decision from me about dependencies first.
 - No Teams or Microsoft 365 integration yet. That's planned.
 - The AI parts are tested with stand-in models. You plug in your own model, and I've only run a real one by hand, once, on a free tier.
 - **No real pilot with real employees.** That's the one that matters most, and it's what I'd like to do next.

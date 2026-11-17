@@ -2,7 +2,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { createHash } from 'node:crypto';
 
-const fail = message => { throw new Error(message); };
+// `detail` is a plain-words reason a builder agent can act on. The message stays the short, generic one callers and tests know.
+const fail = (message, detail) => { const error = new Error(message); if (detail) error.detail = detail; throw error; };
 const bytes = value => Buffer.byteLength(value, 'utf8');
 export const HTML_CAP = 64 * 1024;
 const cap = HTML_CAP;
@@ -26,9 +27,12 @@ export function approvedBuildInput(spec) {
 
 // Bundle pages may link script and style files that are in the same bundle. Everything else stays banned.
 export function validateBundleHtml(html, links) {
-  if (typeof html !== 'string' || !/^<!doctype html>/i.test(html)) fail('builder response is not static HTML');
-  if (bytes(html) > cap) fail('builder response exceeds static HTML cap');
-  if (/\bon\w+\s*=|\b(?:https?:)?\/\//i.test(html) || !staticMarkupOnly(html, links)) fail('builder response is not a local static page');
+  if (typeof html !== 'string' || !/^<!doctype html>/i.test(html)) fail('builder response is not static HTML', 'the page must start with <!doctype html>');
+  if (bytes(html) > cap) fail('builder response exceeds static HTML cap', 'the page is too large');
+  if (/\bon\w+\s*=/i.test(html)) fail('builder response is not a local static page', 'an on-attribute such as onclick appears (or a word starting with "on" is followed by an equals sign); put behavior in the .js file with addEventListener');
+  if (/\b(?:https?:)?\/\//i.test(html)) fail('builder response is not a local static page', 'a URL or a double slash appears; use no URLs and no slash-slash comments');
+  const problem = markupProblem(html, links);
+  if (problem) fail('builder response is not a local static page', problem);
   return html;
 }
 
@@ -53,39 +57,42 @@ const ALLOWED_ATTRIBUTES = new Set(['class', 'id', 'style', 'lang', 'charset', '
 const TAG = /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[^\s"'>\/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*)\s*\/?>/y;
 // Extra allowance for multi-file bundles only: plain controls a small tool needs. No <form> (it could navigate),
 // no media, no frames. Their attributes cannot carry a URL: values containing ':' stay refused.
-const BUNDLE_CONTROLS = new Set(['textarea', 'input', 'button', 'label', 'select', 'option', 'canvas']);
+// form, fieldset and legend are allowed for bundles only (Nov 17, 2026, owner decision): models reach for them by habit and
+// they carry no authority here. None of the attributes that would let a form go anywhere (action, method, target, formaction)
+// is on the allowlist below, so a form can only reload its own page. A single-file static page still refuses all three.
+const BUNDLE_CONTROLS = new Set(['textarea', 'input', 'button', 'label', 'select', 'option', 'canvas', 'form', 'fieldset', 'legend']);
 const BUNDLE_CONTROL_ATTRIBUTES = new Set(['type', 'value', 'placeholder', 'rows', 'cols', 'maxlength', 'for', 'disabled', 'checked', 'min', 'max', 'step', 'width', 'height']);
 const ATTRIBUTE = /\s+([^\s"'>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
 // `links` is null for the single-file static builder, which allows no script and no link at all. A multi-file
 // bundle passes the set of sibling file names it may reference; only <script src> and <link rel=stylesheet href>
 // naming one of those files is then allowed, and a script element must be empty (no inline code).
-function staticMarkupOnly(html, links = null) {
-  if (/\\/.test(html)) return false;
+function markupProblem(html, links = null) {
+  if (/\\/.test(html)) return 'a backslash is not allowed';
   for (let at = html.indexOf('<'); at >= 0; at = html.indexOf('<', at + 1)) {
     const next = html[at + 1] || '';
     if (next === '!') {
       if (at === 0 && /^<!doctype html>/i.test(html)) continue;
-      return false;
+      return 'only a <!doctype html> line at the very top is allowed, with no HTML comments or other <! markup';
     }
-    if (next === '?' || (next === '/' && !/[a-zA-Z]/.test(html[at + 2] || ''))) return false;
+    if (next === '?' || (next === '/' && !/[a-zA-Z]/.test(html[at + 2] || ''))) return 'a malformed tag';
     if (!/[a-zA-Z\/]/.test(next)) continue;
     TAG.lastIndex = at;
     const match = TAG.exec(html);
-    if (!match) return false;
+    if (!match) return 'a tag is malformed';
     const [, closing, name, attributes] = match;
     const tag = name.toLowerCase();
     const bundleTag = links && (tag === 'script' || tag === 'link');
-    if (!ALLOWED_TAGS.has(tag) && !bundleTag && !(links && BUNDLE_CONTROLS.has(tag))) return false;
-    if (closing && attributes.trim()) return false;
+    if (!ALLOWED_TAGS.has(tag) && !bundleTag && !(links && BUNDLE_CONTROLS.has(tag))) return `the element <${tag}> is not allowed`;
+    if (closing && attributes.trim()) return 'a closing tag has attributes';
     if (tag === 'script' && !closing && bundleTag) {
       const end = html.toLowerCase().indexOf('</script', match.index + match[0].length);
-      if (end < 0 || html.slice(match.index + match[0].length, end).trim()) return false;
+      if (end < 0 || html.slice(match.index + match[0].length, end).trim()) return 'a script element must be empty and only point at one of your own .js files with src';
     }
     if (tag === 'style' && !closing) {
       // Style text is raw: nothing inside it is a tag, but it must not load anything or escape the sandbox.
       const start = match.index + match[0].length;
       const end = html.toLowerCase().indexOf('</style', start);
-      if (end < 0 || /url\s*\(|@import|expression\s*\(/i.test(html.slice(start, end))) return false;
+      if (end < 0 || /url\s*\(|@import|expression\s*\(/i.test(html.slice(start, end))) return 'a style element must be closed and must not use url(), @import or expression()';
       at = end - 1;
       continue;
     }
@@ -93,19 +100,20 @@ function staticMarkupOnly(html, links = null) {
       const attributeName = attribute[1].toLowerCase();
       const bundleAttribute = bundleTag && ((tag === 'script' && ['src', 'defer'].includes(attributeName)) || (tag === 'link' && ['rel', 'href'].includes(attributeName)));
       const controlAttribute = links && BUNDLE_CONTROLS.has(tag) && BUNDLE_CONTROL_ATTRIBUTES.has(attributeName);
-      if (!ALLOWED_ATTRIBUTES.has(attributeName) && !bundleAttribute && !controlAttribute) return false;
+      if (!ALLOWED_ATTRIBUTES.has(attributeName) && !bundleAttribute && !controlAttribute) return `the attribute ${attributeName} is not allowed on <${tag}>`;
       const value = attribute[2] ?? attribute[3] ?? attribute[4] ?? '';
-      if (/[&\\]/.test(value)) return false;
-      if (bundleAttribute && (attributeName === 'src' || attributeName === 'href')) { if (!links.has(value)) return false; continue; }
-      if (bundleAttribute && attributeName === 'rel') { if (value !== 'stylesheet') return false; continue; }
+      if (/[&\\]/.test(value)) return `the value of ${attributeName} on <${tag}> must not contain & or a backslash`;
+      if (bundleAttribute && (attributeName === 'src' || attributeName === 'href')) { if (!links.has(value)) return `${attributeName}="${value.slice(0, 60)}" on <${tag}> must name a file you wrote in ./bundle/`; continue; }
+      if (bundleAttribute && attributeName === 'rel') { if (value !== 'stylesheet') return 'a link element must have rel="stylesheet"'; continue; }
       if (attributeName === 'style') {
-        if (/url\s*\(|@import|expression\s*\(/i.test(value)) return false;
-      } else if (value.includes(':')) return false;
+        if (/url\s*\(|@import|expression\s*\(/i.test(value)) return 'a style attribute must not use url(), @import or expression()';
+      } else if (value.includes(':')) return `the value of ${attributeName} on <${tag}> must not contain a colon`;
     }
     at = match.index + match[0].length - 1;
   }
-  return true;
+  return null;
 }
+const staticMarkupOnly = (html, links = null) => markupProblem(html, links) === null;
 
 export function gateway(socket, token, input, key, model = 'fixture:text-v1') {
   return new Promise((resolve, reject) => {

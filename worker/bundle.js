@@ -8,7 +8,8 @@ export const BUNDLE_MAX_FILES = 32;
 export const BUNDLE_MAX_BYTES = 1024 * 1024;
 export const BUNDLE_EXTENSIONS = Object.freeze(['.html', '.css', '.js', '.json', '.svg', '.txt', '.md']);
 const digest = value => createHash('sha256').update(value).digest('hex');
-const fail = reason => { throw Error(`bundle refused: ${reason}`); };
+// `detail` is a plain-words reason a builder agent can act on (it names the file). The message stays the short one.
+const fail = (reason, detail) => { const error = Error(`bundle refused: ${reason}`); if (detail) error.detail = detail; throw error; };
 const validPath = value => typeof value === 'string' && value.length <= 240 && /^[A-Za-z0-9._/-]+$/.test(value)
   && !value.startsWith('/') && value.split('/').every(part => part && part !== '.' && part !== '..');
 const extension = path => BUNDLE_EXTENSIONS.find(value => path.endsWith(value));
@@ -24,7 +25,7 @@ export function manifestHash(manifest) {
 export function validateBundle(root, manifest, { maxFiles = BUNDLE_MAX_FILES, maxBytes = BUNDLE_MAX_BYTES } = {}) {
   if (!manifest || Object.keys(manifest).sort().join(',') !== 'files,version' || manifest.version !== 1 || !Array.isArray(manifest.files)
       || !Number.isSafeInteger(maxFiles) || maxFiles < 1 || !Number.isSafeInteger(maxBytes) || maxBytes < 1
-      || !manifest.files.length || manifest.files.length > maxFiles) fail('invalid manifest');
+      || !manifest.files.length || manifest.files.length > maxFiles) fail('invalid manifest', manifest?.files?.length === 0 ? 'no files were found in ./bundle/; create index.html there with the write tool' : 'the bundle manifest is invalid');
   const expected = new Map(); let total = 0;
   for (const entry of manifest.files) {
     if (!entry || Object.keys(entry).sort().join(',') !== 'bytes,path,sha256' || !validPath(entry.path) || !extension(entry.path)
@@ -45,10 +46,10 @@ export function validateBundle(root, manifest, { maxFiles = BUNDLE_MAX_FILES, ma
         const final = fstatSync(fd, { bigint: true }); if (read !== entry.bytes || !same(initial, final) || !same(final, lstatSync(file, { bigint: true })) || digest(data.subarray(0, read)) !== entry.sha256) fail('file changed or hash mismatch');
         const text = data.subarray(0, read).toString('utf8');
         // A page may link only files that are in this same bundle, resolved from its own folder.
-        if (rel.endsWith('.html')) validateBundleHtml(text, new Set([...expected.keys()].map(other => posix.relative(posix.dirname(rel), other)).filter(name => !name.startsWith('..'))));
-        if (/\b(?:eval|importScripts)\s*\(|\bnew\s+Function\b|\bFunction\s*\(|\bimport\s*\(|\bsendBeacon\b|\bEventSource\b|\bwindow\.open\b|\bdocument\.cookie\b/.test(text)) fail('disallowed script capability');
+        if (rel.endsWith('.html')) { try { validateBundleHtml(text, new Set([...expected.keys()].map(other => posix.relative(posix.dirname(rel), other)).filter(name => !name.startsWith('..')))); } catch (error) { if (error.detail) error.detail = `${rel}: ${error.detail}`; throw error; } }
+        if (/\b(?:eval|importScripts)\s*\(|\bnew\s+Function\b|\bFunction\s*\(|\bimport\s*\(|\bsendBeacon\b|\bEventSource\b|\bwindow\.open\b|\bdocument\.cookie\b/.test(text)) fail('disallowed script capability', `${rel}: uses eval, new Function, import(), sendBeacon, EventSource, window.open or document.cookie, none of which is allowed`);
         // Static pages allow no external URL. Apply that to source files too, including JS/CSS/SVG.
-        if (/\b(?:https?:)?\/\/|\b(?:fetch|XMLHttpRequest|WebSocket|importScripts)\s*\(/i.test(text)) fail('external URL or network script');
+        if (/\b(?:https?:)?\/\/|\b(?:fetch|XMLHttpRequest|WebSocket|importScripts)\s*\(/i.test(text)) fail('external URL or network script', `${rel}: contains a URL, a double slash (so no slash-slash comments) or a network call (fetch, XMLHttpRequest, WebSocket), none of which is allowed`);
         files.push(Object.freeze({ path: rel, bytes: read, sha256: entry.sha256 }));
       } finally { closeSync(fd); }
     }

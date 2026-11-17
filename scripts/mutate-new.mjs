@@ -51,8 +51,8 @@ const mutants = [
   ['correction: source events may be targeted', 'app/http.js', '(!target && !source) || !item', '!target || !item', delivery],
   ['bundle origin: label signature is verified', 'app/bundle-origin.js', '!timingSafeEqual(expected, received)', 'false', T(['bundle-origin'])],
   ['bundle: capabilities that can reach out are refused', 'worker/bundle.js', "\\bsendBeacon\\b|", '', T(['bundle-html'])],
-  ['bundle: scripts must be empty elements', 'worker/builder/index.js', "if (end < 0 || html.slice(match.index + match[0].length, end).trim()) return false;", '', T(['bundle-html'])],
-  ['bundle: links must name bundle files', 'worker/builder/index.js', 'if (!links.has(value)) return false; continue;', 'continue;', T(['bundle-html'])],
+  ['bundle: scripts must be empty elements', 'worker/builder/index.js', "if (end < 0 || html.slice(match.index + match[0].length, end).trim()) return 'a script element must be empty and only point at one of your own .js files with src';", '', T(['bundle-html'])],
+  ['bundle: links must name bundle files', 'worker/builder/index.js', "if (!links.has(value)) return `${attributeName}=\"${value.slice(0, 60)}\" on <${tag}> must name a file you wrote in ./bundle/`; continue;", 'continue;', T(['bundle-html'])],
   ['prompt: the question comes from the request, not the model', 'intelligence/prompt.js', 'question: packet.request.question, objectives: packet.request.objectives, constraints: packet.request.constraints,', 'question: answer.question, objectives: answer.objectives, constraints: answer.constraints,', T(['prompt-shape'])],
   ['prompt: an unknown status is never coerced into an allowed one', 'intelligence/prompt.js', '?.[1].toLowerCase() ?? value) : value;', "?.[1].toLowerCase() ?? 'documented') : value;", T(['prompt-shape'])],
   ['analysis: a reply that repeats the template is refused', 'intelligence/run.js', "if (repeatsTemplate(packet, checked.answer)) throw refused('answer repeats the template text instead of findings');", '', T(['prompt-shape'])],
@@ -115,6 +115,17 @@ const mutants = [
   ["db door: a throwing transaction rolls back", 'core/db.js', "try { this.#raw.exec('ROLLBACK'); } catch { /* the transaction already ended */ }", "/* no rollback */", T(['db-door'])],
   ["db door: transactions do not nest", 'core/db.js', "async tx() { throw new Error('transactions do not nest'); }", "async tx(work) { return work(this); }", T(['db-door'])],
   ["db door: run reports rows changed", 'core/db.js', "changes: Number(result.changes)", "changes: 0", T(['db-door'])],
+  ["builder: form, fieldset and legend are bundle controls", "worker/builder/index.js", "'canvas', 'form', 'fieldset', 'legend']);", "'canvas']);", T(['bundle-html'])],
+  ["builder: a form attribute cannot carry an action", "worker/builder/index.js", "'min', 'max', 'step', 'width', 'height']);", "'min', 'max', 'step', 'width', 'height', 'action']);", T(['bundle-html'])],
+  ["builder: a form attribute cannot carry a target", "worker/builder/index.js", "'min', 'max', 'step', 'width', 'height']);", "'min', 'max', 'step', 'width', 'height', 'target']);", T(['bundle-html'])],
+  ["bundle: a refusal names the file", "worker/bundle.js", "if (error.detail) error.detail = `${rel}: ${error.detail}`;", "", T(['bundle-html'])],
+  ["opencode: a build is repaired only once", "worker/opencode.js", "!detail || existsSync(paths.repair) ||", "!detail ||", T(['opencode-adapter'])],
+  ["opencode: a repair needs 45 seconds left", "worker/opencode.js", "if (left < 45_000) return false;", "if (left < 0) return false;", T(['opencode-adapter'])],
+  ["opencode: a repair gets only the wall time left", "worker/opencode.js", "const ms = Math.min(this.wallMs, left - 5_000);", "const ms = this.wallMs;", T(['opencode-adapter'])],
+  ["opencode: a failed repair revokes its capability", "worker/opencode.js", "catch { this.revoke(this.row(row.id) || row); return false; }", "catch { return false; }", T(['opencode-adapter'])],
+  ["opencode: the first capability is revoked before a repair", "worker/opencode.js", "this.revoke(row); this.docker.remove(row.container_name);\n      const ms", "this.docker.remove(row.container_name);\n      const ms", T(['opencode-adapter'])],
+  ["opencode: a repair configures the new capability", "worker/opencode.js", "writeFileSync(paths.config, JSON.stringify(this.config(JSON.parse(row.input), token)), { mode: 0o644 });", "", T(['opencode-adapter'])],
+  ["opencode: the stale manifest is cleared before a repair", "worker/opencode.js", "rmSync(paths.manifest, { force: true });", "", T(['opencode-adapter'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 // --shard K/N runs every Nth mutant starting at K, so CI can spread the set across parallel jobs.

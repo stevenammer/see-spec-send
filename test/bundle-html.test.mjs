@@ -85,3 +85,32 @@ test('the doctype check ignores case in both validators, and a page with no doct
   assert.throws(() => validateBundleHtml(bare, links), /not static HTML/);
   assert.throws(() => validateHtml(bare), /not static HTML/);
 });
+
+test('a bundle may use form, fieldset and legend, which carry no authority; a single-file page still may not', () => {
+  const structured = page('<label for="a">A</label><input id="a" type="text"><button type="button" id="go">Go</button>')
+    .replace('<body>', '<body><form id="f"><fieldset id="s"><legend>Questions</legend>').replace('</body>', '</fieldset></form></body>');
+  assert.equal(validateBundleHtml(structured, links), structured);
+  assert.throws(() => validateHtml(structured), /not a local static page/, 'the one-shot builder still refuses form markup');
+  for (const attribute of ['action="x"', 'method="post"', 'target="_top"', 'onsubmit="x()"', 'formaction="x"']) {
+    const bad = structured.replace('<form id="f">', `<form id="f" ${attribute}>`);
+    assert.throws(() => validateBundleHtml(bad, links), /not a local static page/, `${attribute} on a form is still refused`);
+  }
+  assert.throws(() => validateBundleHtml(structured.replace('<legend>', '<legend title="x">'), links), /not a local static page/, 'attributes outside the allowlist are still refused on the new elements');
+});
+
+test('a refused bundle says exactly why, in words an agent can act on, and names the file', () => {
+  const reason = (html, run = html => validateBundleHtml(html, links)) => { try { run(html); } catch (error) { return error.detail; } return null; };
+  assert.match(reason(page('<a>x</a>')), /the element <a> is not allowed/);
+  assert.match(reason(page('<p aria-label="x">hi</p>')), /the attribute aria-label is not allowed on <p>/);
+  assert.match(reason(page('<button type="button" onclick="x()">go</button>')), /on-attribute/);
+  assert.match(reason(page('<p>see http://example.test</p>')), /URL or a double slash/);
+  assert.match(reason(page('<p title="a:b">x</p>')), /the attribute title is not allowed on <p>/);
+  assert.match(reason(page('<input type="text" value="a:b">')), /value of value on <input> must not contain a colon/);
+  assert.match(reason('<html></html>'), /must start with <!doctype html>/);
+  assert.match(reason(page('<script src="nope.js"></script>')), /must name a file you wrote/);
+  const root = mkdtempSync(join(tmpdir(), 'sss-detail-'));
+  writeFileSync(join(root, 'index.html'), page('<a>x</a>'));
+  const manifest = { version: 1, files: [{ path: 'index.html', bytes: Buffer.byteLength(page('<a>x</a>')), sha256: createHash('sha256').update(page('<a>x</a>')).digest('hex') }] };
+  assert.match(reason(null, () => validateBundle(root, manifest)), /^index\.html: the element <a> is not allowed/, 'the detail names the file');
+  assert.match(reason(null, () => validateBundle(root, { version: 1, files: [] })), /no files were found in \.\/bundle\//);
+});

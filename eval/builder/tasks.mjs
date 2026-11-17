@@ -48,9 +48,9 @@ export const tasks = [
         'Posting adds a card as a list item in an unordered list with id board, newest first, showing the name, date and note',
         'If the name is empty nothing is added',
         'Each card has a button labeled Remove that deletes just that card',
-        'The board is still there after the page is reloaded',
+        'The board is still there after the page is reloaded, with the cards in the same order as before (newest first)',
       ],
-      how_we_know: ['Post two swaps, reload, remove one, reload again, and the board always matches'],
+      how_we_know: ['Post two swaps, reload, remove one, reload again, and the board always matches, in the same order each time'],
       out_of_scope: ['Any network request', 'Accounts or sign-in'],
     },
     async accept(page, ck, url) {

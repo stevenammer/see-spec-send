@@ -51,6 +51,14 @@ document.addEventListener('submit', async event => {
   event.preventDefault();
   try {
     const input = value(form);
+    if (form.dataset.admin) {
+      const path = form.dataset.admin === 'person' ? '/api/admin/person' : form.dataset.admin === 'retention' ? '/api/admin/retention' : '/api/admin/hold';
+      if (input.action === undefined && form.dataset.admin === 'hold') input.action = 'set';
+      const me = await (await fetch('/api/me')).json();
+      if (me.auth_method === 'oidc') { location.href = '/api/oidc/stepup/start?next=/admin'; return; }
+      await post('/api/stepup', { password: prompt('Enter your password to confirm this administration change') || '' });
+      await post(path, input); location.reload(); return;
+    }
     if (form.dataset.api) {
       const out = await post(form.dataset.api, input);
       location.href = form.dataset.nextItem ? `/items/${out.id}` : form.dataset.next;

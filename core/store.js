@@ -161,6 +161,40 @@ export class Store {
     );
     CREATE INDEX external_events_item ON external_events(item,id);`);
   }
+  migrateAdminRetention() {
+    this.db.exec(`CREATE TABLE retention_settings(kind TEXT PRIMARY KEY, days INTEGER NOT NULL DEFAULT 0);
+      INSERT OR IGNORE INTO retention_settings(kind,days) VALUES ('comments',0),('ledger_answers',0),('closeout_artifacts',0),('receipts',0);
+      CREATE TABLE sign_in_log(person TEXT NOT NULL, at INTEGER NOT NULL);
+      CREATE TABLE legal_holds(target_kind TEXT NOT NULL, target_id TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,
+        reason TEXT NOT NULL, actor TEXT NOT NULL, created_at TEXT NOT NULL, released_at TEXT, released_by TEXT,
+        PRIMARY KEY(target_kind,target_id));`);
+  }
+  retentionSettings() { return Object.fromEntries(this.db.prepare('SELECT kind,days FROM retention_settings ORDER BY kind').all().map(row => [row.kind, row.days])); }
+  setRetention(kind, days) {
+    if (!['comments', 'ledger_answers', 'closeout_artifacts', 'receipts'].includes(kind) || !Number.isSafeInteger(days) || days < 0 || days > 36500) throw invalid('invalid retention setting');
+    this.db.prepare('UPDATE retention_settings SET days=? WHERE kind=?').run(days, kind);
+  }
+  hold(targetKind, targetId, actor, reason, at) {
+    if (!['item', 'group'].includes(targetKind) || typeof targetId !== 'string' || !targetId || typeof reason !== 'string' || !reason || reason.length > 2000) throw invalid('invalid legal hold');
+    this.db.prepare(`INSERT INTO legal_holds(target_kind,target_id,active,reason,actor,created_at,released_at,released_by) VALUES(?,?,1,?,?,?,NULL,NULL)
+      ON CONFLICT(target_kind,target_id) DO UPDATE SET active=1,reason=excluded.reason,actor=excluded.actor,created_at=excluded.created_at,released_at=NULL,released_by=NULL`).run(targetKind, targetId, reason, actor, at);
+  }
+  releaseHold(targetKind, targetId, actor, at) {
+    if (this.db.prepare('UPDATE legal_holds SET active=0,released_at=?,released_by=? WHERE target_kind=? AND target_id=? AND active=1').run(at, actor, targetKind, targetId).changes !== 1) throw invalid('legal hold is not active');
+  }
+  holds() { return this.db.prepare('SELECT * FROM legal_holds ORDER BY active DESC,created_at DESC,target_kind,target_id').all(); }
+  isHeld(item) {
+    const scope = this.readScope(item), groups = scope?.audience || [];
+    const q = groups.map(() => '?').join(',') || "''";
+    return Boolean(this.db.prepare(`SELECT 1 FROM legal_holds WHERE active=1 AND ((target_kind='item' AND target_id=?) OR (target_kind='group' AND target_id IN (${q})))`).get(item, ...groups));
+  }
+  retentionProposals(now = new Date().toISOString()) {
+    const settings = this.retentionSettings(), cutoff = days => new Date(Date.parse(now) - days * 86400000).toISOString(), rows = [];
+    if (settings.comments > 0) rows.push(...this.db.prepare("SELECT e.item,e.body_hash AS id,e.at,'comments' AS kind FROM events e WHERE e.type='commented' AND e.at<=?").all(cutoff(settings.comments)));
+    if (settings.ledger_answers > 0) rows.push(...this.db.prepare("SELECT e.item,e.body_hash AS id,e.at,'ledger_answers' AS kind FROM events e WHERE e.type='specced' AND e.at<=?").all(cutoff(settings.ledger_answers)));
+    if (settings.closeout_artifacts > 0) rows.push(...this.db.prepare("SELECT c.item,c.artifact_hash AS id,e.at,'closeout_artifacts' AS kind FROM closeout_jobs c JOIN stage_posts p ON p.item=c.item AND p.post_id=c.post_id JOIN events e ON e.item=p.item AND e.seq=p.closed_seq WHERE c.artifact_hash IS NOT NULL AND e.at<=?").all(cutoff(settings.closeout_artifacts)));
+    return rows.map(row => ({ ...row, held: this.isHeld(row.item) })).filter(row => !row.held);
+  }
   groupCreate(name, description = '') {
     if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9 _-]{0,63}$/.test(name) || typeof description !== 'string' || description.length > 1000) throw invalid('invalid group');
     this.db.prepare('INSERT INTO groups(name,description) VALUES(?,?)').run(name, description);
@@ -931,6 +965,7 @@ export class Store {
     if (!targetHash || !actor || typeof at !== 'string' || !at) throw new Error('erase arguments required');
     this.db.exec('BEGIN IMMEDIATE');
     try {
+      if (this.isHeld(item)) throw refused('legal hold blocks erasure');
       const target = this.db.prepare('SELECT * FROM events WHERE item=? AND body_hash=?').get(item, targetHash);
       if (!target) throw new Error('body is not part of item');
       const rules2 = this.read(item).context.rules >= 2;

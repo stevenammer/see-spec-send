@@ -159,6 +159,7 @@ export class Auth {
     const insert = this.db.prepare(`INSERT INTO sessions(digest,person,csrf,created,seen,expires,auth_method)
       VALUES(?,?,?,?,?,?,?)`);
     insert.run(hash(value), person, csrf, time, time, time + 8 * 60 * minute, authMethod);
+    if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sign_in_log'").get()) this.db.prepare('INSERT INTO sign_in_log(person,at) VALUES(?,?)').run(person, time);
     return { value, csrf };
   }
 
@@ -270,10 +271,10 @@ export class Auth {
 
   // Administrator actions. Each one is a CLI command; none is reachable over HTTP.
   listPeople() {
-    return this.db.prepare(`SELECT a.id, a.leader, coalesce(p.disabled, 0) AS disabled,
+    return this.db.prepare(`SELECT a.id, a.kind, a.leader, coalesce(p.disabled, 0) AS disabled, max(l.at) AS last_sign_in,
       coalesce(u.must_change, 0) AS must_change
-      FROM actors a LEFT JOIN person_state p ON p.id=a.id LEFT JOIN users u ON u.id=a.id
-      WHERE a.kind='person' ORDER BY a.id`).all();
+      FROM actors a LEFT JOIN person_state p ON p.id=a.id LEFT JOIN users u ON u.id=a.id LEFT JOIN sign_in_log l ON l.person=a.id
+      WHERE a.kind='person' GROUP BY a.id,a.kind,a.leader,p.disabled,u.must_change ORDER BY a.id`).all();
   }
 
   requirePerson(id) {

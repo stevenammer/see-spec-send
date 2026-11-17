@@ -31,6 +31,7 @@ export const MIGRATIONS = Object.freeze([
   // No data rewrite: this stamp lets readiness distinguish code that knows the
   // operational schema from an older binary before it serves normal traffic.
   { name: 'operations readiness and recovery controls', up: () => {} },
+  { name: 'admin retention settings and legal holds', up: store => store.migrateAdminRetention() },
 ]);
 export const SCHEMA_VERSION = MIGRATIONS.length;
 

@@ -4,7 +4,7 @@ What is stored, where, who can read it, how long it stays, and how erasure reach
 
 | Data class | Where | Who can read it | Retention today | Erasure |
 | --- | --- | --- | --- | --- |
-| Accounts (id, password hash, role) | `users` table | Admins through the CLI; the person for their own account | Until the person is removed | Disable or remove by CLI. **Not decided:** a retention period after someone leaves. |
+| Accounts (id, password hash, role) | `users` table | Leaders through the administration page or CLI; the person for their own account | Until the person is removed | Disable or remove through the administration controls. **Not decided:** a retention period after someone leaves. |
 | Work posts, comments, specs, decisions | `events` and `bodies` | Anyone allowed to read the item (workspace-wide, or the audience group for restricted work) | Indefinite | Author or steward erase removes the body text; the chain keeps hashes. |
 | Restricted-work existence | `events` first record | Anyone, as "a restricted case exists, ask its steward" | Indefinite | Same as above. |
 | Reflection notes | The person's own browser only | Only that person, on that device | Until the person deletes them | The person deletes or exports them. The server holds nothing. |
@@ -22,3 +22,6 @@ What is stored, where, who can read it, how long it stays, and how erasure reach
 | External messages | Nothing today | n/a | n/a | n/a |
 
 **Knobs that would be needed for decisions not yet made:** an account retention period, a mentoring retention period, an automatic digest retention period, a backup retention policy, and a rule for how long frozen packet copies may keep erased text.
+# Employee administration and retention update
+
+The administration page shows account IDs, role and disabled state, last sign-in time, group membership, read scopes, legal holds, retention settings, and recent administration audit entries to leaders. Retention settings default to off. They create review proposals only. Legal holds and their release records are stored in the SQLite database and block live erasure for covered items.

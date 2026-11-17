@@ -20,6 +20,7 @@ import { requestSpecDraft } from '../effort/spec.js';
 import { evidencePackage, readAnalysisAnswer } from '../intelligence/evidence.js';
 import { challengeAnalysisReceipt, readAnalysisReceipt, runAnalysis } from '../intelligence/run.js';
 import { intelligencePage } from './pages-intelligence.js';
+import { adminPage } from './pages-admin.js';
 import { effortAllowance } from '../gateway/effort.js';
 import { Mentoring } from '../core/mentoring.js';
 import { mentoringHome, mentoringRequest, mentoringEvidence } from './pages-mentoring.js';
@@ -30,6 +31,7 @@ import { canRead, defaultCanRead } from '../access/read.js';
 import { challengeClaim } from '../knowledge/corrections.js';
 import { searchKnowledge } from '../knowledge/index.js';
 import { bump, metrics as operationalMetrics, ready as operationalReady } from './ops.js';
+import { appendAudit } from '../core/audit.js';
 
 // Object key order does not change a retry identity. Array order is meaningful.
 const canonical = value => JSON.stringify(value, (_key, entry) =>
@@ -351,9 +353,30 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       if (typeof input.type === 'string') context.auditType = input.type;
       const readable = item => session && canRead(session.person, store.readScope(item), readPolicy);
       const ip = clientAddress(req, trustedProxy);
+      const admin = () => Boolean(session && store.actor(session.person, '').leader);
       // With password sign-in off, nothing that creates or changes a password account may work either: not invitations,
       // not their page, not a password change. Otherwise an old invitation would be a way around the identity provider.
       if (disablePasswordLogin && ['/api/invite/redeem', '/redeem', '/api/password', '/password'].includes(url.pathname)) return json(res, 404, { error: 'not found' });
+      if (req.method === 'GET' && url.pathname === '/admin') {
+        if (!admin()) return json(res, 403, { error: 'request refused' });
+        const scopes = store.db.prepare("SELECT e.item AS id FROM events e JOIN bodies b ON b.hash=e.body_hash WHERE e.type='posted' AND json_array_length(json_extract(b.bytes,'$.audience')) > 0 GROUP BY e.item").all().map(row => store.readScope(row.id));
+        const audit = store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='admin_audit'").get() ? store.db.prepare("SELECT at,command,outcome FROM admin_audit ORDER BY seq DESC LIMIT 30").all() : [];
+        return page(res, adminPage({ people: auth.listPeople(), groups: store.groups(), scopes, audit, retention: store.retentionSettings(), proposals: store.retentionProposals(new Date(clock()).toISOString()), holds: store.holds() }));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/admin/person') {
+        if (!admin() || !auth.useStepup(sessionToken) || !exactKeys(input, ['id', 'action']) || !['promote', 'demote', 'disable', 'enable'].includes(input.action)) return json(res, 403, { error: 'request refused' });
+        if (input.action === 'promote') auth.setLeader(input.id, true); if (input.action === 'demote') auth.setLeader(input.id, false); if (input.action === 'disable') auth.disablePerson(input.id); if (input.action === 'enable') auth.enablePerson(input.id);
+        appendAudit(store.db, { at: new Date(clock()).toISOString(), command: `admin person ${input.action}`, outcome: 'ok', detail: JSON.stringify({ actor: session.person, id: input.id }) }); return json(res, 201, { updated: true });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/admin/retention') {
+        if (!admin() || !auth.useStepup(sessionToken) || !exactKeys(input, ['comments', 'ledger_answers', 'closeout_artifacts', 'receipts'])) return json(res, 403, { error: 'request refused' });
+        for (const [kind, value] of Object.entries(input)) store.setRetention(kind, Number(value)); appendAudit(store.db, { at: new Date(clock()).toISOString(), command: 'admin retention set', outcome: 'ok', detail: JSON.stringify({ actor: session.person }) }); return json(res, 201, { updated: true });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/admin/hold') {
+        if (!admin() || !auth.useStepup(sessionToken) || !exactKeys(input, ['action', 'target_kind', 'target_id', 'reason']) || !['set', 'release'].includes(input.action)) return json(res, 403, { error: 'request refused' });
+        const at = new Date(clock()).toISOString(); if (input.action === 'set') store.hold(input.target_kind, input.target_id, session.person, input.reason, at); else store.releaseHold(input.target_kind, input.target_id, session.person, at);
+        appendAudit(store.db, { at, command: `admin legal-hold ${input.action}`, outcome: 'ok', detail: JSON.stringify({ actor: session.person, target_kind: input.target_kind, target_id: input.target_id }) }); return json(res, 201, { updated: true });
+      }
       if (req.method === 'GET' && url.pathname === '/api/oidc/start') {
         if (!auth.oidc) return json(res, 404, { error: 'not found' });
         const binder = randomBytes(32).toString('base64url');
@@ -430,7 +453,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       }
       if (req.method === 'GET' && url.pathname === '/api/me')
         return session
-          ? json(res, 200, { id: session.person, csrf: session.csrf })
+          ? json(res, 200, { id: session.person, csrf: session.csrf, auth_method: session.auth_method })
           : json(res, 403, { error: 'request refused' });
       if (!session) {
         if (req.method === 'GET' && url.pathname === '/') return page(res, signInPage({ oidc: Boolean(auth.oidc), password: !disablePasswordLogin }));

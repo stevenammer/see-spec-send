@@ -14,7 +14,8 @@ const playwright = require(join(process.env.PLAYWRIGHT_DIR || '', 'playwright'))
 const axe = readFileSync(process.env.AXE_PATH, 'utf8');
 const root = new URL('..', import.meta.url).pathname, db = join(mkdtempSync(join(tmpdir(), 'sss-a11y-')), 'sss.db'), env = { ...process.env, SSS_DB: db };
 const cli = args => new Promise((resolve, reject) => { let out = '', err = ''; const c = spawn(process.execPath, ['cli.js', ...args], { cwd: root, env }); c.stdout.on('data', b => out += b); c.stderr.on('data', b => err += b); c.on('close', code => code ? reject(Error(err || out)) : resolve(out.trim())); });
-await cli(['init', '--id', 'admin']);
+const initial = await cli(['init', '--id', 'admin']);
+const initialPassword = initial.replace('one-time password: ', '');
 const port = 25000 + Math.floor(Math.random() * 1500), origin = `http://127.0.0.1:${port}`;
 const server = spawn(process.execPath, ['cli.js', 'serve', '--port', String(port), '--origin', origin, '--insecure-cookies'], { cwd: root, env, stdio: 'ignore' });
 const results = []; let browser;
@@ -30,6 +31,7 @@ try {
       for (const v of r.violations) results.push({ page: name, viewport: label, rule: v.id, impact: v.impact, nodes: v.nodes.length, help: v.help, sample: v.nodes[0]?.html.slice(0, 120) });
     }
   };
+  await page.goto(`${origin}/signin`); await page.locator('[name=id]').fill('admin'); await page.locator('[name=password]').fill(initialPassword); await page.getByRole('button', { name: 'Sign in' }).click(); await page.locator('[name=current]').fill(initialPassword); await page.locator('[name=password]').fill('a-long-a11y-admin-passphrase-9x'); await page.getByRole('button', { name: 'Change password' }).click(); await audit('admin', `${origin}/admin`); await page.evaluate(() => fetch('/api/logout', { method: 'POST', headers: { 'x-csrf-token': '' } }));
   await audit('sign in', `${origin}/signin`); await audit('redeem', `${origin}/redeem`);
   await page.goto(`${origin}/redeem`); await page.locator('[name=invite]').fill(invite); await page.locator('[name=id]').fill('dana'); await page.locator('[name=password]').fill('a-long-a11y-passphrase-9x');
   await page.getByRole('button', { name: 'Join' }).click(); await page.getByRole('link', { name: 'Post a problem' }).waitFor();

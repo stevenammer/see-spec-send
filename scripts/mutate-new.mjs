@@ -94,6 +94,8 @@ const mutants = [
   ['stepup: return path must be a local item page', 'app/http.js', '!/^\\/items\\/[A-Za-z0-9_-]{1,128}$/.test(next)', 'false', T(['oidc-stepup'])],
   ['stepup: password sessions cannot use the provider path', 'app/auth.js', "session.auth_method !== 'oidc' || !this.allowed(ip, session.person, 'stepup')", "!this.allowed(ip, session.person, 'stepup')", T(['oidc-stepup'])],
   ['rfc9207: callback issuer must match', 'app/oidc.js', "if (iss !== undefined && iss !== null && iss !== this.issuer) throw new Error('OIDC response refused');", '', T(['oidc-stepup'])],
+  ['retention: legal holds block erasure', 'core/store.js', "if (this.isHeld(item)) throw refused('legal hold blocks erasure');", '', T(['admin-retention'])],
+  ['retention: zero days leaves a kind off', 'core/store.js', 'if (settings.comments > 0)', 'if (settings.comments >= 0)', T(['admin-retention'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 if (process.argv.includes('--check-sources')) {

@@ -8,6 +8,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { appendFileSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { Integrations } from './integrations.js';
+import { handoffMarkdown, handoffPackage } from '../handoff/export.js';
 import { closeoutPage, feedPage, frozenPostPage, htmlHeaders, itemPage, newItemPage, passwordPage, questPage, redeemPage, signInPage } from './pages.js';
 import { invalid, kindOf, refused, tooLarge as tooLargeError } from '../core/errors.js';
 import { redact } from '../provider/safe-http.js';
@@ -53,7 +54,7 @@ const ROUTE_WORDS = new Set(['api', 'items', 'new', 'events', 'send', 'fork', 'r
   'transfer-request', 'closeout', 'history', 'record', 'related', 'intelligence', 'package', 'review', 'run', 'receipts', 'knowledge', 'correction', 'annexes', 'response',
   'digest', 'mentoring', 'optin', 'requests', 'evidence', 'decision', 'checkin', 'people', 'quest', 'model', 'draft', 'preflight', 'login', 'logout', 'me', 'password',
   'stepup', 'invite', 'redeem', 'oidc', 'start', 'callback', 'integrations', 'inbound', 'assets', 'app.css', 'app.js', 'intelligence.js', 'mentoring.js', 'reflection.js',
-  'healthz', 'readyz', 'metrics-lite', 'search', 'signin', 'contributions']);
+  'handoff', 'healthz', 'readyz', 'metrics-lite', 'search', 'signin', 'contributions']);
 const routeOf = raw => {
   let path;
   try { path = new URL(raw, 'http://localhost').pathname; } catch { return '/'; }
@@ -862,6 +863,19 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         const bytes = job?.artifact_hash && store.artifact(closeout[1], job.artifact_hash);
         if (!bytes) return json(res, 404, { error: 'not found' });
         return json(res, 200, JSON.parse(bytes));
+      }
+      const handoff = url.pathname.match(/^\/api\/items\/([^/]+)\/handoff$/);
+      if (req.method === 'GET' && handoff) {
+        // A change-request package for ServiceNow, Jira or a GitHub issue. Same read scope as the item itself.
+        if (!readable(handoff[1])) return json(res, 403, { error: 'request refused' });
+        let packet;
+        try { packet = handoffPackage(store, { item: handoff[1], actor: session.person }); }
+        catch (error) { return json(res, 409, { error: String(error.message).replace(/^refused: /, '') }); }
+        if (url.searchParams.get('format') === 'md') {
+          res.writeHead(200, { 'content-type': 'text/markdown; charset=utf-8', 'content-disposition': 'attachment; filename="handoff.md"', 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' });
+          return res.end(handoffMarkdown(packet));
+        }
+        return json(res, 200, packet);
       }
       const closeoutPageRoute = url.pathname.match(/^\/items\/([^/]+)\/closeout\/([^/]+)$/);
       if (req.method === 'GET' && closeoutPageRoute) {

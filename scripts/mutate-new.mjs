@@ -10,6 +10,11 @@ const root = new URL('..', import.meta.url).pathname;
 const T = names => names.map(name => `test/${name}.test.mjs`);
 const reconcile = T(['reconcile']), scenarios = T(['reanalysis-scenarios']), delivery = T(['reanalysis-delivery']);
 const mutants = [
+  ['standby: backup is independently verified before latest', 'core/standby.js', 'try { verifyBackup(backup, scratch, { keyFile }); }', 'try { void backup; }', T(['standby'])],
+  ['standby: stale replicas are refused', 'core/standby.js', "if (!force && age * 1000 > maxAgeMs) throw new Error('replica is older than --max-age; refusing stale promotion without --force');", '', T(['standby'])],
+  ['standby: possible primary activity fences promotion', 'core/standby.js', "if (!force && age < 120) throw new Error('primary may still be replicating; refusing split-brain promotion without --force');", '', T(['standby'])],
+  ['standby: a live lock holder excludes another replicator', 'core/standby.js', "if (pidAlive(holder.pid)) throw new Error(`replicator already running (pid ${holder.pid})`);", '', T(['standby'])],
+  ['standby: newest backup is never pruned', 'core/standby.js', 'if (!Number.isInteger(keep) || keep < 1)', 'if (!Number.isInteger(keep) || keep < 0)', T(['standby'])],
   ['ops-pack: CEF never includes audit detail', 'core/audit.js', "suser=${esc(row.who)} outcome=${esc(row.outcome)}", "suser=${esc(row.who)} detail=${esc(JSON.stringify(row.detail))} outcome=${esc(row.outcome)}", T(['ops-pack'])],
   ['ops-pack: audit log is append-only', 'app/http.js', "flag: 'a'", "flag: 'w'", T(['ops-pack'])],
   // name, file, find, replace, tests that must fail

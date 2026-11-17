@@ -31,6 +31,12 @@ Run this on a schedule you can stand behind, and after every upgrade.
 - Prune old backups: `node cli.js backup prune --dir <dir> --keep N`. It never removes the newest backup or one that fails verification.
 - A backup does not include the separate stop-latch file. Re-set the latch after a restore if you need it.
 
+## 3a. Warm standby (continuous verified backups, not high availability)
+
+Use a separate machine or storage device for the replica directory. On the primary, run `node cli.js replicate --to /replica/sss --every 5m --keep 12` under a service manager, or use `--once` from cron. Each copy is verified before `latest.json` changes. A failed copy leaves the previous good `latest.json` and backup in place. This is still one SQLite writer, with manual, fenced promotion.
+
+After the old primary is confirmed stopped, promote only into a new path: `node cli.js standby --from /replica/sss --db /data/promoted.sqlite --max-age 15m`. It refuses a stale replica, and also refuses a very recent replica because the primary may still be alive. `--force` bypasses either fence only after an operator has resolved that risk. The promoted copy starts stopped; check it, then clear the latch before serving it. Run `npm run test:failover` on hardware that permits loopback sockets to measure actual RTO and one-interval RPO loss.
+
 ## 3b. Moving to another installation (export and import)
 
 A backup is a copy of the same database. An export is a portable, readable file you can take anywhere.

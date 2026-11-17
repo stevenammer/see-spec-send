@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Store } from './core/store.js';
 import { restoreBackup, verifyBackup, writeBackup } from './core/backup.js';
+import { promoteStandby, pruneBackups, replicate } from './core/standby.js';
 import { Worker } from './worker/runner.js';
 import { killed, setKill } from './worker/control.js';
 import { watchdog } from './worker/watchdog.js';
@@ -223,6 +224,23 @@ async function run(argv, env, write) {
   };
   const served = command === 'serve' ? serveSettings(args, env) : null;
   const file = env.SSS_DB || 'sss.db';
+  if (command === 'replicate') {
+    const to = value('--to') || fail('usage: replicate --to DIR [--key-file FILE] [--every 5m|30s|1h] [--keep N] [--once]');
+    const keep = Number(value('--keep') || '7');
+    if (!Number.isInteger(keep) || keep < 1) fail('--keep must be a positive whole number');
+    await replicate({ file, to, keyFile: value('--key-file') || null, keep, every: value('--every') || '5m', once: args.includes('--once'), log: write });
+    return;
+  }
+  if (command === 'standby') {
+    const from = value('--from') || fail('usage: standby --from DIR --db FILE [--key-file FILE] [--max-age 15m] [--force]');
+    const db = value('--db') || fail('standby needs --db FILE');
+    const maxAge = value('--max-age') || '15m';
+    const match = /^(\d+)(s|m|h)$/.exec(maxAge);
+    if (!match || Number(match[1]) < 1) fail('--max-age must be like 30s, 15m, or 1h');
+    const maxAgeMs = Number(match[1]) * ({ s: 1000, m: 60_000, h: 3_600_000 }[match[2]]);
+    write(JSON.stringify(promoteStandby({ from, db, keyFile: value('--key-file') || null, maxAgeMs, force: args.includes('--force') })));
+    return;
+  }
   if (command === 'oidc' && args[0] === 'check') {
     // `oidc check --config FILE`: contact the provider (discovery and keys only, no sign-in) and say what is ready or missing.
     const configFile = value('--config') || fail('usage: oidc check --config FILE');
@@ -266,16 +284,8 @@ async function run(argv, env, write) {
   if (command === 'backup' && args[0] === 'prune') {
     const dir = value('--dir') || fail('missing --dir'); const keep = Number(value('--keep') || fail('missing --keep'));
     if (!Number.isInteger(keep) || keep < 1 || !existsSync(dir)) fail('--keep must be a positive whole number and --dir must exist');
-    const backups = readdirSync(dir).map(name => join(dir, name)).filter(path => !path.endsWith('.manifest.json') && existsSync(`${path}.manifest.json`)).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
-    let retained = 0, removed = 0;
-    for (let index = 0; index < backups.length; index += 1) {
-      const source = backups[index]; let valid = false; const scratchDir = mkdtempSync(join(tmpdir(), 'sss-backup-prune-'));
-      try { valid = verifyBackup(source, join(scratchDir, 'restore.sqlite'), { keyFile: value('--key-file') || null }).ok; } catch {} finally { rmSync(scratchDir, { recursive: true, force: true }); }
-      // Newest is immutable. Corrupt backups are evidence, not candidates for deletion.
-      if (index === 0 || !valid || retained < keep) { retained += valid ? 1 : 0; continue; }
-      rmSync(source, { force: true }); rmSync(`${source}.manifest.json`, { force: true }); removed += 1;
-    }
-    write(`backup prune: removed=${removed} retained=${backups.length - removed}`); return;
+    const result = pruneBackups(dir, keep, { keyFile: value('--key-file') || null });
+    write(`backup prune: removed=${result.removed} retained=${result.retained}`); return;
   }
   // Restore must run before opening SQLite. Opening a missing target would create it.
   if (command === 'restore') {

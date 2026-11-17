@@ -85,6 +85,12 @@ const mutants = [
   ['review2: erasing a source redacts stored copies of it', 'core/store.js', 'this.redactStoredCopies(JSON.parse(body.bytes), targetHash);', '', T(['security2-erasure-decision-packet-leak', 'security2-erasure-orphaned-closeout-artifact'])],
   ['review2: a bad export signature is refused', 'cli.js', "&& !verifyExport(body, JSON.parse(signed[0]).signature, readExportKey(value('--verify-key') || fail('--verify-key needs a key file'), false))", '&& false', T(['export-portability'])],
   ['review2: an unsigned export is refused when a key is given', 'cli.js', "} else if (args.includes('--verify-key')) fail('export is not signed: refusing to import');", '}', T(['export-portability'])],
+  ['stepup: provider must report a fresh sign-in time', 'app/oidc.js', 'claims.auth_time < asked - this.clockSkewSeconds', 'false', T(['oidc-stepup'])],
+  ['stepup: answer is bound to the same session', 'app/auth.js', 'identity.sessionDigest !== hash(value) || ', '', T(['oidc-stepup'])],
+  ['stepup: answer is bound to the same person', 'app/auth.js', "|| identity.id !== session.person) throw invalid('step-up unavailable');", ") throw invalid('step-up unavailable');", T(['oidc-stepup'])],
+  ['stepup: a step-up answer is never a sign-in', 'app/auth.js', "if (identity.purpose !== 'login') throw new Error('OIDC response refused');", '', T(['oidc-stepup'])],
+  ['stepup: return path must be a local item page', 'app/http.js', '!/^\\/items\\/[A-Za-z0-9_-]{1,128}$/.test(next)', 'false', T(['oidc-stepup'])],
+  ['stepup: password sessions cannot use the provider path', 'app/auth.js', "session.auth_method !== 'oidc' || !this.allowed(ip, session.person, 'stepup')", "!this.allowed(ip, session.person, 'stepup')", T(['oidc-stepup'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 if (process.argv.includes('--check-sources')) {

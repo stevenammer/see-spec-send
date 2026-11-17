@@ -170,6 +170,7 @@ export class Auth {
   async completeOidc(response) {
     if (!this.oidc) throw new Error('OIDC unavailable');
     const identity = await this.oidc.complete(response);
+    if (identity.purpose !== 'login') throw new Error('OIDC response refused');   // a step-up answer is never a sign-in
     if (this.isDisabled(identity.id)) throw new Error('person disabled');
     // Claims never change an existing local account or grant leadership. An
     // administrator may promote the opaque mapped ID through the normal path.
@@ -377,6 +378,32 @@ export class Auth {
     if (!user || !await this.matches(password, user.password)) throw invalid('step-up unavailable');
     this.db.prepare('UPDATE sessions SET stepup=?,stepup_used=0 WHERE digest=?')
       .run(this.clock(), hash(value));
+  }
+
+  // Single sign-on step-up. Approving work needs fresh proof that the person is at the keyboard. For a password session that
+  // is the password; for a single-sign-on session it is signing in again at the identity provider. The answer must come
+  // back to the same browser and the same session, for the same person, with a sign-in time after we asked.
+  beginOidcStepup(value, binder, next, ip = 'local') {
+    if (!this.oidc) throw new Error('OIDC unavailable');
+    const session = this.session(value);
+    if (!session || session.auth_method !== 'oidc' || !this.allowed(ip, session.person, 'stepup')) throw invalid('step-up unavailable');
+    return this.oidc.begin(binder, { purpose: 'stepup', sessionDigest: hash(value), next });
+  }
+
+  async completeOidcStepup(value, response) {
+    if (!this.oidc) throw new Error('OIDC unavailable');
+    const session = this.session(value);
+    if (!session || session.auth_method !== 'oidc') throw invalid('step-up unavailable');
+    const identity = await this.oidc.complete(response);
+    if (identity.purpose !== 'stepup' || identity.sessionDigest !== hash(value) || identity.id !== session.person) throw invalid('step-up unavailable');
+    this.db.prepare('UPDATE sessions SET stepup=?,stepup_used=0 WHERE digest=?').run(this.clock(), hash(value));
+    return { next: identity.next };
+  }
+
+  // Whether a fresh, unused step-up exists right now, so a page can say so. It does not consume it.
+  stepupFresh(value) {
+    const row = this.session(value);
+    return Boolean(row && row.stepup && row.stepup_used === 0 && row.stepup + 5 * minute >= this.clock());
   }
 
   useStepup(value) {

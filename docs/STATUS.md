@@ -36,3 +36,5 @@ An honest table. A row says **Shipped and tested** only when a named test in thi
 | Scoring or ranking people | Not planned | none | |
 
 Tests run on Node 22. See the [roadmap](ROADMAP.md) for order and the [decisions](DECISIONS.md) for why.
+
+Single sign-on step-up (approvals in sign-in-only mode): built and tested against the fake provider; not yet run against a real identity provider.

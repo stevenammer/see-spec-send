@@ -355,6 +355,34 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         res.writeHead(302, { location: auth.beginOidc(binder), 'cache-control': 'no-store' });
         return res.end();
       }
+      // Step-up through the identity provider: the same browser binding as sign-in, plus the current session.
+      if (req.method === 'GET' && url.pathname === '/api/oidc/stepup/start') {
+        if (!auth.oidc || !session) return json(res, 404, { error: 'not found' });
+        const next = url.searchParams.get('next');
+        if (next !== null && !/^\/items\/[A-Za-z0-9_-]{1,128}$/.test(next)) return json(res, 400, { error: 'request refused' });
+        const binder = randomBytes(32).toString('base64url');
+        let target;
+        try { target = auth.beginOidcStepup(sessionToken, binder, next, ip); }
+        catch { return json(res, 403, { error: 'request refused' }); }
+        res.setHeader('set-cookie', oidcBinderCookie(binder));
+        res.writeHead(302, { location: target, 'cache-control': 'no-store' });
+        return res.end();
+      }
+      if (req.method === 'GET' && url.pathname === '/api/oidc/callback' && auth.oidc?.peek(url.searchParams.get('state'))?.purpose === 'stepup') {
+        const clearBinder = oidcBinderCookie('') + '; Max-Age=0';
+        try {
+          if (!session) throw new Error('no session');
+          const done = await auth.completeOidcStepup(sessionToken, { state: url.searchParams.get('state'), code: url.searchParams.get('code'), binder: cookies(req)[oidcBinderName] });
+          emit({ event: 'step_up', rid: context.rid, method: 'oidc', outcome: 'ok', person: session.person });
+          res.setHeader('set-cookie', clearBinder);
+          res.writeHead(302, { location: done.next || '/', 'cache-control': 'no-store' });
+          return res.end();
+        } catch {
+          emit({ event: 'step_up', rid: context.rid, method: 'oidc', outcome: 'refused' });
+          res.setHeader('set-cookie', clearBinder);
+          return json(res, 400, { error: 'request refused' });
+        }
+      }
       if (req.method === 'GET' && url.pathname === '/api/oidc/callback') {
         if (!auth.oidc) return json(res, 404, { error: 'not found' });
         let login;
@@ -558,7 +586,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
           auth.reviewApproval(sessionToken, view[1], state.context.specHash, events.length);
         return page(
           res,
-          itemPage({ id: view[1], ...state, bundleFrameUrl,
+          itemPage({ id: view[1], ...state, bundleFrameUrl, ssoStepup: session.auth_method === 'oidc', ssoStepupFresh: auth.stepupFresh(sessionToken),
             packet: (state.context.sent?.packetHash || state.context.decided?.packetHash)
               ? store.artifact(view[1], state.context.sent?.packetHash || state.context.decided.packetHash) : null,
             decisionPackets: Object.fromEntries(events.filter(event => ['approved', 'returned', 'not_built', 'decided'].includes(event.type) && event.packet_hash)

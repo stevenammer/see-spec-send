@@ -64,7 +64,10 @@ document.addEventListener('submit', async event => {
       return;
     }
     if (form.dataset.approve) {
-      await post('/api/stepup', { password: input.password });
+      if (input.password === undefined) {
+        // Single sign-on: no fresh sign-in yet means go to the identity provider and come back to this page.
+        if (!form.querySelector('[data-sso-ready]')) { location.href = `/api/oidc/stepup/start?next=${encodeURIComponent(location.pathname)}`; return; }
+      } else await post('/api/stepup', { password: input.password });
       const approval = { type: 'approved', spec_hash: input.spec_hash,
         cap_usd: Number(input.cap_usd), quorum: Number(input.quorum) };
       if (input.max_iterations !== undefined) approval.max_iterations = Number(input.max_iterations);

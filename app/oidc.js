@@ -36,8 +36,11 @@ export class OidcLogin {
     this.pending = new Map();
   }
 
-  begin(binder) {
+  // purpose 'stepup' asks the provider to make the person sign in again right now, and the answer is only accepted for the
+  // same browser, the same session and the same person. `next` is a local path to return to; the caller must have validated it.
+  begin(binder, { purpose = 'login', sessionDigest = null, next = null } = {}) {
     if (typeof binder !== 'string' || !binder) throw new Error('OIDC browser binding required');
+    if (!['login', 'stepup'].includes(purpose)) throw new Error('OIDC purpose refused');
     this.prune();
     // This endpoint is unauthenticated. Bound ten-minute handshakes so a caller
     // cannot retain arbitrary process memory merely by starting logins.
@@ -48,12 +51,19 @@ export class OidcLogin {
     // The raw binder belongs only in the browser's pre-authentication cookie.
     // Keeping a digest here means a pending-login memory disclosure cannot mint
     // a matching browser cookie.
-    this.pending.set(state, { nonce, verifier, binderHash: sha256(binder), expires: this.clock() + 10 * 60_000 });
+    this.pending.set(state, { nonce, verifier, binderHash: sha256(binder), expires: this.clock() + 10 * 60_000, started: this.clock(), purpose, sessionDigest, next });
     const url = new URL(this.authorizationEndpoint);
     url.search = new URLSearchParams({ response_type: 'code', client_id: this.clientId,
       redirect_uri: this.redirectUri, scope: this.scopes.join(' '), state, nonce,
-      code_challenge: sha256(verifier), code_challenge_method: 'S256' }).toString();
+      code_challenge: sha256(verifier), code_challenge_method: 'S256',
+      ...(purpose === 'stepup' ? { prompt: 'login', max_age: '0' } : {}) }).toString();
     return url.toString();
+  }
+
+  // Which kind of sign-in a state belongs to, without consuming it, so the callback can route it.
+  peek(state) {
+    const pending = typeof state === 'string' ? this.pending.get(state) : null;
+    return pending ? { purpose: pending.purpose } : null;
   }
 
   async complete({ state, code, binder }) {
@@ -70,7 +80,13 @@ export class OidcLogin {
     if (!response?.id_token) throw new Error('OIDC response refused');
     const claims = await this.verifyIdToken(response.id_token, { nonce: pending.nonce });
     this.validate(claims, pending.nonce);
-    return { id: subjectId(this.issuer, claims.sub), issuer: this.issuer, subject: claims.sub };
+    if (pending.purpose === 'stepup') {
+      // The provider must say when the person actually signed in, and it must be after we asked. An old session at the
+      // provider is not proof that this person is at the keyboard now.
+      const now = Math.floor(this.clock() / 1000), asked = Math.floor(pending.started / 1000);
+      if (!Number.isInteger(claims.auth_time) || claims.auth_time < asked - this.clockSkewSeconds || claims.auth_time > now + this.clockSkewSeconds) throw new Error('OIDC response refused');
+    }
+    return { id: subjectId(this.issuer, claims.sub), issuer: this.issuer, subject: claims.sub, purpose: pending.purpose, sessionDigest: pending.sessionDigest, next: pending.next };
   }
 
   validate(claims, nonce) {
@@ -110,10 +126,10 @@ export class FakeOidcProvider {
   }
 
   issue({ code = random(), codeChallenge, nonce, subject = 'person', audience = this.clientId,
-    issuer = this.issuer, exp, iat, azp } = {}) {
+    issuer = this.issuer, exp, iat, azp, authTime } = {}) {
     const now = Math.floor(this.clock() / 1000);
     this.codes.set(code, { codeChallenge, token: base64url(JSON.stringify({ iss: issuer, aud: audience,
-      azp, nonce, sub: subject, iat: iat ?? now, exp: exp ?? now + 300 })) });
+      azp, nonce, sub: subject, iat: iat ?? now, exp: exp ?? now + 300, ...(authTime !== undefined ? { auth_time: authTime } : {}) })) });
     return code;
   }
 

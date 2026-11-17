@@ -1,5 +1,7 @@
 # See / Spec / Send
 
+[![CI](https://github.com/stevenammer/see-spec-send/actions/workflows/ci.yml/badge.svg)](https://github.com/stevenammer/see-spec-send/actions/workflows/ci.yml) [![CodeQL](https://github.com/stevenammer/see-spec-send/actions/workflows/codeql.yml/badge.svg)](https://github.com/stevenammer/see-spec-send/actions/workflows/codeql.yml) [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
+
 **Where this stands:** [Vision](docs/VISION.md) · [Roadmap](docs/ROADMAP.md) · [Decisions](docs/DECISIONS.md) · [Status](docs/STATUS.md)
 
 Product direction: **E.F.F.O.R.T. for Organizations** is the working umbrella name, with **See / Spec / Send** as its improvement workflow. Build the forum first as the complete product experience. Microsoft Teams / Microsoft 365 will be the first external integrations, bringing that same workflow into existing collaboration channels. The name is provisional; Teams integration is not shipped.
@@ -45,6 +47,17 @@ That last rule isn't a policy in a handbook. The code enforces it. There's no "d
 
 Credits and licenses for what this builds on: [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).
 
+## Security and trust
+
+Written down so you can check it instead of taking my word. Short version: no runtime dependencies; every control has a test, and the important ones are deliberately broken to prove the tests notice (`npm run check:mutants`, about 500 mutants); two independent software security reviews found real problems and all of them are fixed with regression tests; the browser journeys, an accessibility audit and a real-provider sign-in test run in CI on every push.
+
+- **Sign-in:** local accounts, or single sign-on through any standards-compliant OIDC provider, including re-sign-in for approvals. Tested in a real browser against a certified independent OIDC implementation. Not yet tested against Entra, Okta or Google.
+- **Who can see what:** department read scopes enforced on every route, search, export and model prompt; erasure removes text from every stored copy, including exports; legal hold and retention are explicit and off by default.
+- **AI containment:** models can draft and explain but never approve, spend or decide; spend is metered and capped by the gateway; hostile text planted in posts is tested against every model-facing path; builds run in a locked container with no network and are shown only on a separate origin.
+- **Operations:** hardened container image (read-only, unprivileged, no capabilities), audit export for a SIEM, SBOM and dependency audit scripts, backups with restore drills, a generated table of every route and its authentication.
+- **Read more:** [SECURITY.md](SECURITY.md) (how to report a problem, and an index), [docs/SECURITY_WATCH.md](docs/SECURITY_WATCH.md) (current threats checked against this code), [docs/VENDOR_QUESTIONNAIRE.md](docs/VENDOR_QUESTIONNAIRE.md), [docs/PILOT_GUIDE.md](docs/PILOT_GUIDE.md).
+- **Not done:** no outside penetration test, no SOC 2, no real-tenant identity test, no high-availability store, no real pilot yet. [docs/STATUS.md](docs/STATUS.md) keeps the full list.
+
 ## Where this actually is
 
 I'm building this in public, and it's early. This is a checkpoint, not an enterprise deployment. New stage-freezing and post-freeze knowledge services are still in development. The code is ahead of the docs: `docs/ADMIN.md` and a few others don't yet describe every new command. Everything below is what the tests show. The conversation journey has real-browser coverage with fixture providers. Real load and a real identity provider remain unverified. Here's the honest state:
@@ -64,7 +77,7 @@ I'm building this in public, and it's early. This is a checkpoint, not an enterp
 
 - **Built but not usable yet:**
   - **Quest model draft.** Off unless `serve` is started with `--enable-quest-model`. When on, each call goes through the gateway and ledger, is limited per person and per day, and stops on the kill latch. This is tested in process only. I have not run it against a live provider since these changes.
-  - **Identity-provider seam.** Test-only OIDC flow pieces and an injected verifier seam exist. No built-in verifier, provider configuration, or real identity-provider run exists, so identity-provider sign-in is not shipped.
+  - **Identity-provider sign-in.** Built: `serve --oidc-config` with discovery, PKCE, signature verification and approval step-up, tested against a certified independent provider in a real browser. Not yet run against Entra, Okta or Google tenants; see docs/ADMIN.md.
   - **Postgres seam.** `PostgresStore` and a SQLite-backed behavioral fake exist. There is no PostgreSQL driver, connection path, migration, or real PostgreSQL test. See / Spec / Send is SQLite only.
 
 I'm treating local tests as claims. `npm test` runs them, and `npm run check:mutants` deliberately breaks individual controls and checks that the tests notice. Those checks are not currently run by CI. If a test can't fail, I don't count it.

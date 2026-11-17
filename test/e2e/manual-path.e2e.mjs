@@ -144,6 +144,8 @@ async function main() {
     // SEE: Maya posts a problem she saw.
     const maya = people.maya;
     const itemUrl = await postProblem(maya, 'Every quote needs the same three numbers copied by hand.');
+    // The original post sits in a collapsed section now; the record is there once it is opened.
+    await maya.getByText('Original post, versions and record').click();
     await maya.getByRole('heading', { name: 'Original' }).waitFor();
     await shot(maya, 'item-checked');
 

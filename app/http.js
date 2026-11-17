@@ -21,7 +21,7 @@ import { requestSpecDraft } from '../effort/spec.js';
 import { evidencePackage, readAnalysisAnswer } from '../intelligence/evidence.js';
 import { challengeAnalysisReceipt, readAnalysisReceipt, runAnalysis } from '../intelligence/run.js';
 import { intelligencePage } from './pages-intelligence.js';
-import { adminPage } from './pages-admin.js';
+import { adminPage, adminRefusedPage } from './pages-admin.js';
 import { effortAllowance } from '../gateway/effort.js';
 import { Mentoring } from '../core/mentoring.js';
 import { mentoringHome, mentoringRequest, mentoringEvidence } from './pages-mentoring.js';
@@ -359,7 +359,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       // not their page, not a password change. Otherwise an old invitation would be a way around the identity provider.
       if (disablePasswordLogin && ['/api/invite/redeem', '/redeem', '/api/password', '/password'].includes(url.pathname)) return json(res, 404, { error: 'not found' });
       if (req.method === 'GET' && url.pathname === '/admin') {
-        if (!admin()) return json(res, 403, { error: 'request refused' });
+        if (!admin()) { res.writeHead(403, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': htmlHeaders }); return res.end(adminRefusedPage()); }
         const scopes = store.db.prepare("SELECT e.item AS id FROM events e JOIN bodies b ON b.hash=e.body_hash WHERE e.type='posted' AND json_array_length(json_extract(b.bytes,'$.audience')) > 0 GROUP BY e.item").all().map(row => store.readScope(row.id));
         const audit = store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='admin_audit'").get() ? store.db.prepare("SELECT at,command,outcome FROM admin_audit ORDER BY seq DESC LIMIT 30").all() : [];
         return page(res, adminPage({ people: auth.listPeople(), groups: store.groups(), scopes, audit, retention: store.retentionSettings(), proposals: store.retentionProposals(new Date(clock()).toISOString()), holds: store.holds() }));

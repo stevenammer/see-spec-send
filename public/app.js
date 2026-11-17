@@ -66,8 +66,8 @@ document.addEventListener('submit', async event => {
     }
     const id = location.pathname.match(/^\/items\/([^/]+)/)?.[1] ?? location.pathname.split('/').at(-1);
     if (form.dataset.password) {
-      await post('/api/stepup', { password: input.current });
-      await post('/api/password', { password: input.password });
+      try { await post('/api/stepup', { password: input.current }); } catch { throw new Error('The temporary password is not right. Type it exactly as it was given to you; capital letters matter.'); }
+      try { await post('/api/password', { password: input.password }); } catch { throw new Error('That new password was refused. Use at least 12 characters and avoid common or easily guessed passwords.'); }
       location.href = '/';
       return;
     }

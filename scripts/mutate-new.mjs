@@ -182,6 +182,20 @@ const mutants = [
   ["codex: web search is off", "worker/codex/entrypoint.sh", "-c 'web_search=\"disabled\"' ", "", T(['codex-adapter'])],
   ["codex: the only credential is the capability", "worker/codex/entrypoint.sh", "model_providers.sss.env_key=\"SSS_GATEWAY_TOKEN\"", "model_providers.sss.env_key=\"OPENAI_API_KEY\"", T(['codex-adapter'])],
   ["codex: user config is ignored", "worker/codex/entrypoint.sh", "--ignore-user-config ", "", T(['codex-adapter'])],
+  ["ui: the sign-in page says what this is", "app/pages.js", "See / Spec / Send is a way for a team to fix the problems everyone already knows about.", "Sign in below.", T(['ui-clarity'])],
+  ["ui: signed-out pages hide links that lead nowhere", "app/pages.js", "${signedOut ? '' : ' <a href=\"/search\">", "${false ? '' : ' <a href=\"/search\">", T(['ui-clarity'])],
+  ["ui: the author is told the next step at SEE", "app/pages.js", "let people talk it over in the thread below.", "", T(['ui-clarity'])],
+  ["ui: a leader is told how to decide", "app/pages.js", "<strong>This is waiting for a leader\\'s decision.</strong> You can approve it with a budget", "<strong>Waiting.</strong> You can approve it with a budget", T(['ui-clarity'])],
+  ["ui: the helps counter waits for a delivery", "app/pages.js", "${['TRYING', 'HELPS'].includes(item.state) || context.helpers.length > 0 ?", "${true ?", T(['ui-clarity'])],
+  ["ui: AI usage is collapsed", "app/pages.js", "<details><summary>AI usage and limits for this item</summary>${effortAllowance}</details>", "${effortAllowance}", T(['ui-clarity'])],
+  ["ui: no empty frozen-stage form", "app/pages.js", "(item.stagePosts || []).some(post => post.closed_seq !== null) ? `<form data-fork-frozen", "true ? `<form data-fork-frozen", T(['ui-clarity'])],
+  ["ui: the conversation comes before the forms", "app/pages.js", "${nextStepHtml}${commentBlock}${threadBlock}${stageHistory}", "${nextStepHtml}${stageHistory}", T(['ui-clarity'])],
+  ["ui: the decision form has an anchor", "app/pages.js", "action = `<section id=\"decision\"><h2>Decision packet</h2>", "action = `<section><h2>Decision packet</h2>", T(['ui-clarity'])],
+  ["ui: the feed says where each problem stands", "app/pages.js", "SPECCED: 'Spec written, not yet sent for a decision'", "SPECCED: ''", T(['ui-clarity'])],
+  ["ui: the new-post page says to check what you already have", "app/pages.js", "If you already checked whether something you have (a setting, a tool you pay for, a free one) solves it, say that too.", "", T(['ui-clarity'])],
+  ["ui: the approval form explains the cap", "app/pages.js", "The most the AI may spend building this. It stops when it reaches it.", "", T(['ui-clarity'])],
+  ["ui: the spec page says what happens next", "app/pages-spec.js", "<strong>Sent.</strong> A leader who didn't write it decides", "<strong>Sent.</strong>", T(['ui-clarity'])],
+  ["ui: a member gets an explanation at the admin page", "app/pages-admin.js", "This page is for leaders. If you think you should have access", "", T(['ui-clarity'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 // --shard K/N runs every Nth mutant starting at K, so CI can spread the set across parallel jobs.

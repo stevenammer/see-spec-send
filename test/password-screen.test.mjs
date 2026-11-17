@@ -35,5 +35,8 @@ test('a temporary password sends the person to a screen that changes it', async 
 test('the page script wires the password screen to step-up then change', async () => {
   const { readFileSync } = await import('node:fs');
   const script = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  assert.match(script, /form\.dataset\.password[\s\S]{0,200}\/api\/stepup', \{ password: input\.current \}[\s\S]{0,120}\/api\/password', \{ password: input\.password \}/);
+  assert.match(script, /form\.dataset\.password[\s\S]{0,200}\/api\/stepup', \{ password: input\.current \}[\s\S]{0,400}\/api\/password', \{ password: input\.password \}/);
+  // Each failure says what to fix, instead of one vague "That did not go through".
+  assert.match(script, /The temporary password is not right\. Type it exactly as it was given to you/);
+  assert.match(script, /That new password was refused\. Use at least 12 characters and avoid common or easily guessed passwords/);
 });

@@ -186,6 +186,8 @@ async function main() {
     await olive.waitForURL(/\/items\/(?!new$)[^/]+$/);
     const itemUrl = olive.url();
     const itemId = itemUrl.split('/').at(-1);
+    // The original post sits in a collapsed section now; the record is there once it is opened.
+    await olive.getByText('Original post, versions and record').click();
     await olive.getByRole('heading', { name: 'Original' }).waitFor();
     step('OP posted a SEE');
 
@@ -241,7 +243,7 @@ async function main() {
     const include = olive.locator('li:has-text("Does the caller repeat") form[data-include]').first();
     await include.locator('[name=text]').fill('Callers lose context when a call is transferred. Does the caller repeat their account number?');
     await include.getByRole('button', { name: 'Include' }).click();
-    await olive.getByText('SEE v2:').waitFor();
+    await olive.getByText('SEE v2:').waitFor({ state: 'attached' });  // the version history is in a collapsed section
     step('OP included the comment; member refused');
 
     // 4b. The credit and the diff show in the SEE history; Paraphrase makes another credited revision.
@@ -252,7 +254,7 @@ async function main() {
     const paraphrase = olive.locator('li:has-text("@effort what is the risk")').filter({ has: olive.locator('form[data-include]') }).first().locator('form[data-include]');
     await paraphrase.locator('[name=text]').fill('Callers lose context on transfer, and nobody says what the risk is.');
     await paraphrase.getByRole('button', { name: 'Paraphrase' }).click();
-    await olive.getByText('SEE v3:').waitFor();
+    await olive.getByText('SEE v3:').waitFor({ state: 'attached' });
     assert.match(await olive.locator('li:has-text("SEE v3:")').first().textContent(), /credit: maya, paraphrased/);
     assert.equal(await olive.locator('li:has(> p:has-text("Effort, AI")) form[data-include]').count(), 0, "Effort's own comments cannot be included as credit");
     step('SEE history shows credit: paraphrased and What changed');
@@ -444,17 +446,17 @@ async function main() {
       assert.ok(status < 300, `mention ${n} must land, got ${status}`);
     }
     // Effort's jobs are listed on the page. Wait for every one of them to finish, then count.
-    const jobLines = () => olive.locator('main > p:has-text("Effort:")').allInnerTexts();
+    const jobLines = () => olive.locator('main > p:has-text("Effort (the AI),")').allInnerTexts();
     for (let tries = 0; ; tries += 1) {
       const lines = await jobLines();
-      if (lines.length >= 11 && lines.every(line => /is (answered|unavailable, retries exhausted|done|failed|blocked)/.test(line))) break;
+      if (lines.length >= 11 && lines.every(line => /: (replied|unavailable, retries exhausted|blocked)/.test(line))) break;
       assert.ok(tries < 120, `Effort jobs never finished: ${lines.join(' / ')}`);
       await new Promise(resolve => setTimeout(resolve, 700));
       await olive.reload();
     }
     await new Promise(resolve => setTimeout(resolve, 2000));
     await olive.reload();
-    const tagJobs = (await jobLines()).filter(line => line.startsWith('Effort: tag'));
+    const tagJobs = (await jobLines()).filter(line => line.startsWith('Effort (the AI), reply to a mention'));
     assert.equal(tagJobs.length, 10, `ten mentions are answered and the 11th is not queued: ${tagJobs.join(' / ')}`);
     assert.equal((await jobLines()).length, 11, 'one first-comment job plus ten tag jobs, nothing for the 11th');
     assert.ok((await agentComments(olive).count()) >= 10, `Effort answered the mentions under the cap (saw ${await agentComments(olive).count()}): ${(await jobLines()).join(' / ')}`);
@@ -480,6 +482,8 @@ async function main() {
     await maya.locator('[name=reviewed]').check();
     await maya.getByRole('button', { name: 'Post my checked problem' }).click();
     await maya.waitForURL(/\/items\/[^/]+$/);
+    // The original post sits in a collapsed section now; the record is there once it is opened.
+    await maya.getByText('Original post, versions and record').click();
     await maya.getByRole('heading', { name: 'Original' }).waitFor();
     await maya.getByRole('heading', { name: 'Vision Quest memo' }).waitFor();
     await waitForAgentComments(maya, 1);

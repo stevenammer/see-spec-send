@@ -138,3 +138,12 @@ iframe {
 }
 
 #quest { overflow-wrap: anywhere; }
+
+/* Long words and hashes must wrap instead of widening the page on a phone. */
+main p, main li, main h1, main h2, main h3, main small, main span, main summary, main pre { overflow-wrap: anywhere; }
+.intro { max-width: 40em; color: #3d4a57; }
+.next { border-left: 4px solid #0b5a9e; background: #eef5fb; padding: .6rem .9rem; margin: 1rem 0; }
+.next p { margin: .25rem 0; }
+main details { margin: .75rem 0; }
+main details > summary { cursor: pointer; font-weight: 600; padding: .35rem 0; }
+label small { display: block; font-weight: normal; color: #4a5663; margin: .1rem 0 .3rem; }

@@ -133,13 +133,13 @@ test('R a post reserves an honest Effort slot before a person comments, and keep
   const item = { id: 'i', ...store.read('i'), effort: store.db.prepare('SELECT kind,state,last_error FROM effort_jobs WHERE item=?').all('i') };
   const first = itemPage(item, store.events('i'), 'member', false);
   const refresh = itemPage(item, store.events('i'), 'member', false);
-  assert.match(first, /Effort: see_first is queued, waiting for a worker/);
+  assert.match(first, /Effort \(the AI\), first reply to the SEE: waiting to start/);
   assert.match(first, /A person can comment now/);
   assert.equal(first, refresh);
   item.effort[0].state = 'failed';
-  assert.match(itemPage(item, store.events('i'), 'member', false), /Effort: see_first is unavailable, retries exhausted/);
+  assert.match(itemPage(item, store.events('i'), 'member', false), /Effort \(the AI\), first reply to the SEE: unavailable, retries exhausted/);
   item.effort[0].state = 'done';
-  assert.match(itemPage(item, store.events('i'), 'member', false), /Effort: see_first is answered/);
+  assert.match(itemPage(item, store.events('i'), 'member', false), /Effort \(the AI\), first reply to the SEE: replied/);
 });
 
 test('R quoted credit is refused unless the new SEE contains the exact source words', () => {
@@ -175,14 +175,14 @@ test('R the fork route stores the reason and shows it with the parent link', asy
   store.append(itemId, { type: 'commented', actor: 'maya', comment: 'We need a different local workflow.', kind: 'alternative', anchor_kind: 'see', anchor_hash: seeHash,
     post_id: active.id, post_version: active.version, at: new Date().toISOString() }, { idem: 'maya-alt' });
   store.append(itemId, { type: 'specced', actor: 'olive', post_id: store.read(itemId).context.activePost.id, post_version: store.read(itemId).context.activePost.version, see_hash: seeHash, must: ['Keep context'], how_we_know: ['The next agent can see it'], out_of_scope: [], at: new Date().toISOString() }, { idem: 'status-spec' });
-  for (const [state, label] of [['queued', 'queued, waiting for a worker'], ['running', 'thinking'], ['blocked', 'blocked, not retrying'], ['failed', 'unavailable, retries exhausted']]) {
+  for (const [state, label] of [['queued', 'waiting to start'], ['running', 'thinking'], ['blocked', 'blocked, not retrying'], ['failed', 'unavailable, retries exhausted']]) {
     store.db.prepare('UPDATE effort_jobs SET state=? WHERE item=?').run(state, itemId);
     const seePage = await call(handler, 'GET', `/items/${itemId}`, undefined, olive);
     const spec = await call(handler, 'GET', `/items/${itemId}/spec`, undefined, olive);
     assert.equal(seePage.status, 200); assert.equal(spec.status, 200);
-    assert.ok(seePage.text.includes(`Effort: see_first is ${label}`));
-    assert.ok(spec.text.includes(`Effort: spec_draft is ${label}`));
-    assert.ok(!spec.text.includes('Effort: see_first is'));
+    assert.ok(seePage.text.includes(`Effort (the AI), first reply to the SEE: ${label}`));
+    assert.ok(spec.text.includes(`Effort (the AI), SPEC draft: ${label}`));
+    assert.ok(!spec.text.includes('Effort (the AI), first reply to the SEE'));
   }
   const forked = await call(handler, 'POST', `/api/items/${made.body.id}/fork`, { reason: 'Our team needs a different local workflow.' }, maya);
   assert.equal(forked.status, 201);

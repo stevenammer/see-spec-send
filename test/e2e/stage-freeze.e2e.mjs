@@ -47,7 +47,7 @@ try {
   assert.equal(await staleForm.locator('[name=comment]').inputValue(),'Keep this unsent draft.');
   await page.getByRole('link',{name:'Open the spec'}).click();
   assert.equal(await page.locator('form[data-event=commented]').count() > 0,true);
-  await page.goto(itemUrl); await page.getByRole('link',{name:'see',exact:true}).click();
+  await page.goto(itemUrl); await page.getByRole('link',{name:'SEE',exact:true}).click();
   await page.getByRole('heading',{name:'Frozen see post'}).waitFor();
   const store = new Store(db);
   const itemId = new URL(itemUrl).pathname.split('/').at(-1);
@@ -63,7 +63,7 @@ try {
   assert.deepEqual(updated.credits, [{ comment: source, mode: 'quoted' }]);
   assert.deepEqual(store.db.prepare("SELECT * FROM stage_posts WHERE item=? AND kind='see'").get(itemId), before);
   store.close();
-  await page.goto(itemUrl); await page.getByRole('link',{name:'see',exact:true}).click();
+  await page.goto(itemUrl); await page.getByRole('link',{name:'SEE',exact:true}).click();
   await page.getByRole('heading',{name:'Frozen see post'}).waitFor();
   assert.equal(await page.locator('form[data-event=commented]').count(),0);
   await page.locator('form[data-fork-frozen] [name=reason]').fill('A separate experiment.');

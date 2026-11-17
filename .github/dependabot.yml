@@ -3,9 +3,17 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+  # Node major versions are upgraded on purpose, after a full test run on the new version, not by bot.
+  # (Node 26 showed a SQLite behavior difference in November 2026; Node 22 is supported until April 2027.)
   - package-ecosystem: docker
     directory: /
     schedule: { interval: weekly }
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: docker
     directory: /worker/opencode
     schedule: { interval: weekly }
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]

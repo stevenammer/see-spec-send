@@ -217,6 +217,18 @@ const mutants = [
   ["break: the admin buttons send which action", "public/app.js", "input.action = event.submitter?.value;", "input.action = undefined;", T(['break-it'])],
   ["break: the password pop-up can close", "public/app.js", "if (form.closest?.('dialog')?.tagName === 'DIALOG') return;", "", T(['break-it'])],
   ["break: a wrong admin password says so", "public/app.js", "That password didn't work, so nothing was changed.", "That did not go through.", T(['break-it'])],
+  ["break: a blank quest answer says what to do", "public/quest-ui.js", "Write an answer first. A blank answer can't be saved, and neither can one over the limit.", "Invalid quest turn.", T(['break-it'])],
+  ["break: a bad memo says what to do", "public/quest-ui.js", "That doesn't look like a memo made from this Quest.", "portable memo is invalid.", T(['break-it'])],
+  ["break: a mistake does not raise the not-saved alarm", "public/quest-ui.js", "if (pattern.test(err.message)) { error.textContent = plain ?? err.message; return; }", "if (pattern.test(err.message)) { error.textContent = plain ?? err.message; }", T(['break-it'])],
+  ["ui: a declined item says it was declined", "app/pages.js", "decline: 'A leader decided not to build this. The reason is below. If you see it differently, fork it to try another direction.',", "decline: '',", T(['ui-clarity'])],
+  ["ui: a sent-back item says to revise", "app/pages.js", "Read their reason below, update the spec, then press SEND IT! again.", "", T(['ui-clarity'])],
+  ["ui: an old decision does not speak for a new spec", "app/pages.js", "context.decided.specHash === context.specHash ? context.decided.disposition : null", "context.decided ? context.decided.disposition : null", T(['ui-clarity'])],
+  ["ui: empty decision details are hidden", "app/pages.js", "context.decided.metadata && Object.keys(context.decided.metadata).length ?", "context.decided.metadata ?", T(['ui-clarity'])],
+  ["ui: Effort skip is in plain words", "app/pages-effort.js", "this stage was closed before Effort could answer, so it was skipped", "post superseded", T(['ui-clarity'])],
+  ["break: mentoring ignores a second submit", "public/mentoring.js", "if(form.dataset.busy)return;", "", T(['break-it'])],
+  ["break: mentoring buttons come back after a failure", "public/mentoring.js", "}catch{\n  release();", "}catch{\n  ", T(['break-it'])],
+  ["break: the mentoring page has a sign-out button", "app/pages-mentoring.js", "<button type=\"button\" class=\"linklike\" data-signout>Sign out</button>", "", T(['break-it'])],
+  ["break: the Investigate page has a sign-out button", "app/pages-intelligence.js", "<button type=\"button\" class=\"linklike\" data-signout>Sign out</button>", "", T(['break-it'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 // --shard K/N runs every Nth mutant starting at K, so CI can spread the set across parallel jobs.

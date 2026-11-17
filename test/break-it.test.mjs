@@ -167,3 +167,22 @@ test('the admin buttons send the action that was pressed, and the password pop-u
   await world.run();
   assert.match(world.errors.map(node => node.textContent).join(' '), /That password didn't work, so nothing was changed/);
 });
+
+test('Vision Quest mistakes get plain sentences, and only a real saving problem says "not saved"', () => {
+  const quest = readFileSync(new URL('../public/quest-ui.js', import.meta.url), 'utf8');
+  assert.match(quest, /Write an answer first\. A blank answer can't be saved, and neither can one over the limit\./);
+  assert.match(quest, /That doesn't look like a memo made from this Quest\. Paste the AI's whole reply/);
+  assert.match(quest, /if \(pattern\.test\(err\.message\)\) \{ error\.textContent = plain \?\? err\.message; return; \}\n  \}\n  error\.textContent = `\$\{err\.message\} Keep this tab open and export your draft if possible\.`;\n  status\.textContent = 'Not saved\./);
+  assert.match(quest, /Finish and confirm the guide first\|Answer the current question first\|Confirm the playback first/);
+});
+
+test('Mentoring and Investigate pages can sign out, and mentoring forms are not sent twice', () => {
+  const mentoring = readFileSync(new URL('../public/mentoring.js', import.meta.url), 'utf8');
+  const investigate = readFileSync(new URL('../public/intelligence.js', import.meta.url), 'utf8');
+  const pagesM = readFileSync(new URL('../app/pages-mentoring.js', import.meta.url), 'utf8');
+  const pagesI = readFileSync(new URL('../app/pages-intelligence.js', import.meta.url), 'utf8');
+  for (const source of [mentoring, investigate]) assert.match(source, /\[data-signout\][\s\S]{0,400}\/api\/logout[\s\S]{0,300}location\.href = '\/signin'/);
+  for (const source of [pagesM, pagesI]) assert.match(source, /<button type="button" class="linklike" data-signout>Sign out<\/button>/);
+  assert.match(mentoring, /if\(form\.dataset\.busy\)return;/); assert.match(mentoring, /\}catch\{\n  release\(\);/);
+  assert.match(mentoring, /You may have been signed out, or the request may have changed/);
+});

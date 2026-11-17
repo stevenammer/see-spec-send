@@ -47,4 +47,17 @@ The last two rows were not UI polish. Sign-out was missing, and the administrati
 
 Pinned by `test/break-it.test.mjs`, `test/e2e/break-it.e2e.mjs` (also in CI) and 14 mutants.
 
+### Second round: Vision Quest, the leader's decisions, Mentoring
+
+| What I did | What happened | Fixed |
+| --- | --- | --- |
+| Answered a Vision Quest question with spaces | "Invalid quest turn. Keep this tab open and export your draft if possible." | "Write an answer first." No false alarm about losing a draft |
+| Pasted a bad memo, or exported the portable prompt too early | The same "export your draft" warning, and a status line saying "Not saved" when nothing was being saved | A plain sentence for each. Only a real saving problem says "not saved". |
+| Declined a spec as a leader, then opened it as the author | The page said "Your spec is written. Next: press SEND IT!" directly above "Decision record: Decline" | Says what the answer means: sent back (revise and resend), on hold, redirected, solved without building, declined (fork if you disagree), or can't be done |
+| Looked at that decision record | An empty block of `{}` under "Recorded details" | Hidden when there is nothing in it |
+| Read Effort's status after the stage closed | "blocked, not retrying (post superseded, not answered)" | "this stage was closed before Effort could answer, so it was skipped" |
+| Opened Mentoring or Investigate, signed in | No way to sign out from either page, and no guard against pressing a mentoring button twice | Both have a Sign out button. Mentoring ignores a second press. |
+
+I also tried the approval form with a negative cap, zero people, decimals, 99 build turns and a zero-minute window. The browser's own checks stop all of those. One thing is open, though: a leader can approve a cap of $999,999,999 with nothing asking "are you sure?". It is only an upper limit, and the gateway's daily caps still apply, so it can't spend that. But a typo with extra zeros goes through silently, and that probably deserves a confirmation or a sane ceiling. That one is your call.
+
 **Not checked:** a screen reader, a very slow connection, a browser other than Chrome, and anything that needs a real identity provider.

@@ -300,7 +300,7 @@ export function itemPage(item, events, person, leader) {
   const instructions = events.filter(event => event.type === 'steered' && event.approval === context.approval)
     .map(event => `<li>${escape(event.instruction)}${event.source ? ` (from ${escape(event.source)})` : ''}</li>`).join('');
   const currentDecisionPacket = context.decided?.packetHash ? item.decisionPackets?.[context.decided.packetHash] : null;
-  const decision = context.decided ? `<section><h2>Decision record</h2><p><strong>${escape(decisionLabels[context.decided.disposition] || context.decided.disposition)}</strong>, by ${escape(context.decided.actor)} on ${escape(context.decided.at)}.</p><p>${escape(context.decided.reason)}</p>${context.decided.reasonCode ? `<p>Reason code: ${escape(context.decided.reasonCode)}</p>` : ''}${context.decided.metadata ? `<h3>Recorded details</h3><pre>${escape(JSON.stringify(context.decided.metadata, null, 2))}</pre>` : ''}${context.decided.evidenceSummary ? `<p>Leader-reported test-ending decision. This isn't an independent HELPS result.</p><p>Observed evidence: ${escape(context.decided.evidenceSummary)}</p><p>Evidence limits: ${escape(context.decided.evidenceLimits)}</p>` : ''}${context.decided.restrictedEvidence ? `<p>${escape(context.decided.restrictedEvidence)}</p>` : ''}${context.decided.pivotNote ? `<p>What changed: ${escape(context.decided.pivotNote)}</p>` : ''}${context.decided.packetHash ? `<p>Reviewed packet: ${escape(context.decided.packetHash)}. Reviewed spec: ${escape(context.decided.specHash)}.</p>` : ''}${context.rules === 3 && context.decided.packetHash ? (currentDecisionPacket ? `<details><summary>Reviewed evidence snapshot</summary><pre>${escape(currentDecisionPacket)}</pre></details>` : '<p>Reviewed evidence snapshot is unavailable.</p>') : ''}</section>` : '';
+  const decision = context.decided ? `<section><h2>Decision record</h2><p><strong>${escape(decisionLabels[context.decided.disposition] || context.decided.disposition)}</strong>, by ${escape(context.decided.actor)} on ${escape(context.decided.at)}.</p><p>${escape(context.decided.reason)}</p>${context.decided.reasonCode ? `<p>Reason code: ${escape(context.decided.reasonCode)}</p>` : ''}${context.decided.metadata && Object.keys(context.decided.metadata).length ? `<h3>Recorded details</h3><pre>${escape(JSON.stringify(context.decided.metadata, null, 2))}</pre>` : ''}${context.decided.evidenceSummary ? `<p>Leader-reported test-ending decision. This isn't an independent HELPS result.</p><p>Observed evidence: ${escape(context.decided.evidenceSummary)}</p><p>Evidence limits: ${escape(context.decided.evidenceLimits)}</p>` : ''}${context.decided.restrictedEvidence ? `<p>${escape(context.decided.restrictedEvidence)}</p>` : ''}${context.decided.pivotNote ? `<p>What changed: ${escape(context.decided.pivotNote)}</p>` : ''}${context.decided.packetHash ? `<p>Reviewed packet: ${escape(context.decided.packetHash)}. Reviewed spec: ${escape(context.decided.specHash)}.</p>` : ''}${context.rules === 3 && context.decided.packetHash ? (currentDecisionPacket ? `<details><summary>Reviewed evidence snapshot</summary><pre>${escape(currentDecisionPacket)}</pre></details>` : '<p>Reviewed evidence snapshot is unavailable.</p>') : ''}</section>` : '';
   const leash = context.leash ? `<section><h2>Approval leash</h2><p>Up to ${escape(context.leash.maxIterations)} additional build turns, ${escape(context.leash.windowMinutes)} minutes${context.leash.expiresAt ? `, until ${escape(context.leash.expiresAt)}` : ''}. Cap: $${escape((context.capMicros / 1_000_000).toFixed(2))}. ${escape(context.quorum)} independent people must say it helps.</p></section>` : '';
   const decisionHistory = events.filter(event => ['approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew'].includes(event.type)
     && !(context.rules === 3 && event.body_hash === context.decided?.bodyHash)).map(event => {
@@ -324,6 +324,21 @@ export function itemPage(item, events, person, leader) {
     if (state === 'SEEN' || state === 'CHECKED') return isSteward
       ? '<p><strong>Next:</strong> let people talk it over in the thread below. When the problem is clear, <a href="#write-spec">write the spec</a>: what a fix has to do, and how you\'ll know it worked.</p>'
       : '<p><strong>Next:</strong> add what you know in the thread below. To ask Effort (the AI) a question, write @effort in your comment.</p>';
+    // A leader has already answered this spec. Say what that answer means, not "press SEND IT!".
+    const answered = state === 'SPECCED' && context.decided && context.decided.specHash === context.specHash ? context.decided.disposition : null;
+    if (answered) {
+      const outcome = {
+        return_for_revision: isSteward
+          ? 'A leader sent this back for changes. Read their reason below, update the spec, then press SEND IT! again.'
+          : 'A leader sent this back for changes. The steward will update the spec and send it again.',
+        defer: 'A leader put this on hold. Their reason, and who looks at it next, are below.',
+        redirect: 'A leader sent this to another team or person. The details are below.',
+        resolve_without_build: 'A leader decided this is solved without building anything new. The reason is below.',
+        decline: 'A leader decided not to build this. The reason is below. If you see it differently, fork it to try another direction.',
+        prohibited: 'This can\'t be done. The reason is below.',
+      }[answered] || 'A leader recorded a decision. The reason is below.';
+      return `<p><strong>Decided.</strong> ${outcome}</p>`;
+    }
     if (state === 'SPECCED') return isSteward
       ? `<p><strong>Your spec is written. Next:</strong> <a href="${specHref}">open it</a> and press SEND IT! so a leader can decide whether to try it.</p>`
       : `<p><strong>A spec has been written.</strong> <a href="${specHref}">Read it</a> and say what you think in the thread. The steward will send it to a leader.</p>`;

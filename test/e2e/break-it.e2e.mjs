@@ -99,6 +99,21 @@ async function main() {
     await maya.locator('[name=password]').fill('maya-long-password-9x'); await maya.getByRole('button', { name: 'Sign in' }).click();
     await maya.getByRole('link', { name: 'Post a problem' }).waitFor();
 
+    // Vision Quest: a blank answer, a bad memo and an early export each say what to do, with no false "not saved" alarm.
+    await maya.goto(`${origin}/quest`);
+    await maya.locator('[name=answer]').first().fill('   '); await maya.getByRole('button', { name: 'Save answer and continue' }).click();
+    await maya.locator('#quest-error').filter({ hasText: 'Write an answer first' }).waitFor();
+    assert.doesNotMatch(await maya.locator('#quest-error').innerText(), /export your draft/);
+    assert.doesNotMatch(await maya.locator('#quest-status').innerText(), /Not saved/);
+    await maya.locator('#quest-portable-memo').fill('not json'); await maya.getByRole('button', { name: 'Check pasted memo' }).click();
+    await maya.locator('#quest-error').filter({ hasText: "doesn't look like a memo" }).waitFor();
+    await maya.getByRole('button', { name: 'Export portable prompt' }).click();
+    await maya.locator('#quest-error').filter({ hasText: 'Finish and confirm the guide first.' }).waitFor();
+    assert.doesNotMatch(await maya.locator('#quest-error').innerText(), /export your draft/);
+    await maya.locator('[name=answer]').first().fill('We copy every refund by hand.'); await maya.getByRole('button', { name: 'Save answer and continue' }).click();
+    await maya.getByText('Question 2 of').waitFor();
+    assert.equal(await maya.locator('#quest-error').innerText(), '', 'the message clears once it works');
+
     // Administration: a leader's Promote and Disable buttons work, with a masked password box and no native pop-up.
     await leader.goto(`${origin}/signin`); await leader.locator('[name=id]').fill('leader'); await leader.locator('[name=password]').fill(temporary);
     await leader.getByRole('button', { name: 'Sign in' }).click();
@@ -121,6 +136,11 @@ async function main() {
     await row.getByRole('button', { name: 'Promote' }).click();
     await leader.locator('dialog[open]').waitFor(); await leader.locator('dialog[open] input').fill('leader-chosen-password-9x'); await leader.locator('dialog[open]').getByRole('button', { name: 'Confirm' }).click();
     await row.getByRole('button', { name: 'Demote' }).waitFor();
+    // The Mentoring and Investigate pages have their own header and script: they can sign out too.
+    await leader.goto(origin + '/mentoring'); await leader.getByRole('button', { name: 'Sign out' }).click(); await leader.waitForURL(/\/signin/);
+    await leader.goto(origin + '/signin'); await leader.locator('[name=id]').fill('leader'); await pause(2200); await leader.locator('[name=password]').fill('leader-chosen-password-9x'); await leader.getByRole('button', { name: 'Sign in' }).click();
+    await leader.getByRole('link', { name: 'Post a problem' }).waitFor();
+    await leader.goto(origin + '/intelligence'); await leader.getByRole('button', { name: 'Sign out' }).click(); await leader.waitForURL(/\/signin/);
     assert.deepEqual(native, [], 'no native browser pop-up was used');
     process.stdout.write('PASS break-it browser journey\n');
   } finally { if (browser) await browser.close(); server.kill('SIGTERM'); }

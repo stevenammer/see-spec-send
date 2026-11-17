@@ -1,4 +1,14 @@
 let currentPackage = null;
+// Sign out ends the session on the server, then returns to the sign-in page.
+document.addEventListener('click', async event => {
+  if (!event.target.closest?.('[data-signout]')) return;
+  try {
+    const me = await (await fetch('/api/me')).json();
+    await fetch('/api/logout', { method: 'POST', headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrf }, body: '{}' });
+  } catch { /* already signed out: still go to the sign-in page */ }
+  location.href = '/signin';
+});
+
 // A pasted page address or a bare code both work.
 const itemCode = line => { const m = /\/items\/([^/?#\s]+)/.exec(line); return m ? decodeURIComponent(m[1]) : line; };
 const lines = value => String(value || '').split('\n').map(line => line.trim()).filter(Boolean);

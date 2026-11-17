@@ -4,6 +4,7 @@ import { Store } from '../core/store.js';
 import { feedPage, itemPage, newItemPage, passwordPage, redeemPage, signInPage } from '../app/pages.js';
 import { specPage } from '../app/pages-spec.js';
 import { adminRefusedPage } from '../app/pages-admin.js';
+import { renderEffortStatus } from '../app/pages-effort.js';
 import { intelligencePage } from '../app/pages-intelligence.js';
 import { readFileSync } from 'node:fs';
 
@@ -122,4 +123,33 @@ test('the Investigate page explains itself in plain words, and accepts a pasted 
   assert.equal(itemCode('https://x.example/items/abc-DEF_1?x=1'), 'abc-DEF_1');
   assert.equal(itemCode('abc-DEF_1'), 'abc-DEF_1');
   assert.equal(itemCode('/items/a%2Fb'), 'a/b');
+});
+
+test('after a leader answers, the page says what that answer means instead of "press SEND IT!"', () => {
+  const sent = world('sent'); const { item, events, store } = sent;
+  const packetHash = item.context.sent.packetHash, specHash = item.context.specHash;
+  const decide = (disposition, extra = {}) => ({ ...item, state: 'SPECCED', context: { ...item.context, phase: 'SPECCED', sent: null, decided: { disposition, actor: 'lena', at: '2026-11-17T00:00:05.000Z', reason: 'A leader wrote a real reason.', reasonCode: 'x', metadata: {}, packetHash, specHash, ...extra } } });
+  const expect = {
+    return_for_revision: [/Decided\. A leader sent this back for changes\. Read their reason below, update the spec, then press SEND IT! again/, /The steward will update the spec and send it again/],
+    defer: [/put this on hold/], redirect: [/sent this to another team or person/], resolve_without_build: [/solved without building anything new/],
+    decline: [/decided not to build this.*fork it to try another direction/], prohibited: [/This can't be done/],
+  };
+  for (const [disposition, [asSteward, asOther]] of Object.entries(expect)) {
+    const page = text(itemPage(decide(disposition), events, 'maya', false));
+    assert.match(page, asSteward, disposition); assert.doesNotMatch(page, /Your spec is written\. Next: open it and press SEND IT!/, disposition);
+    if (asOther) assert.match(text(itemPage(decide(disposition), events, 'ben', false)), asOther);
+  }
+  assert.doesNotMatch(itemPage(decide('decline'), events, 'maya', false), /Recorded details/, 'an empty details block is not shown');
+  assert.match(itemPage(decide('decline', { metadata: { owner: 'x' } }), events, 'maya', false), /Recorded details/);
+  // A decision about an older spec does not speak for a newer one.
+  const older = decide('decline', { specHash: 'f'.repeat(64) });
+  assert.match(text(itemPage(older, events, 'maya', false)), /Your spec is written\. Next: open it and press SEND IT!/);
+  assert.ok(store);
+});
+
+test('Effort says in plain words when it skipped a stage that closed first', () => {
+  const html = text(renderEffortStatus([{ kind: 'see_first', state: 'blocked', last_error: 'post superseded, not answered' }, { kind: 'tag', state: 'failed', last_error: 'some other reason' }]));
+  assert.match(html, /blocked, not retrying \(this stage was closed before Effort could answer, so it was skipped\)/);
+  assert.match(html, /unavailable, retries exhausted \(some other reason\)/);
+  assert.doesNotMatch(html, /post superseded/);
 });

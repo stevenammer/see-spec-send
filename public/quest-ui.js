@@ -26,7 +26,16 @@ const node = (tag, text) => {
   if (text !== undefined) element.textContent = text;
   return element;
 };
+// Mistakes a person can fix get a plain sentence and no alarm. Only a real saving problem says "not saved".
+const PLAIN = [
+  [/^Invalid quest turn\./, "Write an answer first. A blank answer can't be saved, and neither can one over the limit."],
+  [/^portable memo is invalid/, "That doesn't look like a memo made from this Quest. Paste the AI's whole reply, starting with the opening curly brace. Nothing was changed."],
+  [/^(Finish and confirm the guide first|Answer the current question first|Confirm the playback first)\./, null],
+];
 function fail(err) {
+  for (const [pattern, plain] of PLAIN) {
+    if (pattern.test(err.message)) { error.textContent = plain ?? err.message; return; }
+  }
   error.textContent = `${err.message} Keep this tab open and export your draft if possible.`;
   status.textContent = 'Not saved. Your current input is still in this tab.';
 }

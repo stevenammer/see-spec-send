@@ -33,3 +33,18 @@ export function verifyAudit(db) {
   }
   return { ok: true, rows: rows.length };
 }
+
+// SIEM exports expose sealed administrative facts only. Detail is selected CLI
+// identifiers, never request bodies, credentials, or tokens.
+export function auditRows(db, since = null) {
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='admin_audit'").get()) return [];
+  const rows = db.prepare('SELECT seq,at,command,outcome,detail,seal FROM admin_audit WHERE (? IS NULL OR at >= ?) ORDER BY seq').all(since, since);
+  return rows.map(row => ({ timestamp: row.at, who: 'cli', what: row.command, outcome: row.outcome, detail: JSON.parse(row.detail), sequence: row.seq, seal: row.seal }));
+}
+
+export function formatAudit(rows, format = 'jsonl') {
+  if (format === 'jsonl') return rows.map(row => JSON.stringify(row)).join(rows.length ? '\n' : '') + (rows.length ? '\n' : '');
+  if (format !== 'cef') throw new Error('audit format must be jsonl or cef');
+  const esc = value => String(value ?? '').replace(/([\\=|])/g, '\\$1').replace(/\r?\n/g, ' ');
+  return rows.map(row => `CEF:0|See Spec Send|audit|1|${esc(row.what)}|${esc(row.what)}|3 rt=${esc(row.timestamp)} suser=${esc(row.who)} outcome=${esc(row.outcome)} cs1Label=sequence cs1=${row.sequence}`).join(rows.length ? '\n' : '') + (rows.length ? '\n' : '');
+}

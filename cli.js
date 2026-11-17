@@ -30,7 +30,7 @@ import { questModelService } from './provider/quest-service.js';
 import { QUEST_SYSTEM } from './provider/vision-quest.js';
 import { validateCompletion } from './provider/index.js';
 import { migrationStatus, SCHEMA_VERSION, userVersion } from './core/migrations.js';
-import { appendAudit, verifyAudit } from './core/audit.js';
+import { appendAudit, verifyAudit, auditRows, formatAudit } from './core/audit.js';
 import { kindOf } from './core/errors.js';
 import { runReanalysis } from './reanalysis/run.js';
 import { startReanalysisSchedule } from './reanalysis/schedule.js';
@@ -178,7 +178,7 @@ export function serveSettings(args, env = {}) {
   if (bundlePort !== null && (appUrl.hostname.toLowerCase() === bundleHostSuffix.toLowerCase() || appUrl.hostname.toLowerCase().endsWith(`.${bundleHostSuffix.toLowerCase()}`)) && Number(appUrl.port || (appUrl.protocol === 'https:' ? 443 : 80)) === bundlePort) fail('refused: bundle origin could equal the app origin');
   return {
     port, host, origin, secure: !insecure, trustedProxy, bundlePort, bundleHostSuffix,
-    tls: tls ? { cert: readFileSync(tlsCert), key: readFileSync(tlsKey) } : null,
+    tls: tls ? { cert: readFileSync(tlsCert), key: readFileSync(tlsKey) } : null, auditLog: value('--audit-log') || null,
   };
 }
 
@@ -221,6 +221,14 @@ async function run(argv, env, write) {
   };
   const served = command === 'serve' ? serveSettings(args, env) : null;
   const file = env.SSS_DB || 'sss.db';
+  if (command === 'audit' && args[0] === 'export') {
+    if (!existsSync(file)) fail(`database missing at ${file}; nothing was created`);
+    const since = value('--since');
+    if (since !== undefined && !Number.isFinite(Date.parse(since))) fail('--since must be an ISO timestamp');
+    const format = value('--format') || 'jsonl'; const store = new Store(file);
+    try { write(formatAudit(auditRows(store.db, since || null), format).trimEnd()); } finally { store.close(); }
+    return;
+  }
   if (command === 'doctor') {
     const report = doctor(file, { backupDir: value('--backup-dir') || null, serveArgs: args, nodeVersion: process.versions.node });
     const bad = !report.database.present || !report.database.readable || report.database.schema_version !== SCHEMA_VERSION
@@ -600,7 +608,7 @@ async function run(argv, env, write) {
     const manifest = writeBackup(store, target, { keyFile });
     write(JSON.stringify({ backup: target, events: manifest.events, items: manifest.items, sha256: manifest.sha256 }));
   } else if (command === 'serve') {
-    const { port, host, origin, secure, trustedProxy, tls, bundlePort, bundleHostSuffix } = served;
+    const { port, host, origin, secure, trustedProxy, tls, bundlePort, bundleHostSuffix, auditLog } = served;
     let oidc = null;
     if (args.includes('--oidc-config')) {
       const configFile = value('--oidc-config') || fail('missing --oidc-config FILE');
@@ -666,7 +674,7 @@ async function run(argv, env, write) {
     }
     const bundleServer = bundlePort === null ? null : createBundleServer({ store, secret: randomBytes(32), hostSuffix: bundleHostSuffix, appOrigin: origin });
     if (bundleServer) await new Promise(resolve => bundleServer.listen(bundlePort, host, resolve));
-    const server = createServerFor({ store, auth, integrations, questModel, analysisGateway, secure, origin, trustedProxy, tls, bundleServer, env, databasePath: file,
+    const server = createServerFor({ store, auth, integrations, questModel, analysisGateway, secure, origin, trustedProxy, tls, bundleServer, env, databasePath: file, auditLog,
       disablePasswordLogin: args.includes('--disable-password-login') });
     await new Promise(resolve => server.listen(port, host, resolve));
     stopOnSignal(server, store, { timers: [effortTimer].filter(Boolean), stops: [() => reanalysisSchedule?.stop()], bundleServer });

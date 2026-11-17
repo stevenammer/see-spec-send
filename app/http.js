@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { createServer as createTlsServer } from 'node:https';
 import { isIP } from 'node:net';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { readFileSync, statSync } from 'node:fs';
+import { appendFileSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { Integrations } from './integrations.js';
 import { closeoutPage, feedPage, frozenPostPage, htmlHeaders, itemPage, newItemPage, passwordPage, questPage, redeemPage, signInPage } from './pages.js';
@@ -246,7 +246,7 @@ const validEvent = input => {
 
 const postBinding = req => ({ post_id: req.headers['x-post-id'], post_version: req.headers['x-post-version'] });
 
-export function createHandler({ auth, store, integrations, questModel = null, analysisAskModel = null, analysisGateway = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, trustedProxy = false, canRead: readPolicy = defaultCanRead, bundleServer = null, metricsToken = null, databaseSize = () => 0, readiness = null, disablePasswordLogin = false }) {
+export function createHandler({ auth, store, integrations, questModel = null, analysisAskModel = null, analysisGateway = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, auditLog = null, trustedProxy = false, canRead: readPolicy = defaultCanRead, bundleServer = null, metricsToken = null, databaseSize = () => 0, readiness = null, disablePasswordLogin = false }) {
   if (bundleServer && (!bundleServer.hostSuffix || typeof bundleServer.bundleUrl !== 'function')) throw new Error('invalid bundle server configuration');
   integrations ||= new Integrations(store, { origin });
   const mentoring = new Mentoring(store, { clock });
@@ -276,7 +276,11 @@ export function createHandler({ auth, store, integrations, questModel = null, an
   const oidcBinderCookie = value =>
     `${oidcBinderName}=${value}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
   // One line per sign-in or step-up outcome. Passwords, cookies and tokens never reach a log line.
-  const emit = entry => log(JSON.stringify(entry));
+  const emit = entry => {
+    log(JSON.stringify(entry));
+    // A separate append-only operational stream. Only selected fields reach it.
+    if (auditLog && ['sign_in', 'step_up'].includes(entry.event)) appendFileSync(auditLog, `${JSON.stringify({ timestamp: new Date(clock()).toISOString(), who: entry.person ?? null, what: entry.event, outcome: entry.outcome, request_id: entry.rid })}\n`, { encoding: 'utf8', mode: 0o600, flag: 'a' });
+  };
   const outcome = async (context, event, attempt, { person = null, account = null } = {}) => {
     try {
       const result = await attempt();
@@ -343,6 +347,8 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       )
         return json(res, 403, { error: 'request refused' });
       let input = change ? await body(req) : {};
+      // Only an event kind, never its body, is retained for the audit stream.
+      if (typeof input.type === 'string') context.auditType = input.type;
       const readable = item => session && canRead(session.person, store.readScope(item), readPolicy);
       const ip = clientAddress(req, trustedProxy);
       // With password sign-in off, nothing that creates or changes a password account may work either: not invitations,
@@ -966,16 +972,24 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       await serve(req, res, context);
     } finally {
       count(requestCounts, `${routeOf(req.url)} ${Math.floor((res.statusCode ?? res.status ?? 500) / 100)}xx`);
-      emit({ event: 'request', rid: context.rid, route: routeOf(req.url), status: res.statusCode ?? res.status,
+      const route = routeOf(req.url);
+      const what = req.method === 'POST' && route.includes('/erase') ? 'erase'
+        : req.method === 'POST' && route.includes('/artifact') ? 'export'
+          : ['approved'].includes(context.auditType) ? 'approval'
+            : ['returned', 'not_built', 'decided'].includes(context.auditType) ? 'decision'
+              : req.method === 'POST' && route.includes('/events') ? 'decision'
+            : req.method === 'POST' && route.includes('/items') ? 'scope_change' : null;
+      if (auditLog && what) appendFileSync(auditLog, `${JSON.stringify({ timestamp: new Date(clock()).toISOString(), who: context.person, what, outcome: (res.statusCode ?? 500) < 400 ? 'ok' : 'refused', request_id: context.rid })}\n`, { encoding: 'utf8', mode: 0o600, flag: 'a' });
+      emit({ event: 'request', rid: context.rid, route, status: res.statusCode ?? res.status,
         person: context.person, ms: Math.round(performance.now() - started) });
     }
   };
 }
-export function createServerFor({ tls = null, env = process.env, databasePath = null, ...deps }) {
+export function createServerFor({ tls = null, env = process.env, databasePath = null, auditLog = null, ...deps }) {
   // The product server writes its request and sign-in lines to stderr. Tests pass their own sink.
   const metricsEnv = env.SSS_METRICS_TOKEN_ENV;
   const handler = createHandler({ log: line => process.stderr.write(`${line}\n`), metricsToken: metricsEnv ? env[metricsEnv] : null,
-    databaseSize: () => { try { return databasePath ? statSync(databasePath).size : 0; } catch { return 0; } }, ...deps });
+    databaseSize: () => { try { return databasePath ? statSync(databasePath).size : 0; } catch { return 0; } }, auditLog, ...deps });
   // Direct HTTPS uses the certificate pair from serveSettings. Without it the listener is plain HTTP.
   const server = tls ? createTlsServer({ cert: tls.cert, key: tls.key }, handler) : createServer(handler);
   server.headersTimeout = 10_000;

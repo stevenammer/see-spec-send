@@ -12,8 +12,8 @@ Roles are `member` or `leader`.
 
 `node cli.js person list` prints registered people and leader flags.
 
-`node cli.js integration source add --name NAME --secret SECRET` creates an inbound
-source. `integration destination add --name NAME --url HTTPS_URL --secret SECRET`
+`SSS_INBOUND_SECRET=... node cli.js integration source add --name NAME --secret-env SSS_INBOUND_SECRET` creates an inbound
+source. `integration destination add --name NAME --url HTTPS_URL --secret-env NAME_OF_ENV_VAR`
 creates an outbound receiver. Add `--include-text` only when that receiver may
 receive item text. `integration outbox list` shows pending, delivered, and dead
 letters. `integration outbox deliver` attempts ready rows. See [INTEGRATIONS.md](INTEGRATIONS.md).
@@ -27,8 +27,7 @@ token once. Only its digest is stored.
 `node cli.js backup --to FILE` checkpoints SQLite then copies its database file.
 `node cli.js restore --from FILE` restores into a database path that doesn't already exist.
 
-Import trusts the actor registry inside the JSONL before replaying events. Import is an
-administrator action. Run it only on an export you made yourself.
+Import replays the events and registry in the file, but leaves everyone without leader authority unless `--keep-leaders` is passed, and it can require a signature (`--verify-key`). Treat an import as an administrator action and run it only on an export you made or verified. Details: RUNBOOK section 3b.
 
 `node cli.js serve --port 8080 --origin http://127.0.0.1:8080 --insecure-cookies` starts the web server.
 Secure cookies are the default. `--insecure-cookies` is only for local HTTP development on loopback, and the
@@ -74,7 +73,7 @@ node cli.js worker --builder container --gateway-socket /srv/sss/run/gateway.soc
 
 `gateway serve` keeps the provider key; the builder container never sees it. The socket's directory must be private to the service user (the command refuses a directory others can write). The container gets a one-run token that the gateway checks against the approved spec and the caps. The token reaches `docker run` through its environment, not its arguments, so it isn't in the host process list. It is still visible to anyone who can run `docker inspect`, which means anyone with Docker access.
 
-**The worker needs the Docker socket, and that is root on the host.** Run the worker as a dedicated user on a host that holds nothing else you care about, or accept that anyone who can make the worker misbehave can take the host. The container itself has no network, a read-only root, a non-root user, no capabilities, and limits on processes, CPU and memory. Every `docker` call the worker makes has a 20 second timeout. The build deadline (30 seconds) is also enforced inside the container, so a dead worker cannot leave a build running. `kill set` and the watchdog stop named builder containers.
+**The worker needs the Docker socket, and that is root on the host.** Run the worker as a dedicated user on a host that holds nothing else you care about, or accept that anyone who can make the worker misbehave can take the host. The container itself has no IP network (its one channel out is a socket to the metering gateway), a read-only root, a non-root user, no capabilities, and limits on processes, CPU and memory. Every `docker` call the worker makes has a 20 second timeout. The build deadline (30 seconds) is also enforced inside the container, so a dead worker cannot leave a build running. `kill set` and the watchdog stop named builder containers.
 
 Pinned image: `worker/builder-image.digest`; its package list is `worker/builder-image.sbom.txt`. Pull it first: `docker pull $(cat worker/builder-image.digest)`.
 
@@ -148,6 +147,7 @@ Erasure removes the target from the active search index and leaves a contributio
 
 - The client secret is read from the environment variable named in `clientSecretEnv`. It is never written in the file.
 - **Microsoft Entra:** pin the tenant with `tenantId` rather than relying on `allowedEmailDomains`. Entra ID tokens usually carry no verified-email claim, and a domain rule with no email is refused on purpose. Entra publishes signing keys without an `alg` field; that is supported, and the key type must fit the token's algorithm. For other providers, `allowedEmailDomains` needs the provider to put a verified `email` in the ID token itself (some providers keep it in the userinfo response by default; change that setting).
+- Setup steps for Okta, Entra and Google, and a pre-flight command (`node cli.js oidc check --config FILE`), are in [IDP_SETUP.md](IDP_SETUP.md).
 - Tested against a certified independent implementation (node-oidc-provider) in a real browser: sign-in, PKCE, nonce, RS256 signature check, the `iss` callback parameter, and step-up with `prompt=login`. Run `OIDC_PROVIDER_DIR=<folder where npm i oidc-provider ran> npm run test:idp-interop`. Not yet tested against Entra, Okta or Google themselves.
 - `hosts` is an allowlist: discovery, token and key endpoints must be https on one of those hosts. Redirects are never followed and response sizes are bounded.
 - Startup fetches discovery and the signing keys and refuses to start if either fails or the issuer does not match exactly.

@@ -101,6 +101,9 @@ const mutants = [
   ['admin: a leader cannot demote or disable themselves', 'app/http.js', "if (input.id === session.person && ['demote', 'disable'].includes(input.action)) return json(res, 403, { error: 'request refused' });", '', T(['admin-http'])],
   ['admin: person changes need a fresh step-up', 'app/http.js', "        if (!auth.useStepup(sessionToken)) return json(res, 403, { error: 'request refused' });\n        if (input.action === 'promote')", "        if (input.action === 'promote')", T(['admin-http'])],
   ['pilot: reset needs explicit confirmation', 'cli.js', "if (!args.includes('--confirm-erase-everything')) fail(", "if (false) fail(", T(['pilot-handoff'])],
+  ['bundle view: script blocks are removed until none are left', 'worker/bundle.js', "for (let before = ''; before !== html;) {", "for (let before = ''; false;) {", T(['bundle-html'])],
+  ['bundle view: a leftover <script is neutralized', 'worker/bundle.js', "html = html.replace(/<script/gi, '&lt;script');", '', T(['bundle-html'])],
+  ['oidc check: a provider without S256 is a blocker', 'app/oidc-provider.js', "adv.code_challenge_methods_supported.includes('S256') ? 'ok' : 'fail'", "'ok'", T(['oidc-provider'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 if (process.argv.includes('--check-sources')) {

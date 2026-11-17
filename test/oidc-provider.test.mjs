@@ -235,3 +235,18 @@ test('keys published without an alg (as Microsoft Entra does) work when the key 
   const wrongUse = await signIn(await setup(idp({ keys: [{ ...strip(jwk(rsa, 'rsa-1', 'RS256')), use: 'enc' }] })), nonce => token(baseClaims(nonce)));
   assert.ok(wrongUse.error, 'an encryption key is not a signing key');
 });
+
+test('oidc check reports what is ready and what is missing in plain terms, and fails only on real blockers', async () => {
+  const good = await setup(idp({ discovery: { claims_supported: ['sub', 'email', 'auth_time'], prompt_values_supported: ['login', 'none'], code_challenge_methods_supported: ['S256'], authorization_response_iss_parameter_supported: true } }));
+  const ok = good.provider.describe();
+  assert.equal(ok.ok, true); assert.ok(ok.lines.some(line => /PKCE S256 is advertised/.test(line.text)));
+  assert.ok(ok.lines.some(line => line.level === 'ok' && /auth_time is advertised/.test(line.text)));
+  assert.ok(ok.lines.some(line => /signing key/.test(line.text) && line.level === 'ok'));
+  const weak = await setup(idp({ discovery: { claims_supported: ['sub'], code_challenge_methods_supported: ['plain'] } }));
+  const bad = weak.provider.describe();
+  assert.equal(bad.ok, false, 'a provider that cannot do S256 is a blocker');
+  assert.ok(bad.lines.some(line => line.level === 'warn' && /auth_time is not advertised/.test(line.text)), 'missing auth_time is a warning with a fix');
+  const silent = (await setup()).provider.describe();
+  assert.equal(silent.ok, true, 'a provider that advertises nothing is warned, not failed');
+  assert.ok(silent.lines.filter(line => line.level === 'warn').length >= 3);
+});

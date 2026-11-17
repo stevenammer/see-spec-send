@@ -1,6 +1,6 @@
 # Organization quickstart
 
-This is a local, single-host start. It uses SQLite and local passwords. Identity-provider and Postgres seams are built but not usable: neither has a real verifier or driver, respectively.
+This is a local, single-host start. It uses SQLite and local passwords. Sign-in through an OIDC identity provider is built and browser-tested against one independent provider (see IDP_SETUP.md); it has not been run against Entra, Okta or Google. The Postgres seam is not usable: it has no driver.
 
 ```sh
 export SSS_DB="$PWD/data/sss.db"

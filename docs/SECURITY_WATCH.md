@@ -7,7 +7,7 @@ What was checked against current public security news, what it means for this pr
 | Topic | What was reported | Where we stand |
 |---|---|---|
 | Node.js 22 security releases (June and July 2026) | Several coordinated releases fixed a TLS wildcard-matching bypass, WebCrypto crashes and other issues. Secondary sources disagree on exact version numbers. Node 20 is end of life; Node 22 is security-only until April 2027. | Development and CI use the newest 22.x. `doctor` warns below 22.23. Confirm the floor on the Node.js vulnerability blog; do not trust a blog's version number. The Dockerfile pins the base image by digest, so rebuild when a new patch ships. |
-| runc container escapes (2025 set; July 2026 CVE-2026-41579) | Malicious images or mounts could escape or damage the host. Reported fixed in runc 1.3.6, 1.4.3 and 1.5.0. | The builder host runs runc 1.5.1. The builder container runs with networking off (its only channel out is a socket to the metered gateway), a read-only root, an unprivileged user, all capabilities dropped, no-new-privileges, and CPU, memory and process limits. Keep runc patched on any machine that runs the builder. |
+| runc container escapes (2025 set; July 2026 CVE-2026-41579) | Malicious images or mounts could escape or damage the host. Reported fixed in runc 1.3.6, 1.4.3 and 1.5.0. | Check the runc version on your own builder host (`runc --version`). The builder container runs with networking off (its only channel out is a socket to the metered gateway), a read-only root, an unprivileged user, all capabilities dropped, no-new-privileges, and CPU, memory and process limits. Keep runc patched on any machine that runs the builder. |
 
 ## AI agent layer
 

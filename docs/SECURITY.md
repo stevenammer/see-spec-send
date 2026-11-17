@@ -23,7 +23,7 @@ See [THREAT_MODEL.md](THREAT_MODEL.md) for the full model. In short:
 - Authentication proves who someone is. It never grants workflow authority; the state machine does, and an AI or a card click cannot approve.
 - Frozen records cannot be changed. Later information is a separate, linked update.
 - Restricted work shows other people only that it exists and who to ask, and content may only flow to people who can read its source.
-- Model-built code runs on a separate origin with no network, and its spend is metered and capped.
+- Model-built code runs on a separate origin under a strict content policy that blocks network requests, and its spend is metered and capped.
 - Secrets are never stored in files, logs or URLs.
 
 ## Where data can go

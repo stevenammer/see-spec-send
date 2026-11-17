@@ -223,6 +223,16 @@ async function run(argv, env, write) {
   };
   const served = command === 'serve' ? serveSettings(args, env) : null;
   const file = env.SSS_DB || 'sss.db';
+  if (command === 'oidc' && args[0] === 'check') {
+    // `oidc check --config FILE`: contact the provider (discovery and keys only, no sign-in) and say what is ready or missing.
+    const configFile = value('--config') || fail('usage: oidc check --config FILE');
+    let oidcConfig; try { oidcConfig = JSON.parse(readFileSync(configFile, 'utf8')); } catch { fail('OIDC configuration is invalid'); }
+    let report;
+    try { report = (await OidcProvider.create(oidcConfig, { secure: !oidcConfig.allowInsecureLoopbackForDevelopment, env })).describe(); }
+    catch (error) { write(JSON.stringify({ ok: false, lines: [{ level: 'fail', text: String(error.message) }] }, null, 2)); process.exitCode = 1; return; }
+    write(JSON.stringify(report, null, 2)); if (!report.ok) process.exitCode = 1;
+    return;
+  }
   if (command === 'audit' && args[0] === 'export') {
     if (!existsSync(file)) fail(`database missing at ${file}; nothing was created`);
     const since = value('--since');

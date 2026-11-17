@@ -401,7 +401,7 @@ const mutants = [
   ['slice24 erase audits the reason', "'--actor', '--reason', '--body-hash'];", "'--actor', '--body-hash'];"],
   ['slice24 disabled source refused', 'FROM integration_sources WHERE name=? AND enabled=1', 'FROM integration_sources WHERE name=?'],
   ['slice24 remove requires disable first', 'if (row.enabled !== 0) throw Error(', 'if (false) throw Error('],
-  ['slice24 encrypted backup is sealed', 'if (keyFile) writeFileSync(target, sealBackup(bytes, key));', 'if (keyFile) writeFileSync(target, bytes);'],
+  ['slice24 encrypted backup is sealed', 'if (keyFile) writeFileSync(target, sealBackup(bytes, key), { mode: 0o600 });', 'if (keyFile) writeFileSync(target, bytes, { mode: 0o600 });'],
   ['slice24 erase requires an actor', "    const actor = value('--actor') || fail('missing --actor');", "    const actor = value('--actor') || 'cli';"],
   ['slice24 backup key is 32 bytes', "if (key.length !== 32) throw new Error('backup key file must hold exactly 32 bytes');", "if (false) throw new Error('backup key file must hold exactly 32 bytes');"],
   ['slice24 restore needs the key file',"if (manifest.encrypted && !keyFile) throw new Error('encrypted backup needs --key-file; refusing to restore');", "if (false) throw new Error('encrypted backup needs --key-file; refusing to restore');"],

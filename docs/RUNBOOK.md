@@ -63,6 +63,15 @@ Recovery point objective equals your backup interval. Recovery time is the time 
 - **Remove content:** `node cli.js erase --item ... --body-hash ... --actor ... --reason ...`. Derived records built from it are tombstoned in the same step. Backups are not changed.
 - **After any incident:** run `node cli.js verify` and `node cli.js doctor`, keep the logs, and write down the timeline.
 
+## 5b. The identity provider is down, or nobody can sign in
+
+Single sign-on only (`--disable-password-login`) means an outage at the provider is an outage here. Plan for it before it happens:
+
+1. Keep at least one named break-glass leader who has a password account and know that the switch is a server start option, not data. To get in, stop the server and start it again **without** `--disable-password-login` (and, if the provider itself is unreachable at startup, without `--oidc-config`). Existing sessions and all data are unaffected.
+2. Sign in with the break-glass account, do what is needed, then restart with the original options. Every sign-in and admin change is in the audit log (`node cli.js audit export`).
+3. If no password account exists, create one from the machine itself: `node cli.js invite create --role member`, redeem it, then promote that person with `node cli.js person promote`. These commands need access to the database file, which is why host access is the real break-glass control. Guard it accordingly.
+4. After the outage, review the audit log for the window and rotate that break-glass password.
+
 ## 6. What to monitor and alert on
 
 | Signal | Where | Alert when |

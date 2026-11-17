@@ -1,7 +1,7 @@
 // Clean-room drill: install, run, crash, recover, back up, restore, verify. Runs inside a throwaway container
 // (see scripts/drill.sh) so nothing touches a real database. Exit code 0 only if every step holds.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 const root = process.cwd(), data = process.env.DRILL_DATA || '/data', db = join(data, 'sss.db');
 const env = { ...process.env, SSS_DB: db };
@@ -61,7 +61,9 @@ ok('the restored copy starts with the stop latch set', existsSync(`${drillDb}.ki
 const verifyRestored = spawnSync(process.execPath, ['cli.js', 'verify'], { cwd: root, env: { ...process.env, SSS_DB: drillDb }, encoding: 'utf8' });
 ok('the restored database verifies', verifyRestored.status === 0);
 const tampered = join(data, 'tampered.backup'); spawnSync('cp', ['-r', backup, tampered]);
-spawnSync('sh', ['-c', `printf 'x' >> ${tampered}/* 2>/dev/null || printf 'x' >> ${tampered}`]);
+// Corrupt one byte in place: a plain file is appended to; a directory has its first file appended to. No shell involved.
+const victim = statSync(tampered).isDirectory() ? join(tampered, readdirSync(tampered).sort()[0]) : tampered;
+appendFileSync(victim, 'x');
 const bad = spawnSync(process.execPath, ['cli.js', 'restore', '--from', tampered], { cwd: root, env: { ...process.env, SSS_DB: join(data, 'bad.db') }, encoding: 'utf8' });
 ok('a tampered backup is refused on restore', bad.status !== 0);
 

@@ -1,3 +1,5 @@
+> **Historical note, superseded.** This describes the state at Slice 10. OpenID Connect sign-in has since been built and browser-tested (see [ADMIN.md](ADMIN.md) and [IDP_SETUP.md](IDP_SETUP.md)); the Postgres seam is still not usable. Current state: [STATUS.md](STATUS.md).
+
 # Slice 10 notes
 
 Slice 10 adds identity and storage seams that are built but not usable. The default

@@ -40,7 +40,7 @@ Tests run on Node 22. See the [roadmap](ROADMAP.md) for order and the [decisions
 
 Single sign-on step-up (approvals in sign-in-only mode): built and tested against the fake provider; not yet run against a real identity provider.
 
-## Enterprise-readiness pass (November 17)
+## Enterprise-readiness pass
 
 | Area | State | Evidence |
 |---|---|---|

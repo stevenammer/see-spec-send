@@ -89,7 +89,7 @@ export function writeBackup(store, target, { keyFile = null } = {}) {
     snapshot(store, staging);
     const counts = verifyCopy(staging);
     const bytes = readFileSync(staging);
-    if (keyFile) writeFileSync(target, sealBackup(bytes, key));
+    if (keyFile) writeFileSync(target, sealBackup(bytes, key), { mode: 0o600 });
     chmodSync(target, 0o600);
     const manifest = {
       format: FORMAT, created_at: new Date().toISOString(), sha256: sha(bytes), bytes: bytes.length,

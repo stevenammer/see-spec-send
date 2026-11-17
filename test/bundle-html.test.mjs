@@ -59,3 +59,18 @@ test('the reviewable try is one script-free document with the stylesheet inlined
   assert.match(html, /not run in the viewer/);
   assert.match(html, /<textarea id="n">/, 'the page markup is kept');
 });
+
+test('the reviewable view leaves no script behind, even for nested, inline, unclosed or oddly spelled script tags', () => {
+  const pages = [
+    '<scr<script></script>ipt>alert(1)</script>',
+    '<SCRIPT >alert(1)</SCRIPT >',
+    '<script src="a.js"></script><script>alert(1)</script>',
+    '<scr<script></script>i<script></script>pt>alert(1)</scr<script></script>ipt>',
+    '<script>alert(1)',
+    '<p>ok</p><script\n>alert(1)</script\t\n>',
+  ];
+  for (const page of pages) {
+    const html = composeBundleDocument({ files: [{ path: 'index.html' }] }, () => `<!doctype html><html><body>${page}</body></html>`);
+    assert.doesNotMatch(html, /<script/i, `still has a script: ${page}`);
+  }
+});

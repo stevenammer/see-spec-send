@@ -109,7 +109,11 @@ export class OidcProvider {
     this.metadata = { issuer: metadata.issuer,
       authorizationEndpoint: cleanUrl(metadata.authorization_endpoint, 'authorization endpoint', this.urlOptions()),
       tokenEndpoint: cleanUrl(metadata.token_endpoint, 'token endpoint', this.urlOptions()),
-      jwksUri: cleanUrl(metadata.jwks_uri, 'JWKS URI', this.urlOptions()) };
+      jwksUri: cleanUrl(metadata.jwks_uri, 'JWKS URI', this.urlOptions()),
+      // Optional capability lists, kept only for `oidc check`; they never change how sign-in behaves.
+      advertised: Object.fromEntries(['claims_supported', 'scopes_supported', 'prompt_values_supported', 'code_challenge_methods_supported', 'id_token_signing_alg_values_supported']
+        .map(name => [name, Array.isArray(metadata[name]) ? metadata[name].filter(value => typeof value === 'string').slice(0, 200) : null])
+        .concat([['authorization_response_iss_parameter_supported', metadata.authorization_response_iss_parameter_supported === true]])) };
     this.discoveryAt = this.clock();
     return this.metadata;
   }
@@ -129,6 +133,25 @@ export class OidcProvider {
       next.set(key.kid, key);
     }
     this.keys = next;
+  }
+
+  // A plain-language readiness report for an administrator, from what the provider advertises and what its key set contains.
+  // It cannot prove a real sign-in works; only a person signing in can. Each line is ok, warn or fail.
+  describe() {
+    const adv = this.metadata?.advertised || {}, lines = [];
+    const add = (level, text) => lines.push({ level, text });
+    add('ok', `discovery matched the configured issuer and the endpoints are on allowed hosts`);
+    const algs = [...new Set([...this.keys.values()].map(key => key.alg || (key.kty === 'RSA' ? 'RS256 (no alg published)' : 'ES256 (no alg published)')))];
+    add(this.keys.size ? 'ok' : 'fail', `${this.keys.size} usable signing key(s): ${algs.join(', ') || 'none'}`);
+    if (adv.code_challenge_methods_supported) add(adv.code_challenge_methods_supported.includes('S256') ? 'ok' : 'fail', 'PKCE S256 ' + (adv.code_challenge_methods_supported.includes('S256') ? 'is advertised' : 'is NOT advertised; sign-in will not be safe'));
+    else add('warn', 'the provider does not advertise its PKCE methods; this is common, we always send S256');
+    if (adv.prompt_values_supported) add(adv.prompt_values_supported.includes('login') ? 'ok' : 'warn', adv.prompt_values_supported.includes('login') ? 'prompt=login is supported (approval step-up will force a fresh sign-in)' : 'prompt=login is not advertised; approval step-up may reuse the existing provider session');
+    else add('warn', 'prompt support is not advertised; test an approval once with a real person');
+    if (adv.claims_supported) add(adv.claims_supported.includes('auth_time') ? 'ok' : 'warn', adv.claims_supported.includes('auth_time') ? 'auth_time is advertised (approval step-up needs it)' : 'auth_time is not advertised: approvals are refused unless the provider still sends it. Configure the provider to include it.');
+    else add('warn', 'the provider does not list its claims; approvals need the auth_time claim in the ID token');
+    if (this.config.allowedEmailDomains) add(adv.claims_supported && !adv.claims_supported.includes('email') ? 'fail' : 'warn', 'an email-domain rule needs a verified `email` in the ID token itself. Many providers (Microsoft Entra among them) do not send one by default; consider `tenantId` instead.');
+    add(adv.authorization_response_iss_parameter_supported ? 'ok' : 'warn', adv.authorization_response_iss_parameter_supported ? 'the provider sends the issuer on the callback (RFC 9207)' : 'the provider does not advertise the callback issuer parameter; we still pin the issuer and check the token');
+    return { issuer: this.config.issuer, ok: !lines.some(line => line.level === 'fail'), lines };
   }
 
   async exchange({ code, clientId, redirectUri, codeVerifier }) {

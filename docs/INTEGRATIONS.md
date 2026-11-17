@@ -6,15 +6,15 @@ Integrations can report a problem and receive a small event receipt. They cannot
 
 The repository includes a synthetic Teams-shaped adapter in `channels/teams.js`. It accepts only recorded fake activity payloads in tests. A message action creates a preview receipt, then a separate confirmation creates a canonical SEE through the same Store path as the native forum. Mention replies become anchored contributions. Adaptive-card actions go through Store authority and exact packet checks. Channel receipts preserve captured text, source ID/version/hash, audience, and later source changes without rewriting frozen content.
 
-External IDs only map to people through `channel map add --channel teams --tenant TENANT --team TEAM --external-user USER --person PERSON`. Tenant mismatch, guests, unmapped users, replayed signed payloads, and inactive channel teams are refused. The synthetic signature is HMAC-SHA256 over `timestamp + "." + nonce + "." + recorded payload body`, with a five-minute window and durable nonce receipt. Set the per-channel test secret in the process environment when a host eventually wires this adapter.
+External IDs only map to people through `channel map add --channel teams --tenant TENANT --team TEAM --external-user USER --person PERSON`. Tenant mismatch, guests, unmapped users, exact repeats of signed payloads (replay protection is incomplete: see the idempotency-key note below), and inactive channel teams are refused. The synthetic signature is HMAC-SHA256 over `timestamp + "." + nonce + "." + recorded payload body`, with a five-minute window and durable nonce receipt. Set the per-channel test secret in the process environment when a host eventually wires this adapter.
 
 No real Teams connector is built. There is no Microsoft tenant, Teams SDK, Microsoft Graph call, Entra validation, Bot Framework validation, tenant installation, webhook listener, or credential in this repository. Production callback validation must use Entra ID and Bot Framework JWT validation, not this synthetic HMAC seam.
 
 Create secrets at the terminal. The CLI never prints them again.
 
 ```sh
-node cli.js integration source add --name slack-intake --secret 'at-least-16-random-characters'
-node cli.js integration destination add --name ops-hook --url https://hooks.example.com/sss --secret 'another-random-secret'
+SSS_INBOUND_SECRET='at-least-16-random-characters' node cli.js integration source add --name slack-intake --secret-env SSS_INBOUND_SECRET
+SSS_HOOK_SECRET='another-random-secret' node cli.js integration destination add --name ops-hook --url https://hooks.example.com/sss --secret-env SSS_HOOK_SECRET
 ```
 
 `integration source list`, `integration destination list`, and `integration outbox list` show configuration and delivery state without secrets. Run `node cli.js integration outbox deliver` from your scheduler. Failed receipts retry with exponential backoff five times, then show as `dead`.

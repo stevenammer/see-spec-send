@@ -87,7 +87,7 @@ test('imports refuse a tampered record, a missing line, and a destination that a
   const lastKnowledge = lines.map(line => JSON.parse(line)).filter(row => row.knowledge).length;
   assert.ok(lastKnowledge > 0);
   const occupied = fresh(); occupied.importJsonl(exported);
-  assert.throws(() => occupied.importJsonl(exported), /not empty|already|exists|duplicate|UNIQUE|constraint/i, 'two knowledge logs cannot be merged');
+  assert.throws(() => occupied.importJsonl(exported), /knowledge log is not empty/, 'two knowledge logs cannot be merged, and the refusal is the deliberate one, not an accidental database error');
   // An export made before groups and the knowledge log existed carries neither, and must still import.
   // (Restricted work did not exist then either, so the synthetic old export leaves that item out.)
   const legacy = lines.filter(line => { const row = JSON.parse(line); return row.complete || (!row.group && !row.knowledge && !row.tombstone && !row.derived && row.item !== 'secret'); });

@@ -37,7 +37,7 @@ test('handoff requires read access and excludes erased comment text', t => {
   const packet = store.putArtifact('item', JSON.stringify({ specHash: spec })); add({ type: 'sent', actor: 'author', spec_hash: spec, packet_hash: packet, ...bind() });
   add({ type: 'approved', actor: 'leader', spec_hash: spec, packet_hash: packet, reason: 'Synthetic bounded approval.', cap_usd: 0, quorum: 1, ...bind() });
   store.erase('item', comment, 'reader', new Date(1800000000000 + ++n * 1000).toISOString());
-  const packetOut = handoffPackage(store, { item: 'item', actor: 'reader' }); assert.doesNotMatch(JSON.stringify(packetOut), /erase this text/); assert.equal(packetOut.erased_text_included, false);
+  const packetOut = handoffPackage(store, { item: 'item', actor: 'reader' }); assert.doesNotMatch(JSON.stringify(packetOut), /erase this text/); assert.equal(packetOut.erased_text_included, false); assert.equal(packetOut.test_and_evidence_summary.comments.length, 0, 'the erased comment is left out entirely, not just blanked');
   assert.throws(() => handoffPackage(store, { item: 'item', actor: 'outsider' }), /cannot read/);
 });
 

@@ -706,7 +706,9 @@ async function main() {
     await ben.locator('[name=objectives]').fill('Improve customer handoffs.');
     await ben.locator('[name=constraints]').fill('Preserve employee privacy.\nUse synthetic data for experiments.');
     await ben.locator('[name=items]').fill(`${itemId}\n${memoryId}`);
-    const timeValue = time => new Date(time).toISOString().slice(0,19);
+    // Chrome's datetime-local reports whole minutes without seconds, so ':00' seconds must be sent as HH:mm
+    // (a fill of 'T04:50:00' was rejected as malformed about once in sixty runs).
+    const timeValue = time => { const value = new Date(time).toISOString().slice(0,19); return value.endsWith(':00') ? value.slice(0,16) : value; };
     await ben.locator('[name=from]').fill(timeValue(Date.now()-3600000));
     await ben.locator('[name=to]').fill(timeValue(Date.now()-1000));
     await ben.getByRole('button',{name:'Prepare evidence packet',exact:true}).click();

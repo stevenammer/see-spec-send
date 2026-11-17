@@ -39,6 +39,8 @@ import { modelMessages } from './intelligence/prompt.js';
 import { doctor } from './app/ops.js';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { pilotReport, resetPilot, seedPilot } from './pilot/kit.js';
+import { handoffMarkdown, handoffPackage } from './handoff/export.js';
 
 // Export signing: HMAC-SHA256 with a 32-byte key file. The same kind of key file as backup encryption.
 const readExportKey = (keyFile, create) => {
@@ -388,6 +390,22 @@ async function run(argv, env, write) {
     }
     const result = await runReanalysis(store, { now: new Date().toISOString(), limit, verify });
     write(`reanalysis: deltas=${result.deltas.length} annexes=${result.annexes.length} digest_entries=${result.delivery.entries} pings=${result.delivery.pinged}`);
+  } else if (command === 'pilot') {
+    if (args[0] === 'seed') {
+      const departments = Number(value('--departments')); const people = Number(value('--people'));
+      const result = seedPilot(store, { departments, people, forceEmpty: args.includes('--force-empty') });
+      write(JSON.stringify(result));
+    } else if (args[0] === 'reset') {
+      // The marker stays on a database after people start using it for real, so a reset must be asked for in full.
+      if (!args.includes('--confirm-erase-everything')) fail('pilot reset deletes EVERYTHING in this database, including anything added after seeding; add --confirm-erase-everything to proceed');
+      resetPilot(store); write('pilot database reset');
+    } else if (args[0] === 'report') write(JSON.stringify(pilotReport(store), null, 2));
+    else fail('use pilot seed --departments N --people M [--force-empty], pilot reset, or pilot report');
+  } else if (command === 'handoff' && args[0] === 'export') {
+    const item = args[1] || fail('missing ITEM'); const format = value('--format') || 'json';
+    if (!['json', 'md'].includes(format)) fail('--format must be json or md');
+    const packet = handoffPackage(store, { item, actor: value('--actor') });
+    write(format === 'md' ? handoffMarkdown(packet).trimEnd() : JSON.stringify(packet, null, 2));
   } else if (command === 'erase') {
     // Removes the body text from the live database. Backups and earlier copies are not changed.
     // The actor must be a registered leader or steward of the item. The reason is written to the admin audit.

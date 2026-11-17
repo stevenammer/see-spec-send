@@ -40,6 +40,8 @@ const mutants = [
   ['renewal: one per annex per person', 'core/store.js', "throw refused('renewal already exists for this annex');", 'void 0;', delivery],
   ['renewal: the annex must target the parent', 'core/store.js', "annex.body.parent?.item !== parent.item", 'false', delivery],
   ['read scope: members only for restricted work', 'access/read.js', 'item.members.includes(id)', 'true', T(['read-scope'])],
+  ['pilot handoff: caller must be allowed to read the item', 'handoff/export.js', "if (!store.canRead(actor, item)) throw new Error('refused: caller cannot read this item');", '', T(['pilot-handoff'])],
+  ['pilot handoff: erased comments are excluded', 'handoff/export.js', "event.type === 'commented' && safe(store, event)", "event.type === 'commented'", T(['pilot-handoff'])],
   ['correction: source events may be targeted', 'app/http.js', '(!target && !source) || !item', '!target || !item', delivery],
   ['bundle origin: label signature is verified', 'app/bundle-origin.js', '!timingSafeEqual(expected, received)', 'false', T(['bundle-origin'])],
   ['bundle: capabilities that can reach out are refused', 'worker/bundle.js', "\\bsendBeacon\\b|", '', T(['bundle-html'])],
@@ -98,6 +100,7 @@ const mutants = [
   ['retention: zero days leaves a kind off', 'core/store.js', 'if (settings.comments > 0)', 'if (settings.comments >= 0)', T(['admin-retention'])],
   ['admin: a leader cannot demote or disable themselves', 'app/http.js', "if (input.id === session.person && ['demote', 'disable'].includes(input.action)) return json(res, 403, { error: 'request refused' });", '', T(['admin-http'])],
   ['admin: person changes need a fresh step-up', 'app/http.js', "        if (!auth.useStepup(sessionToken)) return json(res, 403, { error: 'request refused' });\n        if (input.action === 'promote')", "        if (input.action === 'promote')", T(['admin-http'])],
+  ['pilot: reset needs explicit confirmation', 'cli.js', "if (!args.includes('--confirm-erase-everything')) fail(", "if (false) fail(", T(['pilot-handoff'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 if (process.argv.includes('--check-sources')) {

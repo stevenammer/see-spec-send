@@ -39,3 +39,19 @@ An honest table. A row says **Shipped and tested** only when a named test in thi
 Tests run on Node 22. See the [roadmap](ROADMAP.md) for order and the [decisions](DECISIONS.md) for why.
 
 Single sign-on step-up (approvals in sign-in-only mode): built and tested against the fake provider; not yet run against a real identity provider.
+
+## Enterprise-readiness pass (November 17)
+
+| Area | State | Evidence |
+|---|---|---|
+| Sign-in against a certified independent provider | Built and tested in a real browser. Not yet against Entra, Okta or Google. | `npm run test:idp-interop` (runs in CI); `docs/ADMIN.md` |
+| Approvals with single sign-on only | Built: sign in again at the provider, bound to person, session and browser | `test/oidc-stepup.test.mjs` |
+| Administration page, leader-only, step-up gated, audited, no self-lockout | Built | `test/admin-http.test.mjs`, `docs/ROUTE_TABLE.md` |
+| Retention and legal hold | Built, off by default, proposes and never deletes by itself | `docs/RETENTION.md`, `test/admin-retention.test.mjs` |
+| Audit export for a SIEM, SBOM, dependency audit, hardened container image | Built; the image was built and run read-only with all capabilities dropped | `docs/AUDIT_LOG.md`, `docs/DEPLOY.md`, `test/ops-pack.test.mjs` |
+| Prompt-injection test set | 40 hostile strings through six model-facing paths with a model that obeys them | `docs/PROMPT_INJECTION.md` |
+| Pilot kit, usage report, production handoff package, security questionnaire answers | Built | `docs/PILOT_GUIDE.md`, `docs/HANDOFF.md`, `docs/VENDOR_QUESTIONNAIRE.md` |
+| Current threat review | Written down, with open items | `docs/SECURITY_WATCH.md` |
+
+Still not done, and not something code alone can finish: a real pilot with employees, an outside penetration test, SOC 2, a real Entra/Okta tenant test, a human screen-reader test, a replicated or Postgres-backed store for high availability (design only, `docs/HOSTING_DESIGN.md`), Teams and Microsoft 365 integration, and the organization's own decisions on retention, legal hold and fork policy.
+

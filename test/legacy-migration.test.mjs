@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Store } from '../core/store.js';
+import { SCHEMA_VERSION } from '../core/migrations.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const stable = value => {
@@ -131,6 +132,21 @@ test('running the authority backfill again never overwrites the roles captured t
     store.backfillAuthoritySnapshots();
     assert.deepEqual(snapshot(), first, 'a later backfill does not rewrite the roles it already captured');
   } finally {
+    store?.db.close();
+    fixture.close();
+  }
+});
+
+test('the copy taken before an upgrade is owner-only, even under a permissive umask', () => {
+  const fixture = legacyDatabase();
+  let store;
+  const previous = process.umask(0);
+  try {
+    store = new Store(fixture.file);
+    const backup = `${fixture.file}.pre-v${SCHEMA_VERSION}.bak`;
+    assert.equal((statSync(backup).mode & 0o777).toString(8), '600');
+  } finally {
+    process.umask(previous);
     store?.db.close();
     fixture.close();
   }

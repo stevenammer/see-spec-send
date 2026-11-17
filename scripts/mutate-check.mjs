@@ -108,7 +108,8 @@ const mutants = [
   ['V1 erase keeps anchors', "'anchor_kind', 'anchor_hash', 'parent'", "'parent'"],
   ['V1 server stamps rules', 'rules: CURRENT_RULES', 'rules: 1'],
   ['V1 comment cap', 'this.commentCount(item) >= 1000', 'this.commentCount(item) >= 1001'],
-  ['F1 comment anchor follows current spec', "spec: state.specSeeHash === state.seeHash ? state.specHash : null,", "spec: state.specHash,"],
+  // Aimed at core/machine.js (the authority). app/http.js repeats this check as an early refusal with an identical response, so mutating that copy alone cannot be seen from outside.
+  ['F1 comment anchor follows current spec', "spec: state.specSeeHash === state.seeHash ? state.specHash : null,\n      artifact: state.artifact,", "spec: state.specHash,\n      artifact: state.artifact,"],
   ['F1 agent only comments', "who?.kind === 'agent' && event.actor === 'effort'", "who?.kind === 'agent'"],
   ['F1 spec binds current SEE', 'event.see_hash === context.seeHash', 'true'],
   ['F1 sent needs current spec', 'event.spec_hash === context.specHash', 'true'],

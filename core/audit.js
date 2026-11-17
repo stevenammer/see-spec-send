@@ -39,7 +39,7 @@ export function verifyAudit(db) {
 export function auditRows(db, since = null) {
   if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='admin_audit'").get()) return [];
   const rows = db.prepare('SELECT seq,at,command,outcome,detail,seal FROM admin_audit WHERE (? IS NULL OR at >= ?) ORDER BY seq').all(since, since);
-  return rows.map(row => ({ timestamp: row.at, who: 'cli', what: row.command, outcome: row.outcome, detail: JSON.parse(row.detail), sequence: row.seq, seal: row.seal }));
+  return rows.map(row => ({ timestamp: row.at, who: (() => { try { return JSON.parse(row.detail).actor || 'cli'; } catch { return 'cli'; } })(), what: row.command, outcome: row.outcome, detail: JSON.parse(row.detail), sequence: row.seq, seal: row.seal }));
 }
 
 export function formatAudit(rows, format = 'jsonl') {

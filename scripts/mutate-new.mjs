@@ -91,11 +91,13 @@ const mutants = [
   ['stepup: answer is bound to the same session', 'app/auth.js', 'identity.sessionDigest !== hash(value) || ', '', T(['oidc-stepup'])],
   ['stepup: answer is bound to the same person', 'app/auth.js', "|| identity.id !== session.person) throw invalid('step-up unavailable');", ") throw invalid('step-up unavailable');", T(['oidc-stepup'])],
   ['stepup: a step-up answer is never a sign-in', 'app/auth.js', "if (identity.purpose !== 'login') throw new Error('OIDC response refused');", '', T(['oidc-stepup'])],
-  ['stepup: return path must be a local item page', 'app/http.js', '!/^\\/items\\/[A-Za-z0-9_-]{1,128}$/.test(next)', 'false', T(['oidc-stepup'])],
+  ['stepup: return path must be a local item page', 'app/http.js', '!/^\\/(?:items\\/[A-Za-z0-9_-]{1,128}|admin)$/.test(next)', 'false', T(['oidc-stepup'])],
   ['stepup: password sessions cannot use the provider path', 'app/auth.js', "session.auth_method !== 'oidc' || !this.allowed(ip, session.person, 'stepup')", "!this.allowed(ip, session.person, 'stepup')", T(['oidc-stepup'])],
   ['rfc9207: callback issuer must match', 'app/oidc.js', "if (iss !== undefined && iss !== null && iss !== this.issuer) throw new Error('OIDC response refused');", '', T(['oidc-stepup'])],
   ['retention: legal holds block erasure', 'core/store.js', "if (this.isHeld(item)) throw refused('legal hold blocks erasure');", '', T(['admin-retention'])],
   ['retention: zero days leaves a kind off', 'core/store.js', 'if (settings.comments > 0)', 'if (settings.comments >= 0)', T(['admin-retention'])],
+  ['admin: a leader cannot demote or disable themselves', 'app/http.js', "if (input.id === session.person && ['demote', 'disable'].includes(input.action)) return json(res, 403, { error: 'request refused' });", '', T(['admin-http'])],
+  ['admin: person changes need a fresh step-up', 'app/http.js', "        if (!auth.useStepup(sessionToken)) return json(res, 403, { error: 'request refused' });\n        if (input.action === 'promote')", "        if (input.action === 'promote')", T(['admin-http'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 if (process.argv.includes('--check-sources')) {

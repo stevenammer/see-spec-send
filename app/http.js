@@ -364,7 +364,10 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         return page(res, adminPage({ people: auth.listPeople(), groups: store.groups(), scopes, audit, retention: store.retentionSettings(), proposals: store.retentionProposals(new Date(clock()).toISOString()), holds: store.holds() }));
       }
       if (req.method === 'POST' && url.pathname === '/api/admin/person') {
-        if (!admin() || !auth.useStepup(sessionToken) || !exactKeys(input, ['id', 'action']) || !['promote', 'demote', 'disable', 'enable'].includes(input.action)) return json(res, 403, { error: 'request refused' });
+        if (!admin() || !exactKeys(input, ['id', 'action']) || !['promote', 'demote', 'disable', 'enable'].includes(input.action)) return json(res, 403, { error: 'request refused' });
+        // Nobody can lock the organization out by demoting or disabling their own account; another leader does that.
+        if (input.id === session.person && ['demote', 'disable'].includes(input.action)) return json(res, 403, { error: 'request refused' });
+        if (!auth.useStepup(sessionToken)) return json(res, 403, { error: 'request refused' });
         if (input.action === 'promote') auth.setLeader(input.id, true); if (input.action === 'demote') auth.setLeader(input.id, false); if (input.action === 'disable') auth.disablePerson(input.id); if (input.action === 'enable') auth.enablePerson(input.id);
         appendAudit(store.db, { at: new Date(clock()).toISOString(), command: `admin person ${input.action}`, outcome: 'ok', detail: JSON.stringify({ actor: session.person, id: input.id }) }); return json(res, 201, { updated: true });
       }
@@ -388,7 +391,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       if (req.method === 'GET' && url.pathname === '/api/oidc/stepup/start') {
         if (!auth.oidc || !session) return json(res, 404, { error: 'not found' });
         const next = url.searchParams.get('next');
-        if (next !== null && !/^\/items\/[A-Za-z0-9_-]{1,128}$/.test(next)) return json(res, 400, { error: 'request refused' });
+        if (next !== null && !/^\/(?:items\/[A-Za-z0-9_-]{1,128}|admin)$/.test(next)) return json(res, 400, { error: 'request refused' });
         const binder = randomBytes(32).toString('base64url');
         let target;
         try { target = auth.beginOidcStepup(sessionToken, binder, next, ip); }
@@ -453,7 +456,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       }
       if (req.method === 'GET' && url.pathname === '/api/me')
         return session
-          ? json(res, 200, { id: session.person, csrf: session.csrf, auth_method: session.auth_method })
+          ? json(res, 200, { id: session.person, csrf: session.csrf, auth_method: session.auth_method, stepup_fresh: auth.stepupFresh(sessionToken) })
           : json(res, 403, { error: 'request refused' });
       if (!session) {
         if (req.method === 'GET' && url.pathname === '/') return page(res, signInPage({ oidc: Boolean(auth.oidc), password: !disablePasswordLogin }));

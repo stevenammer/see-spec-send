@@ -79,6 +79,7 @@ test('over HTTP: step-up start needs a session and a local return path, the call
   assert.equal(back.status, 302); const session = cookiePair(back);
   for (const bad of ['https://evil.example/', '//evil.example', '/items/a/b', '/api/items/x', 'javascript:1'])
     assert.equal((await http(handler, 'GET', `/api/oidc/stepup/start?next=${encodeURIComponent(bad)}`, session)).status, 400, bad);
+  assert.equal((await http(handler, 'GET', '/api/oidc/stepup/start?next=%2Fadmin', session)).status, 302, 'the admin page is a valid return path');
   const up = await http(handler, 'GET', '/api/oidc/stepup/start?next=%2Fitems%2Fabc', session);
   assert.equal(up.status, 302); const upUrl = new URL(up.headers.location); assert.equal(upUrl.searchParams.get('prompt'), 'login');
   const upCode = provider.issue({ codeChallenge: upUrl.searchParams.get('code_challenge'), nonce: upUrl.searchParams.get('nonce'), subject: 'http-person', authTime: Math.floor(env.clock.now / 1000) });
@@ -100,6 +101,7 @@ test('over HTTP: a real step-up round trip returns to the item and leaves one us
   const done = await http(handler, 'GET', `/api/oidc/callback?state=${u.searchParams.get('state')}&code=${upCode}`, `${session}; ${binder}`);
   assert.equal(done.status, 302); assert.equal(done.headers.location, '/items/abc');
   const token = /(?:^|; )sss=([^;]+)/.exec(session)[1]; assert.equal(auth.stepupFresh(token), true);
+  assert.equal(JSON.parse((await http(handler, 'GET', '/api/me', session)).text).stepup_fresh, true, 'the page script can see the proof is fresh and does not loop');
   assert.equal(auth.useStepup(token), true); assert.equal(auth.useStepup(token), false);
 });
 

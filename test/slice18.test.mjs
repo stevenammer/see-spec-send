@@ -64,7 +64,7 @@ test('disabled people lose sign-in and sessions, and their past events still ver
   await assert.rejects(auth.login('member', password, 'ip-b'), /unavailable/);
   assert.ok(store.verifyAll().every(answer => answer.ok));
   assert.equal(store.events('case-1')[0].actor, 'member');
-  assert.match(await runCli(file, ['person', 'list']), /"id":"member","leader":0,"disabled":1/);
+  assert.match(await runCli(file, ['person', 'list']), /"id":"member","kind":"person","leader":0,"disabled":1/);
   await runCli(file, ['person', 'enable', '--id', 'member']);
   await assert.doesNotReject(auth.login('member', password, 'ip-c'));
   store.close();

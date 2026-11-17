@@ -189,7 +189,7 @@ export class Store {
     return Boolean(this.db.prepare(`SELECT 1 FROM legal_holds WHERE active=1 AND ((target_kind='item' AND target_id=?) OR (target_kind='group' AND target_id IN (${q})))`).get(item, ...groups));
   }
   retentionProposals(now = new Date().toISOString()) {
-    const settings = this.retentionSettings(), cutoff = days => new Date(Date.parse(now) - days * 86400000).toISOString(), rows = [];
+    const settings = this.retentionSettings(), cutoff = days => new Date(parseAt(now) - days * 86400000).toISOString(), rows = [];
     if (settings.comments > 0) rows.push(...this.db.prepare("SELECT e.item,e.body_hash AS id,e.at,'comments' AS kind FROM events e WHERE e.type='commented' AND e.at<=?").all(cutoff(settings.comments)));
     if (settings.ledger_answers > 0) rows.push(...this.db.prepare("SELECT e.item,e.body_hash AS id,e.at,'ledger_answers' AS kind FROM events e WHERE e.type='specced' AND e.at<=?").all(cutoff(settings.ledger_answers)));
     if (settings.closeout_artifacts > 0) rows.push(...this.db.prepare("SELECT c.item,c.artifact_hash AS id,e.at,'closeout_artifacts' AS kind FROM closeout_jobs c JOIN stage_posts p ON p.item=c.item AND p.post_id=c.post_id JOIN events e ON e.item=p.item AND e.seq=p.closed_seq WHERE c.artifact_hash IS NOT NULL AND e.at<=?").all(cutoff(settings.closeout_artifacts)));

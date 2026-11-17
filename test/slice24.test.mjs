@@ -21,7 +21,7 @@ const directory = t => { const dir = mkdtempSync(join(tmpdir(), 'sss-s24-')); t.
 // header must not make the same signed request count as new.
 test('B20: a signed inbound request cannot be replayed under a new Idempotency-Key', async () => {
   const now = 1_000_000; const store = new Store(); const auth = new Auth(store);
-  const integrations = new Integrations(store, { clock: () => now }); integrations.addSource('slack', secret);
+  const integrations = new Integrations(store, { clock: () => now }); await integrations.addSource('slack', secret);
   const handler = createHandler({ store, auth, integrations, secure: false, origin: 'http://127.0.0.1' });
   const body = inbound(); const headers = { 'x-sss-timestamp': String(now), 'x-sss-signature': `sha256=${hmac(secret, String(now), body)}` };
   assert.equal((await request(handler, '/api/integrations/inbound/slack', { ...headers, 'idempotency-key': 'first' }, body)).status, 201);
@@ -61,10 +61,10 @@ test('integration source and destination can be disabled, and removed only after
   await cli(['integration', 'source', 'disable', '--name', 'slack'], env, write);
   await cli(['integration', 'destination', 'disable', '--name', 'hook'], env, write);
   let store = new Store(file); let integrations = new Integrations(store);
-  assert.equal(integrations.list('source')[0].enabled, 0);
-  assert.equal(integrations.list('destination')[0].enabled, 0);
+  assert.equal((await integrations.list('source'))[0].enabled, 0);
+  assert.equal((await integrations.list('destination'))[0].enabled, 0);
   const bytes = inbound(); const timestamp = String(Date.now());
-  assert.throws(() => integrations.receive('slack', timestamp, `sha256=${hmac(secret, timestamp, bytes)}`, bytes, { 'idempotency-key': 'after-disable' }), /inbound refused/);
+  await assert.rejects(() => integrations.receive('slack', timestamp, `sha256=${hmac(secret, timestamp, bytes)}`, bytes, { 'idempotency-key': 'after-disable' }), /inbound refused/);
   store.close();
   await cli(['integration', 'destination', 'add', '--name', 'live', '--url', 'https://example.com/live', '--secret-env', 'S24_SECRET'], env, write);
   await assert.rejects(cli(['integration', 'destination', 'remove', '--name', 'live'], { SSS_DB: file }, write), /disable it first/);
@@ -73,8 +73,8 @@ test('integration source and destination can be disabled, and removed only after
   await cli(['integration', 'destination', 'disable', '--name', 'live'], { SSS_DB: file }, write);
   await cli(['integration', 'destination', 'remove', '--name', 'live'], { SSS_DB: file }, write);
   store = new Store(file); integrations = new Integrations(store);
-  assert.deepEqual(integrations.list('source'), []);
-  assert.deepEqual(integrations.list('destination'), []);
+  assert.deepEqual((await integrations.list('source')), []);
+  assert.deepEqual((await integrations.list('destination')), []);
   store.close();
   assert.ok(lines.includes('integration source slack removed'));
 });
@@ -123,27 +123,27 @@ test('B19: secrets are sealed at rest, absent from the database and a backup, an
   // Rotation: old and new both verify inside the overlap, only the new one after it.
   let now = 5_000_000; const store = new Store(file); const integrations = new Integrations(store, { clock: () => now });
   const fresh = 'a-brand-new-rotated-secret-99';
-  integrations.rotate('source', 'slack', fresh, 1);
+  await integrations.rotate('source', 'slack', fresh, 1);
   let n = 0; const check = (use) => { const body = inbound(`call ${n += 1}`); return () => integrations.receive('slack', String(now), hmac(use, String(now), body), body, { 'idempotency-key': `k${now}${use.length}` }); };
-  assert.doesNotThrow(check(fresh)); assert.doesNotThrow(check(planted));
+  await assert.doesNotReject(check(fresh)); await assert.doesNotReject(check(planted));
   now += 2 * 3_600_000;
-  assert.doesNotThrow(check(fresh)); assert.throws(check(planted));
+  await assert.doesNotReject(check(fresh)); await assert.rejects(check(planted));
   store.close();
   assert.equal(scan(file), false);
 });
 
 test('B19: a database opened with the wrong key cannot read the secret', async t => {
   const dir = directory(t); const file = join(dir, 'db.sqlite');
-  const store = new Store(file); new Integrations(store).addSource('slack', secret); store.close();
+  const store = new Store(file); await new Integrations(store).addSource('slack', secret); store.close();
   const other = new Store(file); const integrations = new Integrations(other, { keyFile: join(dir, 'other.key') });
   writeFileSync(join(dir, 'other.key'), '11'.repeat(32), { mode: 0o600 });
   const stored = other.db.prepare('SELECT secret FROM integration_sources').get().secret;
   assert.throws(() => integrations.unpack(stored)); other.close();
 });
 
-test('B19: a loose key file is tightened to owner-only when it is used', t => {
+test('B19: a loose key file is tightened to owner-only when it is used', async t => {
   const dir = directory(t); const file = join(dir, 'db.sqlite'); const key = join(dir, 'loose.key');
   writeFileSync(key, '22'.repeat(32), { mode: 0o644 });
-  const store = new Store(file); new Integrations(store, { keyFile: key }).addSource('slack', secret); store.close();
+  const store = new Store(file); await new Integrations(store, { keyFile: key }).addSource('slack', secret); store.close();
   assert.equal(statSync(key).mode & 0o077, 0);
 });

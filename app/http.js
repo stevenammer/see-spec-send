@@ -315,7 +315,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         if (req.headers['content-type'] !== 'application/json') return json(res, 415, { error: 'request refused' });
         // Inbound intake keeps its own answer for an oversized body (400), so the generic 413 mapping does not reach it.
         const raw = await bytes(req, 16 * 1024).catch(() => { throw invalid('inbound body over limit'); });
-        return json(res, 201, integrations.receive(inbound[1], req.headers['x-sss-timestamp'], req.headers['x-sss-signature'], raw, req.headers));
+        return json(res, 201, await integrations.receive(inbound[1], req.headers['x-sss-timestamp'], req.headers['x-sss-signature'], raw, req.headers));
       }
       if (req.method === 'GET' && url.pathname === '/assets/app.js')
         return staticFile(res, 'app.js', 'application/javascript; charset=utf-8');

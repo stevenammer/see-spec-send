@@ -389,7 +389,7 @@ const mutants = [
   ['gateway receipts verified once per request', 'gateway_budget: budgets.get(item.id)', 'gateway_budget: meteringSummary(store, item.id)'],
   ['slice23 redaction Bearer', ".replace(CREDENTIAL, '$1 [redacted]');", ';'],
   ['slice23 redaction JSON shape', "const KEYED = /([\"']?)\\b(", "const KEYED = /()\\b("],
-  ['slice23 argv secret refused', "if (args.includes('--secret')) { store.close(); write(SECRET_REFUSAL); return 2; }\n      integrations.addSource", 'integrations.addSource'],
+  ['slice23 argv secret refused', "if (args.includes('--secret')) { store.close(); write(SECRET_REFUSAL); return 2; }\n      await integrations.addSource", 'await integrations.addSource'],
   ['slice23 request log line per request', "      emit({ event: 'request', rid: context.rid,", "      if (false) emit({ event: 'request', rid: context.rid,"],
   ['slice23 unexpected error answers 500', "      return json(res, 500, { error: 'server error', request_id: context.rid });", "      return json(res, 400, { error: 'request refused' });"],
   ['slice23 sign-in outcome logged', "      emit({ event, rid: context.rid, outcome: 'ok', person });", '      void 0;'],

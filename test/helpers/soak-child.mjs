@@ -61,7 +61,7 @@ if (role === 'handler') {
 } else if (role === 'watchdog') {
   const docker = { kill() {}, remove() {}, inspect() { return { State: { Running: false } }; } };
   while (Date.now() < until) {
-    try { stats.stopped ||= watchdog(store, { docker }).stopped; stats.ops += 1; } catch (error) { fault(error); }
+    try { stats.stopped ||= (await watchdog(store, { docker })).stopped; stats.ops += 1; } catch (error) { fault(error); }
     await pause(20);
   }
 } else if (role === 'backup') {

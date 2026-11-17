@@ -27,10 +27,10 @@ function incidentKeys(store, found) {
   return keys;
 }
 
-export function watchdog(store, options = {}) {
+export async function watchdog(store, options = {}) {
   const now = options.now ?? Date.now();
   const docker = options.docker ?? new DockerCli();
-  const recovered = recoverStaleSending(store, now);
+  const recovered = await recoverStaleSending(store, now);
   const found = inspectWatchdog(store, { ...options, now });
   const seen = new Set(store.db.prepare("SELECT action FROM worker_history WHERE action LIKE 'watchdog.seen:%'").all()
     .map(row => row.action.slice('watchdog.seen:'.length)));

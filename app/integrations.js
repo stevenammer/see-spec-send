@@ -2,6 +2,7 @@ import { createHmac, createHash, timingSafeEqual, randomBytes } from 'node:crypt
 import { resolvePinned, pinnedFetch, redact } from '../provider/safe-http.js';
 import { refused } from '../core/errors.js';
 import { keyFileFor, loadKey, seal, open } from '../core/secrets.js';
+import { sqlFor } from '../core/db.js';
 
 const WINDOW = 5 * 60_000;
 // While a row is sending, next_at holds its lease expiry. A lapsed lease means the sender died.
@@ -9,8 +10,8 @@ const LEASE = 2 * 60_000;
 const text = value => typeof value === 'string' && value.length > 0;
 
 // Returns rows whose sender died mid-send back to pending. Called on each watchdog tick.
-export function recoverStaleSending(store, now) {
-  return store.db.prepare("UPDATE integration_outbox SET state='pending' WHERE state='sending' AND next_at<?").run(now).changes;
+export async function recoverStaleSending(store, now) {
+  return (await sqlFor(store.db).run("UPDATE integration_outbox SET state='pending' WHERE state='sending' AND next_at<?", now)).changes;
 }
 const signature = (secret, timestamp, bytes) => createHmac('sha256', secret).update(`${timestamp}.`).update(bytes).digest('hex');
 const equal = (left, right) => {
@@ -35,13 +36,15 @@ const safeError = error => redact(String(error?.message || 'delivery failed')).s
 
 export class Integrations {
   constructor(store, { clock = () => Date.now(), fetcher = pinnedFetch, resolver, origin = 'https://localhost', keyFile = null } = {}) {
-    this.store = store; this.db = store.db; this.clock = clock; this.fetcher = fetcher; this.resolver = resolver; this.origin = origin;
+    this.store = store; this.db = store.db; this.sql = sqlFor(store.db); this.clock = clock; this.fetcher = fetcher; this.resolver = resolver; this.origin = origin;
     this.buckets = new Map();
     this.keyFile = keyFile;
     this.keyBytes = null;
   }
 
-  // Loaded on first use so read-only commands never create a key file.
+  // Loaded on first use so read-only commands never create a key file. Reading the database's own file path is a
+  // SQLite-only step (it names the key file beside it), so it stays on the raw connection until a Postgres build
+  // supplies its own key location.
   key() {
     if (!this.keyBytes) {
       const file = this.keyFile ?? keyFileFor(this.db.prepare('PRAGMA database_list').get()?.file || ':memory:');
@@ -63,47 +66,47 @@ export class Integrations {
   }
 
   // New secret takes over now. The old one still verifies (inbound) or also signs (outbound) for hours.
-  rotate(kind, name, secret, hours = 24) {
+  async rotate(kind, name, secret, hours = 24) {
     const table = tableFor(kind);
     if (!text(secret) || secret.length < 16 || !Number.isFinite(hours) || hours <= 0 || hours > 168) throw Error('invalid secret or overlap');
-    const row = this.db.prepare(`SELECT secret FROM ${table} WHERE name=?`).get(name);
+    const row = await this.sql.get(`SELECT secret FROM ${table} WHERE name=?`, name);
     if (!row) throw Error(`no ${kind} named ${name}`);
     const old = this.unpack(row.secret).current;
-    this.db.prepare(`UPDATE ${table} SET secret=? WHERE name=?`).run(this.pack(secret, old, this.clock() + hours * 3_600_000), name);
+    await this.sql.run(`UPDATE ${table} SET secret=? WHERE name=?`, this.pack(secret, old, this.clock() + hours * 3_600_000), name);
   }
 
-  addSource(name, secret, rateLimit = 30) {
+  async addSource(name, secret, rateLimit = 30) {
     if (!validName(name) || !text(secret) || secret.length < 16 || !Number.isInteger(rateLimit) || rateLimit < 1 || rateLimit > 600) throw Error('invalid integration source');
-    this.db.prepare('INSERT INTO integration_sources(name,secret,rate_limit) VALUES(?,?,?)').run(name, this.pack(secret), rateLimit);
+    await this.sql.run('INSERT INTO integration_sources(name,secret,rate_limit) VALUES(?,?,?)', name, this.pack(secret), rateLimit);
     this.store.registerSource(`source:${name}`);
   }
 
-  addDestination(name, url, secret, { includeText = false, allowLoopback = false } = {}) {
+  async addDestination(name, url, secret, { includeText = false, allowLoopback = false } = {}) {
     if (!validName(name) || !text(secret) || secret.length < 16) throw Error('invalid integration destination');
     let parsed; try { parsed = new URL(url); } catch { throw Error('invalid destination URL'); }
     if (parsed.protocol !== 'https:' && !(allowLoopback && parsed.protocol === 'http:' && ['127.0.0.1', '::1', 'localhost'].includes(parsed.hostname))) throw Error('HTTPS destination required');
     if (parsed.username || parsed.password || parsed.hash || parsed.search) throw Error('invalid destination URL');
-    this.db.prepare('INSERT INTO integration_destinations(name,url,secret,include_text,allow_loopback) VALUES(?,?,?,?,?)')
-      .run(name, parsed.toString(), this.pack(secret), includeText ? 1 : 0, allowLoopback ? 1 : 0);
+    await this.sql.run('INSERT INTO integration_destinations(name,url,secret,include_text,allow_loopback) VALUES(?,?,?,?,?)',
+      name, parsed.toString(), this.pack(secret), includeText ? 1 : 0, allowLoopback ? 1 : 0);
   }
 
-  list(kind) {
-    if (kind === 'source') return this.db.prepare('SELECT name,enabled,rate_limit FROM integration_sources ORDER BY name').all();
-    if (kind === 'destination') return this.db.prepare('SELECT name,url,include_text,enabled,allow_loopback FROM integration_destinations ORDER BY name').all();
+  async list(kind) {
+    if (kind === 'source') return this.sql.all('SELECT name,enabled,rate_limit FROM integration_sources ORDER BY name');
+    if (kind === 'destination') return this.sql.all('SELECT name,url,include_text,enabled,allow_loopback FROM integration_destinations ORDER BY name');
     throw Error('unknown integration kind');
   }
 
-  allowed(source) {
+  async allowed(source) {
     const now = this.clock(); const row = this.buckets.get(source) || { tokens: null, at: now };
-    const limit = this.db.prepare('SELECT rate_limit FROM integration_sources WHERE name=?').get(source)?.rate_limit;
+    const limit = (await this.sql.get('SELECT rate_limit FROM integration_sources WHERE name=?', source))?.rate_limit;
     if (!limit) return false;
     row.tokens = row.tokens === null ? limit : Math.min(limit, row.tokens + (now - row.at) * limit / 60_000);
     row.at = now; this.buckets.set(source, row);
     if (row.tokens < 1) return false; row.tokens -= 1; return true;
   }
 
-  receive(source, timestamp, supplied, bytes, headers = {}) {
-    const row = this.db.prepare('SELECT * FROM integration_sources WHERE name=? AND enabled=1').get(source);
+  async receive(source, timestamp, supplied, bytes, headers = {}) {
+    const row = await this.sql.get('SELECT * FROM integration_sources WHERE name=? AND enabled=1', source);
     const time = Number(timestamp);
     if (!row || !Number.isSafeInteger(time) || Math.abs(this.clock() - time) > WINDOW || !this.secrets(row.secret).map(candidate => equal(signature(candidate, timestamp, bytes), String(supplied || '').replace(/^sha256=/, ''))).includes(true) || !this.allowed(source)) throw refused('inbound refused');
     let input; try { input = strictSeen(JSON.parse(bytes.toString('utf8'))); } catch { throw refused('inbound refused'); }
@@ -113,21 +116,21 @@ export class Integrations {
     // part of it, so changing that header cannot turn a replayed signed request into a new one.
     const replay = createHash('sha256').update(`${timestamp}|`).update(bytes).digest('hex');
     const item = randomBytes(24).toString('base64url');
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
-      this.db.prepare('DELETE FROM integration_replays WHERE expires<=?').run(this.clock());
-      const accepted = this.db.prepare('INSERT OR IGNORE INTO integration_replays(source,digest,expires) VALUES(?,?,?)').run(source, replay, this.clock() + WINDOW);
+    return this.sql.tx(async tx => {
+      await tx.run('DELETE FROM integration_replays WHERE expires<=?', this.clock());
+      const accepted = await tx.run('INSERT OR IGNORE INTO integration_replays(source,digest,expires) VALUES(?,?,?)', source, replay, this.clock() + WINDOW);
       if (accepted.changes !== 1) throw refused('inbound refused');
+      // The Store still appends synchronously on the same connection, inside this transaction. It converts in a later slice.
       this.store.appendInTransaction(item, { type: 'seen', actor: `source:${source}`, at: new Date(this.clock()).toISOString(), ...input }, { idem: `inbound:${source}:${idem}` });
-      this.db.exec('COMMIT'); return { id: item };
-    } catch (error) { try { this.db.exec('ROLLBACK'); } catch {} throw error; }
+      return { id: item };
+    });
   }
 
   async deliverOnce() {
-    const row = this.db.prepare(`SELECT o.*,d.url,d.secret,d.allow_loopback FROM integration_outbox o JOIN integration_destinations d ON d.name=o.destination
-      WHERE o.state='pending' AND o.next_at<=? AND d.enabled=1 ORDER BY o.id LIMIT 1`).get(this.clock());
+    const row = await this.sql.get(`SELECT o.*,d.url,d.secret,d.allow_loopback FROM integration_outbox o JOIN integration_destinations d ON d.name=o.destination
+      WHERE o.state='pending' AND o.next_at<=? AND d.enabled=1 ORDER BY o.id LIMIT 1`, this.clock());
     if (!row) return false;
-    const claim = this.db.prepare("UPDATE integration_outbox SET state='sending',next_at=? WHERE id=? AND state='pending'").run(this.clock() + LEASE, row.id);
+    const claim = await this.sql.run("UPDATE integration_outbox SET state='sending',next_at=? WHERE id=? AND state='pending'", this.clock() + LEASE, row.id);
     if (claim.changes !== 1) return false;
     const bytes = Buffer.from(row.payload); const timestamp = String(this.clock());
     try {
@@ -135,48 +138,48 @@ export class Integrations {
       const pin = await resolvePinned(row.url, { hosts: [new URL(row.url).hostname], allowPrivate: row.allow_loopback === 1, resolver: this.resolver });
       const response = await this.fetcher(pin.url, { method: 'POST', redirect: 'error', address: pin.address, family: pin.family, headers: { 'content-type': 'application/json', 'x-sss-timestamp': timestamp, 'x-sss-signature': `sha256=${signature(secrets[0], timestamp, bytes)}`, ...(secrets[1] ? { 'x-sss-signature-previous': `sha256=${signature(secrets[1], timestamp, bytes)}` } : {}), 'idempotency-key': `outbox-${row.id}` }, body: bytes, signal: AbortSignal.timeout(10_000) });
       if (!response.ok) throw Error(`destination HTTP ${response.status}`);
-      this.db.prepare("UPDATE integration_outbox SET state='delivered',delivered=?,last_error=NULL WHERE id=?").run(this.clock(), row.id);
+      await this.sql.run("UPDATE integration_outbox SET state='delivered',delivered=?,last_error=NULL WHERE id=?", this.clock(), row.id);
     } catch (error) {
       const attempts = row.attempts + 1; const state = attempts >= 5 ? 'dead' : 'pending';
-      this.db.prepare('UPDATE integration_outbox SET state=?,attempts=?,next_at=?,last_error=? WHERE id=?')
-        .run(state, attempts, this.clock() + Math.min(60 * 60_000, 1000 * 2 ** attempts), safeError(error), row.id);
+      await this.sql.run('UPDATE integration_outbox SET state=?,attempts=?,next_at=?,last_error=? WHERE id=?',
+        state, attempts, this.clock() + Math.min(60 * 60_000, 1000 * 2 ** attempts), safeError(error), row.id);
     }
     return true;
   }
 
   // Disable stops intake or delivery for one source or destination. Its row and history stay.
-  setEnabled(kind, name, enabled) {
+  async setEnabled(kind, name, enabled) {
     const table = tableFor(kind);
-    if (this.db.prepare(`UPDATE ${table} SET enabled=? WHERE name=?`).run(enabled ? 1 : 0, name).changes !== 1) {
+    if ((await this.sql.run(`UPDATE ${table} SET enabled=? WHERE name=?`, enabled ? 1 : 0, name)).changes !== 1) {
       throw Error(`no ${kind} named ${name}`);
     }
   }
 
   // Remove is allowed only after disable, so one typo cannot delete a live integration.
-  remove(kind, name) {
+  async remove(kind, name) {
     const table = tableFor(kind);
-    const row = this.db.prepare(`SELECT enabled FROM ${table} WHERE name=?`).get(name);
+    const row = await this.sql.get(`SELECT enabled FROM ${table} WHERE name=?`, name);
     if (!row) throw Error(`no ${kind} named ${name}`);
     if (row.enabled !== 0) throw Error(`disable it first: integration ${kind} disable --name ${name}`);
-    this.db.prepare(`DELETE FROM ${table} WHERE name=? AND enabled=0`).run(name);
+    await this.sql.run(`DELETE FROM ${table} WHERE name=? AND enabled=0`, name);
   }
 
   // Operator actions on one outbox row. Each one leaves a worker_history line.
-  audit(action) { this.db.prepare('INSERT INTO worker_history(action,at) VALUES(?,?)').run(action, new Date(this.clock()).toISOString()); }
+  async audit(action) { await this.sql.run('INSERT INTO worker_history(action,at) VALUES(?,?)', action, new Date(this.clock()).toISOString()); }
 
-  retry(id) {
-    const changed = this.db.prepare("UPDATE integration_outbox SET state='pending',attempts=0,next_at=?,last_error=NULL WHERE id=? AND state='dead'").run(this.clock(), id).changes;
+  async retry(id) {
+    const changed = (await this.sql.run("UPDATE integration_outbox SET state='pending',attempts=0,next_at=?,last_error=NULL WHERE id=? AND state='dead'", this.clock(), id)).changes;
     if (changed !== 1) throw Error('no dead outbox row with that id');
-    this.audit(`outbox.retry:${id}`);
+    await this.audit(`outbox.retry:${id}`);
   }
 
-  drop(id) {
-    const changed = this.db.prepare("UPDATE integration_outbox SET state='dropped' WHERE id=? AND state IN ('dead','pending')").run(id).changes;
+  async drop(id) {
+    const changed = (await this.sql.run("UPDATE integration_outbox SET state='dropped' WHERE id=? AND state IN ('dead','pending')", id)).changes;
     if (changed !== 1) throw Error('no dead or pending outbox row with that id');
-    this.audit(`outbox.drop:${id}`);
+    await this.audit(`outbox.drop:${id}`);
   }
 
-  outbox() { return this.db.prepare('SELECT id,destination,item,seq,event_type,stage,state,attempts,next_at,created,delivered,last_error FROM integration_outbox ORDER BY id').all(); }
+  async outbox() { return this.sql.all('SELECT id,destination,item,seq,event_type,stage,state,attempts,next_at,created,delivered,last_error FROM integration_outbox ORDER BY id'); }
 }
 
 export const hmac = signature;

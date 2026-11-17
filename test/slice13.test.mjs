@@ -17,7 +17,7 @@ const request = async (handler, path, headers, value) => { const req = Readable.
 
 test('integration intake refuses forged, stale, replayed, oversized, unknown, and malformed input', async () => {
   let now = 1_000_000; const store = new Store(); const auth = new Auth(store);
-  const integrations = new Integrations(store, { clock: () => now }); integrations.addSource('slack', secret);
+  const integrations = new Integrations(store, { clock: () => now }); await integrations.addSource('slack', secret);
   const handler = createHandler({ store, auth, integrations, secure: false, origin: 'http://127.0.0.1' });
   const send = (body, extra = {}) => request(handler, '/api/integrations/inbound/slack', { 'x-sss-timestamp': String(now), 'x-sss-signature': `sha256=${hmac(secret, String(now), body)}`, 'idempotency-key': 'one', ...extra }, body);
   assert.equal((await send(inbound())).status, 201);
@@ -36,9 +36,9 @@ test('integration intake refuses forged, stale, replayed, oversized, unknown, an
   assert.equal((await send(huge, { 'idempotency-key': 'six' })).status, 400);
 });
 
-test('integration intake has no workflow authority', () => {
-  const store = new Store(); const integrations = new Integrations(store, { clock: () => 1_000_000 }); integrations.addSource('tool', secret);
-  const bytes = inbound(); integrations.receive('tool', '1000000', `sha256=${hmac(secret, '1000000', bytes)}`, bytes, { 'idempotency-key': 'only-seen' });
+test('integration intake has no workflow authority', async () => {
+  const store = new Store(); const integrations = new Integrations(store, { clock: () => 1_000_000 }); await integrations.addSource('tool', secret);
+  const bytes = inbound(); await integrations.receive('tool', '1000000', `sha256=${hmac(secret, '1000000', bytes)}`, bytes, { 'idempotency-key': 'only-seen' });
   const [id] = store.listItems().map(row => row.id);
   assert.equal(store.read(id).state, 'SEEN');
   assert.throws(() => store.append(id, { type: 'checked', actor: 'source:tool', problem: 'x', looked: ['x'], found: [], verdict: 'build_needed', at: new Date().toISOString() }, { idem: 'checked' }), /not allowed/);
@@ -51,20 +51,20 @@ test('integration outbox retries, dead-letters, and survives a restart', async t
   let now = 1_000_000; const directory = mkdtempSync(join(tmpdir(), 'sss-s13-')); t.after(() => rmSync(directory, { recursive: true, force: true }));
   const file = join(directory, 'db.sqlite'); let hits = 0; let received;
   const receiver = async (_url, options) => { hits += 1; received = { redirect: options.redirect, body: options.body, timestamp: options.headers['x-sss-timestamp'], signature: options.headers['x-sss-signature'] }; const failing = JSON.parse(options.body).item_id === 'item2'; return { ok: hits !== 1 && !failing, status: hits === 1 || failing ? 500 : 204 }; };
-  let store = new Store(file); let integrations = new Integrations(store, { clock: () => now, fetcher: receiver }); integrations.addDestination('receiver', 'http://127.0.0.1/test', secret, { allowLoopback: true }); store.registerPerson('person');
+  let store = new Store(file); let integrations = new Integrations(store, { clock: () => now, fetcher: receiver }); await integrations.addDestination('receiver', 'http://127.0.0.1/test', secret, { allowLoopback: true }); store.registerPerson('person');
   store.append('item', { type: 'checked', actor: 'person', problem: 'private problem', looked: ['checked'], found: [], verdict: 'build_needed', at: new Date().toISOString() }, { idem: 'event' });
   store.db.prepare('UPDATE integration_outbox SET next_at=?').run(now);
-  assert.equal(integrations.outbox()[0].state, 'pending');
-  await integrations.deliverOnce(); assert.equal(integrations.outbox()[0].state, 'pending');
+  assert.equal((await integrations.outbox())[0].state, 'pending');
+  await integrations.deliverOnce(); assert.equal((await integrations.outbox())[0].state, 'pending');
   store.close(); store = new Store(file); now = 2_000_000; integrations = new Integrations(store, { clock: () => now, fetcher: receiver });
-  await integrations.deliverOnce(); assert.equal(integrations.outbox()[0].state, 'delivered');
+  await integrations.deliverOnce(); assert.equal((await integrations.outbox())[0].state, 'delivered');
   assert.equal(received.redirect, 'error', 'outbound deliveries must refuse redirects');
   assert.equal(hits, 2); assert.equal(JSON.parse(received.body).text, undefined); assert.equal(received.signature, `sha256=${hmac(secret, received.timestamp, Buffer.from(received.body))}`);
   // A permanently failing receiver becomes visible as a dead letter.
   store.registerPerson('other'); store.append('item2', { type: 'checked', actor: 'other', problem: 'x', looked: ['x'], found: [], verdict: 'build_needed', at: new Date().toISOString() }, { idem: 'event2' });
   store.db.prepare('UPDATE integration_outbox SET next_at=? WHERE item=?').run(now, 'item2');
   for (let count = 0; count < 5; count += 1) { now += 10_000_000; await integrations.deliverOnce(); }
-  assert.equal(integrations.outbox().find(row => row.item === 'item2').state, 'dead');
+  assert.equal((await integrations.outbox()).find(row => row.item === 'item2').state, 'dead');
 });
 
 test('integration CLI never prints secrets', async t => {

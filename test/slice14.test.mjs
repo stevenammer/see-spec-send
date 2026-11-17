@@ -30,29 +30,29 @@ test('portable Quest prompt imports only the deterministic shared memo', async (
   await assert.rejects(draftQuestModel({ providerName:'local', doc, approved:false }, { SSS_PROVIDERS_FILE: config }), /explicit approval/);
 });
 
-test('watchdog leaves a fresh install with no run in flight alone, even with no heartbeat', () => {
+test('watchdog leaves a fresh install with no run in flight alone, even with no heartbeat', async () => {
   const store = new Store(); const now = 1_000_000;
-  const result = watchdog(store, { now, heartbeatMs: 10, runMs: 10, outboxMs: 10 });
+  const result = await watchdog(store, { now, heartbeatMs: 10, runMs: 10, outboxMs: 10 });
   assert.equal(result.stopped, false); assert.equal(result.staleHeartbeat, false); assert.equal(killed(store), false);
   store.close();
 });
 
-test('watchdog stops stale heartbeat through emergency stop', () => {
+test('watchdog stops stale heartbeat through emergency stop', async () => {
   const store = new Store(); const now = 1_000_000;
   store.db.prepare('INSERT INTO worker_heartbeat VALUES(1,?)').run(now - 100);
   // A run is in flight, so the missing heartbeat is a real emergency.
   store.db.prepare("INSERT INTO runs(id,item,approval,spec_hash,run_actor,gateway_actor,status,delivered,started_at) VALUES('r','item',1,'h','a','b','active',0,?)").run(now);
-  const result = watchdog(store, { now, heartbeatMs: 10, runMs: 10, outboxMs: 10 });
+  const result = await watchdog(store, { now, heartbeatMs: 10, runMs: 10, outboxMs: 10 });
   assert.equal(result.stopped, true); assert.equal(result.staleHeartbeat, true);
   assert.equal(killed(store), true); assert.ok(store.db.prepare("SELECT 1 FROM worker_history WHERE action='watchdog.stop'").get());
   store.close();
 });
 
-test('watchdog alerts on an unrecoverable outbox row and does not stop the install', () => {
+test('watchdog alerts on an unrecoverable outbox row and does not stop the install', async () => {
   const store = new Store(); const now = 1_000_000;
   store.db.prepare('INSERT INTO worker_heartbeat VALUES(1,?)').run(now);
   store.db.prepare("INSERT INTO integration_outbox(destination,item,seq,event_type,stage,payload,state,attempts,next_at,created) VALUES('d','i',1,'checked','CHECKED','{}','dead',5,0,?)").run(now - 100);
-  const result = watchdog(store, { now, heartbeatMs: 10, runMs: 10, outboxMs: 10 });
+  const result = await watchdog(store, { now, heartbeatMs: 10, runMs: 10, outboxMs: 10 });
   assert.equal(result.stopped, false); assert.equal(result.staleHeartbeat, false); assert.deepEqual(result.unrecoverableOutbox, [1]); assert.deepEqual(result.alerted, [1]);
   assert.equal(killed(store), false); assert.equal(store.db.prepare("SELECT 1 FROM worker_history WHERE action='watchdog.stop'").get(), undefined);
   assert.ok(store.db.prepare("SELECT 1 FROM worker_history WHERE action='watchdog.alert:outbox:1'").get());

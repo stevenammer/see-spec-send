@@ -355,35 +355,35 @@ async function run(argv, env, write) {
     const kind = args[0]; const action = args[1];
     if (kind === 'source' && action === 'add') {
       if (args.includes('--secret')) { store.close(); write(SECRET_REFUSAL); return 2; }
-      integrations.addSource(value('--name') || fail('missing --name'), secretFrom(args, env), Number(value('--rate-limit') || '30'));
+      await integrations.addSource(value('--name') || fail('missing --name'), secretFrom(args, env), Number(value('--rate-limit') || '30'));
       write(`integration source ${value('--name')} added`);
     } else if (kind === 'source' && action === 'list') {
-      for (const row of integrations.list('source')) write(JSON.stringify(row));
+      for (const row of await integrations.list('source')) write(JSON.stringify(row));
     } else if (kind === 'destination' && action === 'add') {
       if (args.includes('--secret')) { store.close(); write(SECRET_REFUSAL); return 2; }
-      integrations.addDestination(value('--name') || fail('missing --name'), value('--url') || fail('missing --url'), secretFrom(args, env), { includeText: args.includes('--include-text'), allowLoopback: args.includes('--allow-loopback') });
+      await integrations.addDestination(value('--name') || fail('missing --name'), value('--url') || fail('missing --url'), secretFrom(args, env), { includeText: args.includes('--include-text'), allowLoopback: args.includes('--allow-loopback') });
       write(`integration destination ${value('--name')} added`);
     } else if (kind === 'destination' && action === 'list') {
-      for (const row of integrations.list('destination')) write(JSON.stringify(row));
+      for (const row of await integrations.list('destination')) write(JSON.stringify(row));
     } else if (kind === 'outbox' && action === 'list') {
-      for (const row of integrations.outbox()) write(JSON.stringify(row));
+      for (const row of await integrations.outbox()) write(JSON.stringify(row));
     } else if (kind === 'outbox' && action === 'deliver') {
-      recoverStaleSending(store, Date.now());
+      await recoverStaleSending(store, Date.now());
       let delivered = 0; while (await integrations.deliverOnce()) delivered += 1;
       write(`outbox attempts: ${delivered}`);
     } else if (kind === 'outbox' && (action === 'retry' || action === 'drop')) {
       const id = Number(value('--id') || fail('missing --id'));
       if (!Number.isSafeInteger(id)) fail('--id must be a whole number');
-      if (action === 'retry') integrations.retry(id); else integrations.drop(id);
+      if (action === 'retry') await integrations.retry(id); else await integrations.drop(id);
       write(`outbox row ${id} ${action === 'retry' ? 'set to pending' : 'dropped'}`);
     } else if (['source', 'destination'].includes(kind) && action === 'rotate') {
       if (args.includes('--secret')) { store.close(); write(SECRET_REFUSAL); return 2; }
       const name = value('--name') || fail('missing --name');
-      integrations.rotate(kind, name, secretFrom(args, env), Number(value('--overlap-hours') || '24'));
+      await integrations.rotate(kind, name, secretFrom(args, env), Number(value('--overlap-hours') || '24'));
       write(`integration ${kind} ${name} rotated; the old secret also works for ${value('--overlap-hours') || '24'} hours`);
     } else if (['source', 'destination'].includes(kind) && ['disable', 'remove'].includes(action)) {
       const name = value('--name') || fail('missing --name');
-      if (action === 'disable') integrations.setEnabled(kind, name, false); else integrations.remove(kind, name);
+      if (action === 'disable') await integrations.setEnabled(kind, name, false); else await integrations.remove(kind, name);
       write(`integration ${kind} ${name} ${action === 'disable' ? 'disabled' : 'removed'}`);
     } else fail('expected integration source, destination, or outbox command');
   } else if (command === 'research') {
@@ -580,7 +580,7 @@ async function run(argv, env, write) {
       if (!args.includes('--once')) await new Promise(resolve => setTimeout(resolve, 250));
     } while (!args.includes('--once'));
   } else if (command === 'watchdog') {
-    const result = watchdog(store, { heartbeatMs: Number(value('--heartbeat-ms') || 15000), runMs: Number(value('--run-ms') || 900000), outboxMs: Number(value('--outbox-ms') || 900000), docker: new DockerCli() });
+    const result = await watchdog(store, { heartbeatMs: Number(value('--heartbeat-ms') || 15000), runMs: Number(value('--run-ms') || 900000), outboxMs: Number(value('--outbox-ms') || 900000), docker: new DockerCli() });
     write(JSON.stringify(result));
   } else if (command === 'init') {
     if (auth.db.prepare('SELECT 1 FROM users LIMIT 1').get()) fail('already initialized');

@@ -166,7 +166,7 @@ test('integration secrets are never accepted as a literal on the command line', 
   const refused = await cli(['integration', 'source', 'add', '--name', 'literal', '--secret', SECRET], env, value => lines.push(value));
   assert.equal(refused, 2, 'a literal --secret must exit with the refusal code');
   assert.equal(lines.join('\n').includes(SECRET), false);
-  assert.equal(existsSync(file) ? new Integrations(new Store(file)).list('source').length : 0, 0);
+  assert.equal(existsSync(file) ? (await new Integrations(new Store(file)).list('source')).length : 0, 0);
   const reader = existsSync(file) ? new DatabaseSync(file, { readOnly: true }) : null;
   if (reader) {
     const audit = reader.prepare('SELECT detail FROM admin_audit').all().map(row => row.detail).join('\n');
@@ -180,8 +180,8 @@ test('integration secrets are never accepted as a literal on the command line', 
   await cli(['integration', 'destination', 'add', '--name', 'fromfile', '--url', 'https://example.com/hook', '--secret-file', secretFile], env, value => lines.push(value));
   const stored = new Store(file);
   const reading = new Integrations(stored);
-  assert.deepEqual(reading.list('source').map(row => row.name), ['fromenv']);
-  assert.deepEqual(reading.list('destination').map(row => row.name), ['fromfile']);
+  assert.deepEqual((await reading.list('source')).map(row => row.name), ['fromenv']);
+  assert.deepEqual((await reading.list('destination')).map(row => row.name), ['fromfile']);
   const raw = new DatabaseSync(file, { readOnly: true }).prepare('SELECT secret FROM integration_destinations').get().secret;
   // Slice 24: stored sealed, never as plaintext. The value is recoverable only with the key file.
   assert.equal(raw.includes(SECRET), false);

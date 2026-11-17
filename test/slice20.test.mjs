@@ -130,47 +130,47 @@ test('kill set tries the database latch even when the file latch cannot be writt
   store.close();
 });
 
-test('a dead delivery alerts once per row and never stops the install', () => {
+test('a dead delivery alerts once per row and never stops the install', async () => {
   const store = new Store(); const now = 1_000_000;
   store.db.prepare('INSERT INTO worker_heartbeat VALUES(1,?)').run(now);
   insertDead(store, 'first', now);
-  let result = watchdog(store, window(now));
+  let result = await watchdog(store, window(now));
   assert.equal(result.stopped, false); assert.deepEqual(result.alerted, [1]); assert.equal(killed(store), false);
-  result = watchdog(store, window(now + 1));
+  result = await watchdog(store, window(now + 1));
   assert.deepEqual(result.alerted, [], 'the same dead row alerts only once');
   insertDead(store, 'second', now + 2);
-  result = watchdog(store, window(now + 3));
+  result = await watchdog(store, window(now + 3));
   assert.deepEqual(result.alerted, [2], 'a new dead row alerts again'); assert.equal(result.stopped, false); assert.equal(killed(store), false);
   store.close();
 });
 
-test('the watchdog stops once per incident and does not re-fire for an incident it already saw after kill clear', () => {
+test('the watchdog stops once per incident and does not re-fire for an incident it already saw after kill clear', async () => {
   const store = new Store(); const now = 1_000_000;
   const stale = at => store.db.prepare('INSERT OR REPLACE INTO worker_heartbeat VALUES(1,?)').run(at);
   store.db.prepare("INSERT INTO runs(id,item,approval,spec_hash,run_actor,gateway_actor,status,delivered,started_at) VALUES('r','item',1,'h','a','b','active',0,?)").run(now);
   stale(now - 100);
-  assert.equal(watchdog(store, window(now)).stopped, true);
+  assert.equal((await watchdog(store, window(now))).stopped, true);
   setKill(store, false);
-  assert.equal(watchdog(store, window(now + 1)).stopped, false, 'the same incident must not re-kill');
+  assert.equal((await watchdog(store, window(now + 1))).stopped, false, 'the same incident must not re-kill');
   assert.equal(killed(store), false);
   stale(now - 50);
-  assert.equal(watchdog(store, window(now + 2)).stopped, true, 'a new heartbeat incident fires again');
+  assert.equal((await watchdog(store, window(now + 2))).stopped, true, 'a new heartbeat incident fires again');
   store.close();
 });
 
-test('stale sending rows return to pending and never stop the install', () => {
+test('stale sending rows return to pending and never stop the install', async () => {
   const store = new Store(); const now = 1_000_000;
   const insert = (item, nextAt) => store.db.prepare("INSERT INTO integration_outbox(destination,item,seq,event_type,stage,payload,state,attempts,next_at,created) VALUES('d',?,1,'checked','CHECKED','{}','sending',0,?,?)").run(item, nextAt, now - 100);
   insert('lapsed', now - 1);
   insert('live', now + 60_000);
-  const result = watchdog(store, window(now));
+  const result = await watchdog(store, window(now));
   assert.equal(result.stopped, false);
   const states = Object.fromEntries(store.db.prepare('SELECT item,state FROM integration_outbox').all().map(row => [row.item, row.state]));
   assert.deepEqual(states, { lapsed: 'pending', live: 'sending' });
   store.close();
 });
 
-test('the watchdog stops named builder containers and reports one that survives', () => {
+test('the watchdog stops named builder containers and reports one that survives', async () => {
   const store = new Store(); const now = 1_000_000;
   const named = (id, name, state) => store.db.prepare('INSERT INTO container_jobs VALUES(?,?,?,?,NULL,?,?,NULL)').run(id, '{}', state, name, now + 60_000, '/tmp/out.html');
   named('a'.repeat(64), 'sss-builder-aaa', 'running');
@@ -180,7 +180,7 @@ test('the watchdog stops named builder containers and reports one that survives'
   store.db.prepare('INSERT INTO worker_heartbeat VALUES(1,?)').run(now - 100);
   store.db.prepare("INSERT INTO runs(id,item,approval,spec_hash,run_actor,gateway_actor,status,delivered,started_at) VALUES('r','item',1,'h','a','b','active',0,?)").run(now);
   const docker = fakeDocker(['sss-builder-aaa', 'sss-builder-bbb', 'sss-builder-ddd', 'sss-builder-ccc'], { stubborn: ['sss-builder-ddd'] });
-  const result = watchdog(store, { ...window(now), docker });
+  const result = await watchdog(store, { ...window(now), docker });
   assert.equal(result.stopped, true);
   assert.ok(docker.calls.some(call => call[0] === 'kill' && call[1] === 'sss-builder-aaa'));
   assert.ok(docker.calls.some(call => call[0] === 'kill' && call[1] === 'sss-builder-bbb'));
@@ -333,7 +333,7 @@ test('a watchdog tick while a row is being sent leaves that row sending', async 
   const store = new Store(); const now = 1_000_000; let during = null;
   store.db.prepare("INSERT INTO integration_outbox(destination,item,seq,event_type,stage,payload,state,attempts,next_at,created) VALUES('receiver','i',1,'checked','CHECKED','{}','pending',0,?,?)").run(now, now);
   store.db.prepare("INSERT INTO integration_destinations(name,url,secret,include_text,enabled,allow_loopback) VALUES('receiver','http://127.0.0.1/test','this-is-a-long-test-secret',0,1,1)").run();
-  const fetcher = async () => { watchdog(store, window(now)); during = store.db.prepare('SELECT state FROM integration_outbox').get().state; return { ok: true }; };
+  const fetcher = async () => { await watchdog(store, window(now)); during = store.db.prepare('SELECT state FROM integration_outbox').get().state; return { ok: true }; };
   const integrations = new Integrations(store, { clock: () => now, fetcher });
   assert.equal(await integrations.deliverOnce(), true);
   assert.equal(during, 'sending', 'a live claim is not recovered by a watchdog tick');

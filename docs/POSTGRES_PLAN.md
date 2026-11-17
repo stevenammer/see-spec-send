@@ -15,9 +15,9 @@ A company's database team already runs Postgres, already backs it up, and alread
 - Search is SQLite FTS5 (`core/memory.js`). Postgres needs a different full-text design.
 - 38 places manage transactions by hand. The tamper-evident event chain depends on appends being strictly ordered per item.
 
-## The decision I need from you
+## Decision made (Nov 17, 2026)
 
-The repo says "no runtime dependencies," and that's true today. Talking to Postgres needs a driver (`pg`). The plan is: **the default install stays dependency-free and SQLite-only. The Postgres build installs `pg` as an optional extra in its own image.** The README line becomes "no runtime dependencies unless you choose Postgres." If you'd rather keep zero dependencies everywhere, the only other route is writing a Postgres wire-protocol client in this repo, which I'd advise against for a security-sensitive project.
+The repo says "no runtime dependencies," and that's true today. Talking to Postgres needs a driver (`pg`). **The decision: the default install stays dependency-free and SQLite-only. The Postgres build installs `pg` as an optional extra in its own image.** The README line becomes "no runtime dependencies unless you choose Postgres" at the point the Postgres build ships, and not before. The only other route would be writing a Postgres wire-protocol client in this repo, which I'm not doing for a security-sensitive project.
 
 ## Slices, in order
 

@@ -222,3 +222,16 @@ test('the provider verifies audience, nonce and key algorithm on its own, not on
   await assert.rejects(provider.verifyIdToken(`${b64({ alg: 'none', kid: 'rsa-1' })}.${b64(baseClaims('n-1'))}.`, { nonce: 'n-1' }), /refused/, 'alg none');
   await assert.rejects(provider.verifyIdToken(token(baseClaims('n-1'), { alg: 'ES256', kid: 'rsa-1', key: ec.privateKey }), { nonce: 'n-1' }), /refused/, 'ES256 against an RSA key id');
 });
+
+test('keys published without an alg (as Microsoft Entra does) work when the key type fits, and never when it does not', async () => {
+  const strip = key => { const { alg, ...rest } = key; return rest; };
+  const noAlg = idp({ keys: [strip(jwk(rsa, 'rsa-1', 'RS256')), strip(jwk(ec, 'ec-1', 'ES256'))] });
+  const ctx = await setup(noAlg);
+  assert.equal((await signIn(ctx, nonce => token(baseClaims(nonce)))).error, undefined, 'RS256 token with an RSA key that has no alg');
+  assert.equal((await signIn(await setup(idp({ keys: [strip(jwk(rsa, 'rsa-1', 'RS256')), strip(jwk(ec, 'ec-1', 'ES256'))] })), nonce => token(baseClaims(nonce), { alg: 'ES256' }))).error, undefined, 'ES256 with an EC key that has no alg');
+  // An RS256 token may not be verified with an EC key, nor an ES256 token with an RSA key, even with no alg on the key.
+  const mismatch = await signIn(await setup(idp({ keys: [strip(jwk(ec, 'rsa-1', 'ES256'))] })), nonce => token(baseClaims(nonce)));
+  assert.ok(mismatch.error, 'RS256 token against an EC key'); 
+  const wrongUse = await signIn(await setup(idp({ keys: [{ ...strip(jwk(rsa, 'rsa-1', 'RS256')), use: 'enc' }] })), nonce => token(baseClaims(nonce)));
+  assert.ok(wrongUse.error, 'an encryption key is not a signing key');
+});

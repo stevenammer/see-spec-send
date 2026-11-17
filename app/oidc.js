@@ -66,12 +66,15 @@ export class OidcLogin {
     return pending ? { purpose: pending.purpose } : null;
   }
 
-  async complete({ state, code, binder }) {
+  // RFC 9207 / RFC 9700: if the provider says which issuer answered (`iss` on the callback), it must be ours. This is the
+  // defense against a different provider's answer being fed into this flow.
+  async complete({ state, code, binder, iss }) {
     if (typeof state !== 'string' || typeof code !== 'string' || !code
         || typeof binder !== 'string' || !binder) throw new Error('OIDC response refused');
     const pending = this.pending.get(state);
     // Consume before exchanging, so a provider retry is never a local replay.
     this.pending.delete(state);
+    if (iss !== undefined && iss !== null && iss !== this.issuer) throw new Error('OIDC response refused');
     if (!pending || pending.expires <= this.clock() || pending.binderHash !== sha256(binder)) {
       throw new Error('OIDC response refused');
     }

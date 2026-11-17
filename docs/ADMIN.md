@@ -147,6 +147,8 @@ Erasure removes the target from the active search index and leaves a contributio
 ```
 
 - The client secret is read from the environment variable named in `clientSecretEnv`. It is never written in the file.
+- **Microsoft Entra:** pin the tenant with `tenantId` rather than relying on `allowedEmailDomains`. Entra ID tokens usually carry no verified-email claim, and a domain rule with no email is refused on purpose. Entra publishes signing keys without an `alg` field; that is supported, and the key type must fit the token's algorithm. For other providers, `allowedEmailDomains` needs the provider to put a verified `email` in the ID token itself (some providers keep it in the userinfo response by default; change that setting).
+- Tested against a certified independent implementation (node-oidc-provider) in a real browser: sign-in, PKCE, nonce, RS256 signature check, the `iss` callback parameter, and step-up with `prompt=login`. Run `OIDC_PROVIDER_DIR=<folder where npm i oidc-provider ran> npm run test:idp-interop`. Not yet tested against Entra, Okta or Google themselves.
 - `hosts` is an allowlist: discovery, token and key endpoints must be https on one of those hosts. Redirects are never followed and response sizes are bounded.
 - Startup fetches discovery and the signing keys and refuses to start if either fails or the issuer does not match exactly.
 - Tokens must be RS256 or ES256, signed by a key from the provider's key set, with the exact issuer, your client id as audience, the nonce we issued, and a valid time window (default leeway 60 seconds, set `clockSkewSeconds` 0 to 300). Keys named in a token header are refused. A new key id triggers at most one key refetch a minute.

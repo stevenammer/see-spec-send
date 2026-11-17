@@ -112,3 +112,16 @@ test('a step-up started in one session cannot be finished from a later session o
   await assert.rejects(auth.completeOidcStepup(second.value, { state: url.searchParams.get('state'), code: answer(provider, url, 'same-person', Math.floor(clock.now / 1000)), binder: 'e2' }), /unavailable/);
   assert.equal(auth.stepupFresh(second.value), false);
 });
+
+test('RFC 9207: a callback naming a different issuer is refused and the state is spent', async t => {
+  const env = setup(t); const { auth, provider } = env;
+  const url = new URL(auth.beginOidc('f1'));
+  const code = provider.issue({ codeChallenge: url.searchParams.get('code_challenge'), nonce: url.searchParams.get('nonce'), subject: 'iss-person' });
+  await assert.rejects(auth.completeOidc({ state: url.searchParams.get('state'), code, binder: 'f1', iss: 'https://other-idp.example.test' }), /refused/);
+  await assert.rejects(auth.completeOidc({ state: url.searchParams.get('state'), code, binder: 'f1', iss: issuer }), /refused/, 'the state was consumed by the first attempt');
+  const again = new URL(auth.beginOidc('f2'));
+  const ok = provider.issue({ codeChallenge: again.searchParams.get('code_challenge'), nonce: again.searchParams.get('nonce'), subject: 'iss-person' });
+  assert.ok(await auth.completeOidc({ state: again.searchParams.get('state'), code: ok, binder: 'f2', iss: issuer }), 'the right issuer works');
+  const none = new URL(auth.beginOidc('f3'));
+  assert.ok(await auth.completeOidc({ state: none.searchParams.get('state'), code: provider.issue({ codeChallenge: none.searchParams.get('code_challenge'), nonce: none.searchParams.get('nonce'), subject: 'iss-person' }), binder: 'f3' }), 'absent iss is allowed (providers that do not send it)');
+});

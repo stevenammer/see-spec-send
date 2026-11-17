@@ -89,6 +89,7 @@ export class OidcProvider {
   }
 
   constructor(config, { secret, fetch = pinnedFetch, resolver, clock = () => Date.now() } = {}) {
+    this.urlOptions = () => ({ allowInsecureLoopback: config.allowInsecureLoopbackForDevelopment === true, hosts: config.hosts });
     this.config = config; this.secret = secret; this.fetch = fetch; this.resolver = resolver; this.clock = clock;
     this.metadata = null; this.discoveryAt = 0; this.keys = new Map(); this.lastUnknownKidRefresh = -Infinity;
   }
@@ -106,9 +107,9 @@ export class OidcProvider {
     const metadata = await this.request(`${this.config.issuer}/.well-known/openid-configuration`);
     if (!metadata || metadata.issuer !== this.config.issuer) throw new Error('OIDC discovery issuer refused');
     this.metadata = { issuer: metadata.issuer,
-      authorizationEndpoint: cleanUrl(metadata.authorization_endpoint, 'authorization endpoint', this.config),
-      tokenEndpoint: cleanUrl(metadata.token_endpoint, 'token endpoint', this.config),
-      jwksUri: cleanUrl(metadata.jwks_uri, 'JWKS URI', this.config) };
+      authorizationEndpoint: cleanUrl(metadata.authorization_endpoint, 'authorization endpoint', this.urlOptions()),
+      tokenEndpoint: cleanUrl(metadata.token_endpoint, 'token endpoint', this.urlOptions()),
+      jwksUri: cleanUrl(metadata.jwks_uri, 'JWKS URI', this.urlOptions()) };
     this.discoveryAt = this.clock();
     return this.metadata;
   }
@@ -120,8 +121,11 @@ export class OidcProvider {
     const next = new Map();
     for (const key of body.keys) {
       if (!key || typeof key.kid !== 'string' || key.kid.length > 200 || next.has(key.kid)) continue;
-      if (!['RS256', 'ES256'].includes(key.alg) || !['sig', undefined].includes(key.use)) continue;
-      if ((key.alg === 'RS256' && key.kty !== 'RSA') || (key.alg === 'ES256' && (key.kty !== 'EC' || key.crv !== 'P-256'))) continue;
+      // `alg` is optional in a JWK (Microsoft Entra omits it). When present it must be one we accept; either way the key
+      // type must be one we can verify with, and the token's own algorithm is matched to it at verification time.
+      if ((key.alg !== undefined && !['RS256', 'ES256'].includes(key.alg)) || !['sig', undefined].includes(key.use)) continue;
+      if (!(key.kty === 'RSA' || (key.kty === 'EC' && key.crv === 'P-256'))) continue;
+      if ((key.alg === 'RS256' && key.kty !== 'RSA') || (key.alg === 'ES256' && key.kty !== 'EC')) continue;
       next.set(key.kid, key);
     }
     this.keys = next;
@@ -147,7 +151,11 @@ export class OidcProvider {
     if (!jwk && this.clock() - this.lastUnknownKidRefresh >= UNKNOWN_KID_REFRESH_MS) {
       this.lastUnknownKidRefresh = this.clock(); await this.refreshKeys(); jwk = this.keys.get(header.kid);
     }
-    if (!jwk || jwk.alg !== header.alg) throw new Error('OIDC token refused');
+    // Some providers (Microsoft Entra among them) publish keys without an `alg`. Then the key type must fit the algorithm the
+    // token claims, so a token can never pick an algorithm the key was not made for. If `alg` or `use` is present it must agree.
+    const fits = jwk && (jwk.alg === undefined || jwk.alg === header.alg) && (jwk.use === undefined || jwk.use === 'sig')
+      && (header.alg === 'RS256' ? jwk.kty === 'RSA' : jwk.kty === 'EC' && jwk.crv === 'P-256');
+    if (!fits) throw new Error('OIDC token refused');
     let key; try { key = createPublicKey({ key: jwk, format: 'jwk' }); } catch { throw new Error('OIDC token refused'); }
     const signature = Buffer.from(parts[2], 'base64url');
     const valid = verify(header.alg === 'RS256' ? 'RSA-SHA256' : 'sha256', Buffer.from(`${parts[0]}.${parts[1]}`), key,

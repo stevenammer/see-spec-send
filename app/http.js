@@ -372,7 +372,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         const clearBinder = oidcBinderCookie('') + '; Max-Age=0';
         try {
           if (!session) throw new Error('no session');
-          const done = await auth.completeOidcStepup(sessionToken, { state: url.searchParams.get('state'), code: url.searchParams.get('code'), binder: cookies(req)[oidcBinderName] });
+          const done = await auth.completeOidcStepup(sessionToken, { state: url.searchParams.get('state'), code: url.searchParams.get('code'), iss: url.searchParams.get('iss'), binder: cookies(req)[oidcBinderName] });
           emit({ event: 'step_up', rid: context.rid, method: 'oidc', outcome: 'ok', person: session.person });
           res.setHeader('set-cookie', clearBinder);
           res.writeHead(302, { location: done.next || '/', 'cache-control': 'no-store' });
@@ -391,7 +391,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         const clearBinder = oidcBinderCookie('') + '; Max-Age=0';
         try {
           login = await auth.completeOidc({ state: url.searchParams.get('state'),
-            code: url.searchParams.get('code'), binder: cookies(req)[oidcBinderName] });
+            code: url.searchParams.get('code'), iss: url.searchParams.get('iss'), binder: cookies(req)[oidcBinderName] });
         } catch {
           emit({ event: 'sign_in', rid: context.rid, method: 'oidc', outcome: 'refused' });
           res.setHeader('set-cookie', clearBinder);

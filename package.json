@@ -16,6 +16,7 @@
     "test:stage-freeze": "node test/e2e/stage-freeze.e2e.mjs",
     "test:vision": "node test/e2e/vision-journey.e2e.mjs",
     "test:reanalysis": "node test/e2e/reanalysis-journey.e2e.mjs",
+    "test:idp-interop": "node test/e2e/idp-interop.e2e.mjs",
     "test:a11y": "node scripts/a11y-audit.mjs",
     "drill": "sh scripts/drill.sh",
     "load": "node scripts/load.mjs",

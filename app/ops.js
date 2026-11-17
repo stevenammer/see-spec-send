@@ -46,7 +46,7 @@ const backupFiles = dir => !dir || !existsSync(dir) ? [] : readdirSync(dir).filt
 // Store verifier because Store deliberately enables SQLite pragmas on open.
 export function doctor(file, { backupDir = null, serveArgs = [], nodeVersion = process.versions.node, temp = () => mkdtempSync(join(tmpdir(), 'sss-doctor-')) } = {}) {
   const report = { database: { present: existsSync(file), readable: false, schema_version: null }, chains: {}, kill_latch: 'unavailable', permissions: {}, backup: null, serve: { ok: true }, scheduler_lock: existsSync(`${file}.reanalysis.lock`), disk_headroom_bytes: null, node: { version: nodeVersion, ok: false } };
-  const [major, minor] = String(nodeVersion).split('.').map(Number); report.node.ok = major > 22 || (major === 22 && minor >= 19);
+  const [major, minor] = String(nodeVersion).split('.').map(Number); report.node.ok = major > 22 || (major === 22 && minor >= 23)  // 22.23 carries the June 2026 security fixes; confirm the current floor at nodejs.org/blog/vulnerability;
   if (!report.database.present) return report;
   try {
     const db = new DatabaseSync(file, { readOnly: true });

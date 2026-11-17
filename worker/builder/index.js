@@ -103,7 +103,9 @@ function markupProblem(html, links = null) {
       if (!ALLOWED_ATTRIBUTES.has(attributeName) && !bundleAttribute && !controlAttribute) return `the attribute ${attributeName} is not allowed on <${tag}>`;
       const value = attribute[2] ?? attribute[3] ?? attribute[4] ?? '';
       if (/[&\\]/.test(value)) return `the value of ${attributeName} on <${tag}> must not contain & or a backslash`;
-      if (bundleAttribute && (attributeName === 'src' || attributeName === 'href')) { if (!links.has(value)) return `${attributeName}="${value.slice(0, 60)}" on <${tag}> must name a file you wrote in ./bundle/`; continue; }
+      // `./style.css` is the same file as `style.css` in the same folder, so a leading ./ is accepted. Anything that goes
+      // up or out (../x, /x, a URL) is not a name in the set and stays refused.
+      if (bundleAttribute && (attributeName === 'src' || attributeName === 'href')) { if (!links.has(value.startsWith('./') ? value.slice(2) : value)) return `${attributeName}="${value.slice(0, 60)}" on <${tag}> must name a file you wrote in ./bundle/, using just the file name from the page's own folder (like style.css), with no ../ or leading /`; continue; }
       if (bundleAttribute && attributeName === 'rel') { if (value !== 'stylesheet') return 'a link element must have rel="stylesheet"'; continue; }
       if (attributeName === 'style') {
         if (/url\s*\(|@import|expression\s*\(/i.test(value)) return 'a style attribute must not use url(), @import or expression()';

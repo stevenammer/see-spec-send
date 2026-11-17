@@ -45,6 +45,7 @@ Early, and I'm building it in public. It isn't ready to drop into a big company 
 - The core loop above, in a real web app and in the demo.
 - Over 700 automated tests on every push, plus walkthroughs in a real browser and an accessibility check.
 - Effort and the "ask the organization" answers have had a first real-model test too ([docs/MODEL_EVAL.md](docs/MODEL_EVAL.md)). That test found the answer cap was cutting every thorough answer off, and it's fixed.
+- Bring your own model and your own agent. The builder can be OpenCode, Claude Code or Codex, behind a gateway that meters and caps every call, and the models can be Claude, GPT, Gemini, Bedrock or local ([docs/AGENT_HARNESSES.md](docs/AGENT_HARNESSES.md), including what's proven and what isn't).
 - The AI builder works on small tasks. On three made-up workplace tools, judged in a real browser, Claude Haiku 4.5 shipped 11 of 12 builds for about five cents each. The write-up is [docs/BUILDER_EVAL.md](docs/BUILDER_EVAL.md), including why that's thin evidence.
 - Hostile text can't trick it into approving or spending. I test that with 60 nasty strings (fake instructions, look-alike letters, hidden scripts) through every place an AI reads text.
 - People only see what their department lets them see.

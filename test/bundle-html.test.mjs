@@ -114,3 +114,13 @@ test('a refused bundle says exactly why, in words an agent can act on, and names
   assert.match(reason(null, () => validateBundle(root, manifest)), /^index\.html: the element <a> is not allowed/, 'the detail names the file');
   assert.match(reason(null, () => validateBundle(root, { version: 1, files: [] })), /no files were found in \.\/bundle\//);
 });
+
+test('a link to a sibling file may start with ./ (the same file), but nothing that goes up or out is accepted', () => {
+  const linked = value => page(`<link rel="stylesheet" href="${value}"><script src="${value.replace('style.css', 'app.js')}"></script>`);
+  assert.doesNotThrow(() => validateBundleHtml(linked('style.css'), links));
+  assert.doesNotThrow(() => validateBundleHtml(linked('./style.css'), links), 'a leading ./ names the same file');
+  for (const bad of ['../style.css', '/style.css', './/style.css', './../style.css', 'https:style.css', './other.css']) {
+    assert.throws(() => validateBundleHtml(linked(bad), links), /not a local static page/, bad);
+  }
+  try { validateBundleHtml(linked('./nope.css'), links); } catch (error) { assert.match(error.detail, /just the file name from the page's own folder \(like style\.css\)/, 'the reason tells the agent the actual rule'); }
+});

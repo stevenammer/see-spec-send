@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { Ledger, rateWithSystemText } from './ledger.js';
+import { anthropicToChat, chatToAnthropic, errorBody, errorFor, streamTranslator } from './anthropic.js';
+import { chatToResponse, errorBody as responsesErrorBody, errorFor as responsesErrorFor, responsesStream, responsesToChat } from './responses.js';
 
 const reply = (res, status, body) => {
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store',
@@ -155,9 +157,75 @@ export function providerGateway(ledger, provider, options) {
   });
 }
 
+// Anthropic Messages API entry point (for Claude Code and the Anthropic SDKs). It translates to the OpenAI-shaped chat
+// request and goes through ChatGateway, so it is reserved, dispatched and settled on the same ledger as every other call.
+async function handleMessages(req, res, path, chatGateway) {
+  const fail = (status, body) => { if (res.headersSent) res.end(); else if (!res.destroyed) reply(res, status, body); };
+  try {
+    if (req.method !== 'POST') return fail(405, errorBody('use POST', 'invalid_request_error'));
+    if (!/^application\/json\s*(;|$)/i.test(req.headers['content-type'] || '')) return fail(415, errorBody('JSON required', 'invalid_request_error'));
+    // The capability may arrive the way each client sends its key: x-api-key (Anthropic SDK) or a Bearer token.
+    const token = /^[A-Za-z0-9_-]{43}$/.exec(String(req.headers['x-api-key'] || '').trim())?.[0]
+      || /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization || '')?.[1];
+    if (!token) return fail(401, errorBody('capability required', 'authentication_error'));
+    if (!chatGateway) return fail(404, errorBody('not found', 'not_found_error'));
+    chatGateway.ledger.authorize(token);
+    const policy = chatGateway.ledger.policy();
+    const input = await body(req, policy.input_bytes * 6 + 1024);
+    if (path === '/v1/messages/count_tokens') {
+      // An estimate (a byte count over four), the same kind of bound the ledger reserves with. It is not metered.
+      const chat = anthropicToChat({ max_tokens: 1, ...input });
+      return reply(res, 200, { input_tokens: Math.ceil(Buffer.byteLength(JSON.stringify([chat.messages, chat.tools || []])) / 4) });
+    }
+    const chat = anthropicToChat(input);
+    const idem = req.headers['idempotency-key'] || randomBytes(16).toString('hex');
+    if (chat.stream) {
+      const events = streamTranslator(chat.model, (name, data) => res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`));
+      await chatGateway.stream(token, idem, chat, chunk => { if (chunk === '[DONE]') events.done(); else events.chunk(chunk); },
+        () => res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' }));
+      events.done();
+      return res.end();
+    }
+    const result = await chatGateway.call(token, idem, chat);
+    if (result.status !== 200) return fail(504, errorBody('the call has not settled yet; its budget stays held', 'api_error'));
+    return reply(res, 200, chatToAnthropic(result.body, chat.model));
+  } catch (error) { const { status, body: failure } = errorFor(error); fail(status, failure); }
+}
+
+// OpenAI Responses API entry point (for Codex). Same idea as handleMessages: translate to the OpenAI-shaped chat request and
+// go through ChatGateway, so the call is reserved, dispatched and settled on the same ledger as every other call.
+async function handleResponses(req, res, chatGateway) {
+  const fail = (status, body) => { if (res.headersSent) res.end(); else if (!res.destroyed) reply(res, status, body); };
+  try {
+    if (req.method !== 'POST') return fail(405, responsesErrorBody('use POST', 'invalid_request_error'));
+    if (!/^application\/json\s*(;|$)/i.test(req.headers['content-type'] || '')) return fail(415, responsesErrorBody('JSON required', 'invalid_request_error'));
+    const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization || '')?.[1];
+    if (!token) return fail(401, responsesErrorBody('capability required', 'invalid_request_error', 'invalid_api_key'));
+    if (!chatGateway) return fail(404, responsesErrorBody('not found', 'invalid_request_error'));
+    chatGateway.ledger.authorize(token);
+    const policy = chatGateway.ledger.policy();
+    const input = await body(req, policy.input_bytes * 6 + 1024);
+    const chat = responsesToChat(input);
+    const idem = req.headers['idempotency-key'] || randomBytes(16).toString('hex');
+    if (chat.stream) {
+      const events = responsesStream(chat.model, (name, data) => res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`));
+      await chatGateway.stream(token, idem, chat, chunk => { if (chunk === '[DONE]') events.done(); else events.chunk(chunk); },
+        () => res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' }));
+      events.done();
+      return res.end();
+    }
+    const result = await chatGateway.call(token, idem, chat);
+    if (result.status !== 200) return fail(504, responsesErrorBody('the call has not settled yet; its budget stays held', 'server_error'));
+    return reply(res, 200, chatToResponse(result.body, chat.model));
+  } catch (error) { const { status, body: failure } = responsesErrorFor(error); fail(status, failure); }
+}
+
 export function createGatewayServer(gateway, chatGateway = null) {
   const server = createServer(async (req, res) => {
     try {
+      const path = (req.url || '').split('?')[0];
+      if (path === '/v1/messages' || path === '/v1/messages/count_tokens') return await handleMessages(req, res, path, chatGateway);
+      if (path === '/v1/responses') return await handleResponses(req, res, chatGateway);
       if (req.method !== 'POST' || !['/v1/generate', '/v1/chat/completions'].includes(req.url)) return reply(res, 404, { error: 'not found' });
       if (req.headers['content-type'] !== 'application/json') return reply(res, 415, { error: 'JSON required' });
       // Bearer capabilities are distinct from person sessions and generic API tokens.

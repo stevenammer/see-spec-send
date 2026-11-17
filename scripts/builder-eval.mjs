@@ -1,7 +1,7 @@
 // Builder evaluation.
 //   PLAYWRIGHT_DIR=/path/to/node_modules node scripts/builder-eval.mjs --selftest
 //   PLAYWRIGHT_DIR=... GEMINI_API_KEY=... node scripts/builder-eval.mjs --run --provider gemini --model gemini-2.5-flash
-//     [--tasks refunds,swaps,triage] [--repeat 1] [--wall-ms 300000] [--max-calls 40] [--out results.jsonl]
+//     [--builder opencode|claude-code|codex] [--tasks refunds,swaps,triage] [--repeat 1] [--wall-ms 300000] [--max-calls 40] [--out results.jsonl]
 // Providers: gemini and groq (free tiers, keys from the environment) and bedrock (AWS_* from the environment, paid).
 // For each task it judges a hand-written good bundle (must pass every check, and pass the host's own bundle validator)
 // and a deliberately broken one (must fail at least one check). A judge that can't tell those apart proves nothing
@@ -20,6 +20,8 @@ import { fixtureProvider } from '../gateway/fixture.js';
 import { openAICompatible } from '../provider/adapters.js';
 import { bedrockConverse } from '../provider/bedrock.js';
 import { OpenCodeAdapter } from '../worker/opencode.js';
+import { ClaudeCodeAdapter } from '../worker/claudecode.js';
+import { CodexAdapter } from '../worker/codex.js';
 import { DockerCli } from '../worker/container.js';
 
 function write(root, files) { for (const [path, body] of Object.entries(files)) { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), body); } }
@@ -108,7 +110,8 @@ async function runOnce({ task, providerName, model, wallMs, maxCalls }) {
   // --debug-agent runs the same container but writes the agent's own log to /work/agent.log (the shipped entrypoint
   // discards it). Diagnosis only: the build itself is unchanged.
   const DEBUG_SCRIPT = readFileSync(new URL('../worker/opencode/entrypoint.sh', import.meta.url), 'utf8').replace('opencode run -m', 'opencode run --print-logs -m').replace(/ \|\| true\n/, ' > /work/agent.log 2>&1 || true\n');
-  class Adapter extends OpenCodeAdapter { withDeadline(args) { const out = super.withDeadline(args); return process.argv.includes('--debug-agent') ? [...out.slice(0, out.lastIndexOf('/entrypoint.sh')), 'sh', '-c', DEBUG_SCRIPT] : out; } }
+  const Base = { 'claude-code': ClaudeCodeAdapter, codex: CodexAdapter }[arg('--builder', 'opencode')] || OpenCodeAdapter;
+  class Adapter extends Base { withDeadline(args) { const out = super.withDeadline(args); return process.argv.includes('--debug-agent') ? [...out.slice(0, out.lastIndexOf('/entrypoint.sh')), 'sh', '-c', DEBUG_SCRIPT] : out; } }
   const adapter = new Adapter(store, { docker: new DockerCli({ timeoutMs: 60_000 }), ledger, root: join(dir, 'runs'), gatewaySocket: socket, wallMs });
   const started = Date.now();
   adapter.start({ id: run.id, spec: task.spec, instructions: [] });
@@ -133,7 +136,7 @@ async function runOnce({ task, providerName, model, wallMs, maxCalls }) {
   const refusal = hostAccepted ? null : (() => { try { validateBundle(bundle, manifestFor(bundle)); return null; } catch (error) { return String(error.message).slice(0, 120); } })();
   try { adapter.stop(run.id); } catch { /* already finished */ }
   server.close(); store.close();
-  return { task: task.id, provider: providerName, model, builder_state: status.state, repaired: Boolean(repairReason), repair_reason: repairReason, host_accepted: hostAccepted, host_refusal: refusal,
+  return { task: task.id, builder: arg('--builder', 'opencode'), provider: providerName, model, builder_state: status.state, repaired: Boolean(repairReason), repair_reason: repairReason, host_accepted: hostAccepted, host_refusal: refusal,
     judged: judged && !judged.error ? { passed: judged.passed, total: judged.total, ok: judged.ok, failed: judged.checks.filter(c => !c.ok).map(c => c.name), outside: judged.outside.length, page_errors: judged.errors.length } : judged,
     product_ok: Boolean(hostAccepted && judged && judged.ok), calls: receipts.length, input_tokens: inputTokens, output_tokens: outputTokens, cost_usd: Number((costMicros / 1e6).toFixed(4)), seconds, files, upstream_errors: errors.slice(0, 3), turns, agent_log: process.argv.includes('--logs') ? agentLog : undefined, dir };
 }

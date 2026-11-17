@@ -50,7 +50,7 @@ test('the CLI worker and gateway commands refuse unsafe or incomplete input', as
   const out = []; const write = value => out.push(value);
   await cli(['init'], env, write);
   await assert.rejects(cli(['worker', '--builder', 'container', '--once'], env, write), /--gateway-socket/);
-  await assert.rejects(cli(['worker', '--builder', 'process', '--once'], env, write), /--builder must be fixture, container, or opencode/);
+  await assert.rejects(cli(['worker', '--builder', 'process', '--once'], env, write), /--builder must be fixture, container, opencode, claude-code, or codex/);
   await assert.rejects(cli(['gateway', 'serve', '--fixture'], env, write), /--socket/);
   const loose = join(root, 'loose'); mkdirSync(loose); chmodSync(loose, 0o777);
   // Run it as a real process with a time limit: if the check were missing, `gateway serve` would start listening and never return.

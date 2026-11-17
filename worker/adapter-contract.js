@@ -1,6 +1,8 @@
 import { FakeAdapter } from './fake.js';
 import { ContainerAdapter } from './container.js';
 import { OpenCodeAdapter } from './opencode.js';
+import { ClaudeCodeAdapter } from './claudecode.js';
+import { CodexAdapter } from './codex.js';
 import { approvedBuildInput, validateHtml } from './builder/index.js';
 
 // Version 2 adds a bounded source bundle. The fixture remains the default profile.
@@ -99,6 +101,14 @@ export function builtInBuilderRegistry(store) {
     ['opencode', manifest, options => {
       if (Object.keys(options).some(key => !['gatewaySocket', 'root', 'imageFile', 'providerMode'].includes(key))) fail('unsupported opencode option');
       return new OpenCodeAdapter(store, options);
+    }],
+    ['claude-code', manifest, options => {
+      if (Object.keys(options).some(key => !['gatewaySocket', 'root', 'imageFile', 'providerMode'].includes(key))) fail('unsupported claude-code option');
+      return new ClaudeCodeAdapter(store, options);
+    }],
+    ['codex', manifest, options => {
+      if (Object.keys(options).some(key => !['gatewaySocket', 'root', 'imageFile', 'providerMode'].includes(key))) fail('unsupported codex option');
+      return new CodexAdapter(store, options);
     }],
   ]);
 }

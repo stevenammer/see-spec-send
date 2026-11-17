@@ -468,7 +468,7 @@ const mutants = [
   ['slice27 container uses an init process', "'--init', this.image, 'timeout'", "this.image, 'timeout'"],
   ['slice27 docker calls time out', "timeout: this.timeoutMs, ", ""],
   ["slice27 container builder needs the socket", "|| fail(`--builder ${profile} needs --gateway-socket PATH`)", "|| ''"],
-  ["slice27 builder kind is checked", "else fail('--builder must be fixture, container, or opencode');", "else adapter = builtInBuilderRegistry(store).select('fixture');"],
+  ["slice27 builder kind is checked", "else fail('--builder must be fixture, container, opencode, claude-code, or codex');", "else adapter = builtInBuilderRegistry(store).select('fixture');"],
   ['slice27 gateway socket directory is private', "if (statSync(parent).mode & 0o022) fail(", "if (false) fail("],
 ];
 

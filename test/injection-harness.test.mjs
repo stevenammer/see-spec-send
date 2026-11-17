@@ -34,8 +34,8 @@ function world(t, hostile) {
 }
 
 test('injection corpus covers required hostile classes', () => {
-  assert.ok(corpus.length >= 40);
-  for (const name of ['instruction_override', 'role_spoof', 'fake_system_tool', 'restricted_exfiltration', 'decision_or_spend', 'markup_link', 'unicode_zero_width', 'very_long', 'fenced_breakout', 'fake_citation']) {
+  assert.ok(corpus.length >= 60);
+  for (const name of ['instruction_override', 'role_spoof', 'fake_system_tool', 'restricted_exfiltration', 'decision_or_spend', 'markup_link', 'unicode_zero_width', 'very_long', 'fenced_breakout', 'fake_citation', 'bidi_homoglyph', 'encoded_payload', 'markdown_exfil', 'tool_call_json', 'social_and_multilingual']) {
     assert.ok(corpus.some(entry => entry.class === name), name);
   }
   assert.ok(corpus.every(entry => typeof entry.text === 'string' && typeof entry.expected === 'string'));

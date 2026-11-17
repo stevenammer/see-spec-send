@@ -13,6 +13,8 @@ Contained by design:
 
 Limits:
 
+- The corpus has 60 strings in 15 classes, including right-to-left and look-alike characters, encoded script (base64, HTML entities, percent and unicode escapes), markdown and form exfiltration, fake tool-call JSON, and social-pressure and non-English instructions.
+- `npm run test:hostile-render` (real Chrome, outside any sandbox, `PLAYWRIGHT_DIR` set) posts every corpus string through the real screen, then loads the item page. It fails if a script runs, a dialog opens, a request leaves the app origin, or the text adds a link, form, image, `details` element or event-handler attribute. Weakening the page escaper makes it fail.
 - This does not prove that a provider will follow the system prompt, identify every language or encoding trick, or produce useful advice. It proves the product treats hostile provider output as untrusted at the authority, scope, citation, and rendering boundaries tested here.
 - An authorized person may still choose to act on bad advice. The product labels model text and keeps human approvals separate, but it cannot replace human judgment.
 - The harness uses synthetic data and in-process fakes. It does not test a live provider, a real identity provider, or every browser and assistive-technology rendering path.

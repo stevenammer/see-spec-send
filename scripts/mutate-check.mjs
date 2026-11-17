@@ -28,6 +28,10 @@ fullSuite.push('test/sliceF6-mentoring.test.mjs', 'test/sliceF6-pages.test.mjs',
 fullSuite.push('test/sliceF7-spec.test.mjs');
 fullSuite.push('test/sliceF8-evidence.test.mjs', 'test/sliceF8-http.test.mjs');
 fullSuite.push('test/decision-outcomes.test.mjs', 'test/builder-adapter-contract.test.mjs');
+// Tests written to kill mutants the CI mutation run found. A test file that is not in this list is invisible to the
+// mutation job, so every test that pins a mutant must be added here.
+fullSuite.push('test/bundle-html.test.mjs', 'test/backup-mode.test.mjs', 'test/reset-code.test.mjs', 'test/no-outside-requests.test.mjs',
+  'test/event-route-refusals.test.mjs', 'test/comment-anchor-http.test.mjs', 'test/reanalysis-delivery.test.mjs');
 fullSuite.push('test/sliceF9.test.mjs', 'test/trusted-system-metering.test.mjs', 'test/effort-lease.test.mjs');
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',

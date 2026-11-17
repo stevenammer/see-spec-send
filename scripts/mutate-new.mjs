@@ -112,6 +112,10 @@ const mutants = [
   ['oidc check: a provider without S256 is a blocker', 'app/oidc-provider.js', "adv.code_challenge_methods_supported.includes('S256') ? 'ok' : 'fail'", "'ok'", T(['oidc-provider'])],
 ];
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
+// --shard K/N runs every Nth mutant starting at K, so CI can spread the set across parallel jobs.
+const shardAt = process.argv.indexOf('--shard');
+const shard = shardAt < 0 ? null : String(process.argv[shardAt + 1]).split('/').map(Number);
+if (shard && (shard.length !== 2 || !Number.isInteger(shard[0]) || !Number.isInteger(shard[1]) || shard[1] < 1 || shard[0] < 0 || shard[0] >= shard[1])) throw new Error('--shard needs K/N with 0 <= K < N');
 if (process.argv.includes('--check-sources')) {
   const missing = mutants.filter(([, file, find]) => !readFileSync(join(root, file), 'utf8').includes(find)).map(([name]) => name);
   if (missing.length) { console.error(`mutant source missing: ${missing.join('; ')}`); process.exit(1); }
@@ -119,8 +123,9 @@ if (process.argv.includes('--check-sources')) {
 }
 const run = (cwd, tests) => spawnSync(process.execPath, ['--test', '--test-concurrency=1', ...tests], { cwd, encoding: 'utf8', timeout: 600_000 });
 let survived = 0, killed = 0;
-for (const [name, file, find, replace, tests] of mutants) {
+for (const [index, [name, file, find, replace, tests]] of mutants.entries()) {
   if (only && !name.includes(only)) continue;
+  if (shard && index % shard[1] !== shard[0]) continue;
   const copy = mkdtempSync(join(tmpdir(), 'sss-mutant-'));
   cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') && !path.includes('/docs/screens') });
   const path = join(copy, file); const source = readFileSync(path, 'utf8');

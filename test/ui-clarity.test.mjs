@@ -153,3 +153,16 @@ test('Effort says in plain words when it skipped a stage that closed first', () 
   assert.match(html, /unavailable, retries exhausted \(some other reason\)/);
   assert.doesNotMatch(html, /post superseded/);
 });
+
+test('the try screen says what to do if it did not help, and shows who already said it helps', () => {
+  const trying = world('approved'); trying.item.state = 'TRYING'; trying.item.context = trying.item.context;
+  const fresh = text(itemPage(trying.item, trying.events, 'ben', false));
+  assert.match(fresh, /If it doesn't help, leave a comment/);
+  assert.match(fresh, /Press this only if it really helped/);
+  assert.match(itemPage(trying.item, trying.events, 'ben', false), /href="#try"/);
+  assert.match(itemPage(trying.item, trying.events, 'ben', false), /<section id="try">/);
+  const said = structuredClone(trying.item); said.context.helpers = ['ben'];
+  const after = itemPage(said, trying.events, 'ben', false);
+  assert.match(text(after), /You said this helps\. It counts once\./);
+  assert.doesNotMatch(after, /data-event="helped"/);
+});

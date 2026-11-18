@@ -14,6 +14,7 @@
     "test:e2e": "node test/e2e/manual-path.e2e.mjs",
     "test:decision-outcomes": "node test/e2e/decision-outcomes.e2e.mjs",
     "test:break-it": "node test/e2e/break-it.e2e.mjs",
+    "test:try-it": "node test/e2e/try-it.e2e.mjs",
     "test:stage-freeze": "node test/e2e/stage-freeze.e2e.mjs",
     "test:vision": "node test/e2e/vision-journey.e2e.mjs",
     "test:reanalysis": "node test/e2e/reanalysis-journey.e2e.mjs",

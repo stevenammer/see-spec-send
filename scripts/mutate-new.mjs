@@ -224,6 +224,8 @@ const mutants = [
   ["ui: a sent-back item says to revise", "app/pages.js", "Read their reason below, update the spec, then press SEND IT! again.", "", T(['ui-clarity'])],
   ["ui: an old decision does not speak for a new spec", "app/pages.js", "context.decided.specHash === context.specHash ? context.decided.disposition : null", "context.decided ? context.decided.disposition : null", T(['ui-clarity'])],
   ["ui: empty decision details are hidden", "app/pages.js", "context.decided.metadata && Object.keys(context.decided.metadata).length ?", "context.decided.metadata ?", T(['ui-clarity'])],
+  ["ui: try screen says what to do when it did not help", "app/pages.js", "If it doesn\\'t help, leave a comment saying what was missing.", "", T(['ui-clarity'])],
+  ["ui: try screen shows you already said it helps", "app/pages.js", "const alreadySaid = context.helpers.includes(person);", "const alreadySaid = false;", T(['ui-clarity'])],
   ["ui: Effort skip is in plain words", "app/pages-effort.js", "this stage was closed before Effort could answer, so it was skipped", "post superseded", T(['ui-clarity'])],
   ["break: mentoring ignores a second submit", "public/mentoring.js", "if(form.dataset.busy)return;", "", T(['break-it'])],
   ["break: mentoring buttons come back after a failure", "public/mentoring.js", "}catch{\n  release();", "}catch{\n  ", T(['break-it'])],

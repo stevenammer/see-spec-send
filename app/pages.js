@@ -247,7 +247,8 @@ export function itemPage(item, events, person, leader) {
     const frame = item.bundleFrameUrl && modelTry
       ? `<iframe title="Playable try" sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer" src="${escape(item.bundleFrameUrl)}"></iframe>`
       : `<iframe title="Playable try" ${frameSandbox} src="/api/items/${encodeURIComponent(item.id)}/artifact/${encodeURIComponent(context.artifact)}"></iframe>`;
-    action = `${frame}${canVote ? `<form data-event="helped"><input type="hidden" name="artifact_hash" value="${escape(context.artifact)}"><button>It helps</button></form>` : '<p>You helped shape this one, so others say whether it helps.</p>'}${context.steward === person ? '<form data-steer="true"><h2>Adopt as builder instruction</h2><label>Instruction<textarea name="instruction" required></textarea></label><button>Adopt as builder instruction</button></form>' : ''}`;
+    const alreadySaid = context.helpers.includes(person);
+    action = `<section id="try"><h2>The try</h2>${frame}${alreadySaid ? '<p class="helps">You said this helps. It counts once.</p>' : canVote ? `<form data-event="helped"><input type="hidden" name="artifact_hash" value="${escape(context.artifact)}"><p><small>Press this only if it really helped you do the job. If it didn't, say so in the comments.</small></p><button>It helps</button></form>` : '<p>You helped shape this one, so others say whether it helps.</p>'}${context.steward === person ? '<form data-steer="true"><h2>Adopt as builder instruction</h2><label>Instruction<textarea name="instruction" required></textarea></label><button>Adopt as builder instruction</button></form>' : ''}</section>`;
   }
   if (item.state === 'HELPS')
     action = '<p class="helps">People who do this work said it helps.</p>';
@@ -346,7 +347,7 @@ export function itemPage(item, events, person, leader) {
       ? '<p><strong>This is waiting for a leader\'s decision.</strong> You can approve it with a budget, send it back with a reason, or record that it won\'t be built.</p>'
       : '<p><strong>Waiting for a leader\'s decision.</strong> A leader who didn\'t write the spec will approve it, send it back, or record that it won\'t be built.</p>';
     if (state === 'SENDING') return '<p><strong>Approved.</strong> A small version is being built. It will show up here when it\'s ready to try.</p>';
-    if (state === 'TRYING') return '<p><strong>A try is ready.</strong> Use it, then say whether it helped. It only counts as a win when enough people who do the work say it helps.</p>';
+    if (state === 'TRYING') return '<p><strong>A try is ready.</strong> <a href="#try">Jump to it</a>, use it, then say whether it helped. It only counts as a win when enough people who do the work say it helps. If it doesn\'t help, leave a comment saying what was missing. Don\'t press the button.</p>';
     if (state === 'HELPS') return '<p><strong>People who do the work said it helps.</strong> The record of how it got here is below.</p>';
     if (state === 'SHELVED') return '<p><strong>This was shelved.</strong> The reason is on the record below.</p>';
     return '';

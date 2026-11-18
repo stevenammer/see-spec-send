@@ -6,6 +6,8 @@
 
 **Want to see it before you read about it?** [Try the demo](https://stevenammer.github.io/see-spec-send/). It runs in your browser, the people are made up, and nothing leaves your page. Click "Show me the rule being enforced" and watch it say no.
 
+![Clicking "Show me the rule being enforced" in the demo: the people who wrote or approved the spec try to say it helps, and are refused](docs/screens/demo-refusal.gif)
+
 ## Why I built this
 
 Everybody at work already knows the thing that's broken. The workaround has a name. Somebody has a spreadsheet for it. And nobody fixes it, because the people who feel it don't get to build anything, and the people who build things never feel it.
@@ -104,6 +106,8 @@ I write the specs and decide what's safe to ship. AI agents write most of the co
 The real-model tests were small and cheap: Claude Haiku 4.5 on Amazon Bedrock, a few dollars in total (the builder tests cost about $2.30), on made-up data. Nothing has run against real employee data, and none of the models you can plug in has been tested beyond that.
 
 ## Words used here
+
+(The app has the same list on a page of its own, at `/words`.)
 
 - **SEE, SPEC, SEND:** the three steps above. A SEE is the problem, a SPEC is what the fix must do, a SEND is the request to try it.
 - **Effort:** the AI that replies first. It's always labeled, and it never decides anything.

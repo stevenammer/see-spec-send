@@ -45,11 +45,13 @@ async function main() {
     ['cli.js', 'serve', '--port', String(port), '--origin', origin, '--insecure-cookies', '--enable-effort', '--fixture'],
     { cwd: root, env },
   );
-  const browser = await playwright.chromium.launch({
-    headless: true,
-    executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
-    args: ['--no-sandbox'],
-  });
+  const browser = await (process.env.BROWSER === 'firefox'
+    ? playwright.firefox.launch({ headless: true })
+    : playwright.chromium.launch({
+        headless: true,
+        executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
+        args: ['--no-sandbox'],
+      }));
   const problems = [];
   const people = {};
 

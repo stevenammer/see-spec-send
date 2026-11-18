@@ -174,3 +174,14 @@ test('Search says what to do when nothing matches, or when the box is empty', as
   assert.match(text(searchPage('', [])), /Type a few words from the problem/);
   assert.match(text(searchPage('zzz', [], { related: true })), /No related work found/);
 });
+
+test('a plain glossary is one link away, signed out or in, and the raw packet is folded away', async () => {
+  const { wordsPage } = await import('../app/pages.js');
+  const words = text(wordsPage());
+  for (const word of ['SEE', 'SPEC', 'SEND', 'Effort', 'Steward', 'Leader', 'Cap', 'Helps', 'Fork', 'Shelved']) assert.match(words, new RegExp(word), word);
+  assert.match(signInPage(), /href="\/words"/);
+  const trying = world('approved'); trying.item.state = 'TRYING'; trying.item.packet = '{"v":3}';
+  const html = itemPage(trying.item, trying.events, 'ben', false);
+  assert.match(html, /href="\/words"/);
+  assert.match(html, /<details><summary>The exact record that was reviewed, for auditors<\/summary><pre>/);
+});

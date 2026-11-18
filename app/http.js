@@ -9,7 +9,7 @@ import { appendFileSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { Integrations } from './integrations.js';
 import { handoffMarkdown, handoffPackage } from '../handoff/export.js';
-import { closeoutPage, feedPage, frozenPostPage, htmlHeaders, itemPage, newItemPage, passwordPage, questPage, redeemPage, signInPage } from './pages.js';
+import { closeoutPage, feedPage, frozenPostPage, htmlHeaders, itemPage, newItemPage, passwordPage, questPage, redeemPage, signInPage, wordsPage } from './pages.js';
 import { invalid, kindOf, refused, tooLarge as tooLargeError } from '../core/errors.js';
 import { redact } from '../provider/safe-http.js';
 import { CURRENT_RULES, validDateOnly } from '../core/machine.js';
@@ -455,6 +455,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         res.setHeader('set-cookie', cookie(login.value));
         return json(res, 201, { csrf: login.csrf });
       }
+      if (req.method === 'GET' && url.pathname === '/words') return page(res, wordsPage());
       if (req.method === 'GET' && url.pathname === '/signin') return page(res, signInPage({ oidc: Boolean(auth.oidc), password: !disablePasswordLogin }));
       if (req.method === 'GET' && url.pathname === '/redeem') return page(res, redeemPage());
       if (req.method === 'POST' && url.pathname === '/api/logout') {

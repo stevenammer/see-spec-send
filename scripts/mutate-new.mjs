@@ -231,6 +231,8 @@ const mutants = [
   ["break: cap field has a limit", "app/pages.js", 'name="cap_usd" type="number" min="0" max="10000"', 'name="cap_usd" type="number" min="0"', T(['break-it'])],
   ["ui: Search no-match message says what to do", "app/pages-memory.js", "Nothing matches those words. Try fewer or different words.", "No matching records.", T(['ui-clarity'])],
   ["ui: Search empty box says what to type", "app/pages-memory.js", "Type a few words from the problem you have in mind.", "No matching records.", T(['ui-clarity'])],
+  ["ui: sign-in links to the glossary", "app/pages.js", ' <a href="/words">What do these words mean?</a></p>${password', '</p>${password', T(['ui-clarity'])],
+  ["ui: raw packet is folded away", "app/pages.js", "<details><summary>The exact record that was reviewed, for auditors</summary>", "<details><summary>x</summary>", T(['ui-clarity'])],
   ["ui: Effort skip is in plain words", "app/pages-effort.js", "this stage was closed before Effort could answer, so it was skipped", "post superseded", T(['ui-clarity'])],
   ["break: mentoring ignores a second submit", "public/mentoring.js", "if(form.dataset.busy)return;", "", T(['break-it'])],
   ["break: mentoring buttons come back after a failure", "public/mentoring.js", "}catch{\n  release();", "}catch{\n  ", T(['break-it'])],

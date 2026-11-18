@@ -55,14 +55,13 @@ A SEE revision after SEND is a stale-authorization boundary. The machine records
 | Builder changes the host or other runs | Read-only root and mounts, non-root UID, one writable `/out` mount | `test/container.acceptance.mjs` host-read and write probes |
 | Builder consumes host resources forever | Dropped capabilities, no-new-privileges, PID, CPU, and memory limits; the deadline is also enforced inside the container | `test/container.acceptance.mjs` PID, memory and deadline probes |
 | Draft silently spends or approves | Exact fixture preflight, explicit consent gate, and no machine command | `draft preflight is exact, fixture-only, labeled, and never sends without explicit approval` |
-| Identity-provider login attacks | Not shipped: an injected test seam exists, but no verifier or provider configuration ships | No real identity-provider proof |
+| Identity-provider login attacks | OpenID Connect sign-in ships and is tested against a stand-in provider and a reference provider in CI | Not tried against Entra, Okta or Google |
 
 Not covered yet: multi-factor authenticators, email delivery, distributed rate limits,
 external database checkpoints, recovery drills, encrypted backups, and
 protection from a host administrator who can alter the database and application.
-Identity-provider sign-in is not shipped. An in-process fake and an injected
-signature/JWKS-verifier seam exist, but there is no built-in verifier, CLI wiring,
-or real provider run. The Postgres fake proves only a Store API contract;
+Identity-provider sign-in (OpenID Connect) ships, with a built-in verifier and CLI wiring. It is tested
+against a stand-in provider and a reference provider, not yet against Entra, Okta or Google. The Postgres fake proves only a Store API contract;
 See / Spec / Send is SQLite only and has no PostgreSQL driver or deployment path.
 Trusted proxy: `serve --trusted-proxy` believes the rightmost `X-Forwarded-For` entry only when the socket
 peer is loopback. Any other peer's forwarded header is ignored. A process on the same host can still spoof it,
@@ -71,7 +70,7 @@ but the connection is not dropped early).
 
 ## Historical audit findings
 
-The B-list below records earlier audits, not a current claim that every listed gap remains open. Current behavior is described by the dated invariant sections and named tests. Rules-1 histories retain their original semantics; new conversation posts use rules 2. Identity-provider sign-in and PostgreSQL remain unshipped.
+The B-list below records earlier audits, not a current claim that every listed gap remains open. Current behavior is described by the dated invariant sections and named tests. Rules-1 histories retain their original semantics; new conversation posts use rules 2. PostgreSQL remains unshipped. OpenID Connect sign-in has shipped (see STATUS.md).
 
 
 - **B1:** The approval screen doesn't bind the displayed spec hash or sequence, so a spec can change immediately before approval.
@@ -99,7 +98,7 @@ The B-list below records earlier audits, not a current claim that every listed g
 - **B23:** Builder output may follow symlinks or be read without a size cap, and the output directory lacks a sticky bit.
 - **B24 (mostly addressed):** The token is passed in docker's environment, not its arguments; it is still visible to `docker inspect`, which needs Docker access. Docker calls time out at 20 seconds and the deadline runs inside the container. The worker still needs the Docker socket (host root), and that is documented.
 - **B25:** Provider and webhook egress can be DNS-rebound, the private-range check is incomplete, and provider files are not permission-checked.
-- **B26:** The identity-provider seam is not shipped: no verifier, product wiring, real-provider proof, or usable SSO approval path exists.
+- **B26 (historical, now closed):** When this was written the identity-provider seam was not shipped. OpenID Connect sign-in and its step-up path now ship; see STATUS.md for what has and hasn't been tried against real providers.
 - **B27:** Postgres is not built: the seam uses SQLite-style behavior and there is no real driver, SQL path, or server proof.
 - **B28:** CI does not run mutation checking or the listener smoke test.
 
@@ -120,7 +119,7 @@ A separate hostile review (a different AI, in its own sandbox, with a repro scri
 
 I also found one the review missed: the first admin's initial password came from `Math.random()`. It now uses `crypto.randomBytes`, but it is not one-time because there is no password-change flow.
 
-Still true, on purpose: any signed-in person can read any item. The product is built around an open feed, so there is no per-item read control yet. If you need confidential items, that has to be designed in first. A host administrator who can edit both the database and the code can still recompute the hash chain; the chain detects accidents and partial tampering, not a determined insider with full access.
+Still true by default: any signed-in person can read any item, because the product is built around an open feed. A post can be restricted to a group instead: an administrator creates groups on the command line and the post is made with an audience through the API (the post form has no field for it yet). Restricted work is then hidden from the feed, search and every route by read scope. See docs/AUDIT_2026-11-17.md for what was checked. A host administrator who can edit both the database and the code can still recompute the hash chain; the chain detects accidents and partial tampering, not a determined insider with full access.
 
 ## Slice 3, manual web path
 

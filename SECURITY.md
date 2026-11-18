@@ -16,7 +16,7 @@ The security work is written down, with its limits, so you can judge it instead 
 |---|---|
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, controls, what has and has not been tested, the two independent software reviews and what they found |
 | [docs/SECURITY_WATCH.md](docs/SECURITY_WATCH.md) | Current public threats (Node.js, containers, coding-agent sandbox escapes, OAuth, OWASP lists) checked against this code, with open items |
-| [docs/PROMPT_INJECTION.md](docs/PROMPT_INJECTION.md) | A 40-string hostile test set run through the six current model-facing paths |
+| [docs/PROMPT_INJECTION.md](docs/PROMPT_INJECTION.md) | A 60-string hostile test set run through the six current model-facing paths |
 | [docs/VENDOR_QUESTIONNAIRE.md](docs/VENDOR_QUESTIONNAIRE.md) | Honest answers to a standard enterprise security questionnaire |
 | [docs/PRIVACY_DATA_MAP.md](docs/PRIVACY_DATA_MAP.md), [docs/RETENTION.md](docs/RETENTION.md), [docs/EMPLOYEE_NOTICE.md](docs/EMPLOYEE_NOTICE.md) | What is stored, retention and legal hold, and a plain-language notice for employees |
 | [docs/AUDIT_LOG.md](docs/AUDIT_LOG.md), [docs/ROUTE_TABLE.md](docs/ROUTE_TABLE.md) | Audit export for a SIEM, and a generated list of every route with its authentication |

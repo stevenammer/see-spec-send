@@ -26,7 +26,7 @@ Say Nick works in support, and they're tired of copying every refund into a spre
 
 Then comes the part I care most about: **nothing counts as "it helped" until enough people who do the work say it helped.** Not Nick, who wrote the spec. Not Jose, who approved it. Other people, like Steven and Cleo, who actually tried it. If they don't, it gets shelved with a written reason, and the reason stays on the record.
 
-That rule isn't a policy in a handbook. The code enforces it. There's no "done" button anywhere, and a leader can't override it. You can [watch the real server refuse](docs/WATCH_IT_REFUSE.md) the person who wrote the spec, the leader who approved it, and a made-up "done" event.
+That rule isn't a policy in a handbook. The code enforces it. There's no "done" button anywhere, and a leader can't override it. (The leader who approves sets how many people are needed, and whoever runs the server can create accounts, so the rule is only as strong as who you let in and who runs the box.) You can [watch the real server refuse](docs/WATCH_IT_REFUSE.md) the person who wrote the spec, the leader who approved it, and a made-up "done" event.
 
 ## What the AI can and can't do
 
@@ -47,12 +47,12 @@ Early, and I'm building it in public. It isn't ready to drop into a big company 
 - The core loop above, in a real web app and in the demo.
 - Over 800 automated tests on every push, plus walkthroughs in a real browser and an accessibility check.
 - Effort and the "ask the organization" answers have had a first real-model test too ([docs/MODEL_EVAL.md](docs/MODEL_EVAL.md)). That test found the answer cap was cutting every thorough answer off, and it's fixed.
-- Bring your own model and your own agent. The builder can be OpenCode, Claude Code or Codex, behind a gateway that meters and caps every call, and the models can be Claude, GPT, Gemini, Bedrock or local ([docs/AGENT_HARNESSES.md](docs/AGENT_HARNESSES.md), including what's proven and what isn't).
+- Bring your own model and your own agent. The builder can be OpenCode, Claude Code or Codex, behind a gateway that meters and caps every call, and the gateway can talk to Claude, GPT, Gemini, Bedrock or local models. Only Claude Haiku on Bedrock has been run for real; the rest is built and tested against stand-ins ([docs/AGENT_HARNESSES.md](docs/AGENT_HARNESSES.md), including what's proven and what isn't).
 - The AI builder works on small tasks. On three made-up workplace tools, judged in a real browser, Claude Haiku 4.5 shipped 11 of 12 builds for about five cents each. The write-up is [docs/BUILDER_EVAL.md](docs/BUILDER_EVAL.md), including why that's thin evidence.
 - Hostile text can't trick it into approving or spending. I test that with 60 nasty strings (fake instructions, look-alike letters, hidden scripts) through every place an AI reads text.
-- People only see what their department lets them see.
-- Sign in with the company's existing login (any standard OIDC provider).
-- If the server dies, a live copy of the database that follows along about once a second can bring it back. In my drill it came back in under a second and lost the last couple of seconds of writes.
+- A post can be limited to a group, and then it's hidden from the feed, search and every page for everyone else. That's opt-in: by default the whole workspace sees everything, groups are set up on the command line, and the post form doesn't have a field for it yet.
+- Sign in through an OpenID Connect login. It's tested against a stand-in and a reference provider, not yet against Okta, Entra or Google.
+- Optional: a live copy of the database that follows along about once a second can bring the server back. In my drill it came back in under a second and lost the last couple of seconds of writes.
 
 **Not done, and code alone won't finish it:**
 
@@ -75,7 +75,7 @@ node cli.js init --id leader
 node cli.js serve --port 8787 --insecure-cookies
 ```
 
-`init` prints a temporary leader password. Copy it, open http://127.0.0.1:8787/signin, sign in as `leader`, and pick a real password before you do anything else. `--insecure-cookies` is for local http only. Delete the temp folder and everything's gone.
+The AI parts (Effort's replies and the builder) are off until you configure a model, so a fresh install shows the people-and-rules flow and a place to paste a hand-made try. `init` prints a temporary leader password. Copy it, open http://127.0.0.1:8787/signin, sign in as `leader`, and pick a real password before you do anything else. `--insecure-cookies` is for local http only. Delete the temp folder and everything's gone.
 
 **Check my work.**
 
@@ -87,7 +87,7 @@ npm run test:listen    # real server, short end-to-end
 npm run test:container # needs Docker; uses a local mock model, never a real one
 ```
 
-I break the controls on purpose (over 600 deliberate breaks so far) because a test that can't fail doesn't count. A weekly CI job runs them split into parallel pieces (about an hour in total), and you can start it any time from the Actions tab. So far I've run one piece of the full set and all of the newer set there. The first scheduled run is the next Sunday. The browser tests (`npm run test:e2e`, `test:vision`, `test:hostile-render` and friends) need Playwright and Chrome. Set `PLAYWRIGHT_DIR` to the folder that holds Playwright.
+I break the controls on purpose (about 670 deliberate breaks so far) because a test that can't fail doesn't count. A weekly CI job runs them split into parallel pieces (about an hour in total), and you can start it any time from the Actions tab. So far I've run one piece of the full set and all of the newer set there. The first scheduled run is the next Sunday. The browser tests (`npm run test:e2e`, `test:vision`, `test:hostile-render` and friends) need Playwright and Chrome. Set `PLAYWRIGHT_DIR` to the folder that holds Playwright.
 
 **Security and trust.** It has no runtime dependencies. CodeQL, a container scan (Trivy), a Dockerfile and workflow lint, and the OpenSSF Scorecard run in CI. Start with [SECURITY.md](SECURITY.md) (how to report a problem), then the [threat model](docs/THREAT_MODEL.md), [threats being watched right now](docs/SECURITY_WATCH.md), the [vendor questionnaire](docs/VENDOR_QUESTIONNAIRE.md), the [first AI-driven audit run and what it found](docs/AUDIT_2026-11-17.md), the [pilot guide](docs/PILOT_GUIDE.md) and the generated [table of every route and how it's authenticated](docs/ROUTE_TABLE.md). Failover, backups and what erasure does to a replica are in [docs/HA.md](docs/HA.md).
 

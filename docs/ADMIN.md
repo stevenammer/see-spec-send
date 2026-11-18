@@ -111,7 +111,7 @@ creates a generic item token, not a usable metering capability.
 
 ## Workspace research and search (F5)
 
-Node 22.19 or newer with SQLite FTS5 is required. Search and contribution records are derived, verified workspace indexes. Every enabled member can currently read the workspace; there is no per-item audience partition. Resource/audience proposal IDs do not grant access.
+Node 22.19 or newer with SQLite FTS5 is required. Search and contribution records are derived, verified workspace indexes. By default every enabled member can read the workspace. A post can be restricted to a group (groups are managed on the command line, and the audience is set through the API when posting), and restricted work is hidden from the feed, search and every route. Resource/audience proposal IDs do not grant access.
 
 Internal prior-work research starts off. `node cli.js research status` reports it. An operator can use `node cli.js research enable --source this_workspace` or `disable` to change it; changes enter the admin audit. It performs no network or model call. External sources remain disconnected. Refreshing a SPEC research record states what was checked, gives source identities, and preserves the snapshot used at SEND.
 

@@ -316,7 +316,10 @@ export function step(state, event, who) {
     const bound = currentApproval(context, event);
     if (bound) return bound;
     if (context.rules >= 2 && event.iteration !== context.iteration) return fail('iteration does not match current iteration');
+    // Whoever supplied the try by hand shaped it, so others judge whether it helps. (A model-built try has no person.)
+    const deliverer = typeof event.delivered_by === 'string' && event.delivered_by ? event.delivered_by : null;
     return result({ ...context, phase: 'TRYING', artifact: event.artifact_hash, helpers: [],
+      ...(deliverer ? { ineligibleHelpers: addIneligible(context, deliverer) } : {}),
       ...(context.rules === 3 ? { activePost: { ...context.activePost, version: event.artifact_hash } } : {}) },
       stopsBuild(context, 'TRYING', event.type));
   }

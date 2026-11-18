@@ -14,6 +14,7 @@ import { invalid, kindOf, refused, tooLarge as tooLargeError } from '../core/err
 import { redact } from '../provider/safe-http.js';
 import { CURRENT_RULES, validDateOnly } from '../core/machine.js';
 import { annexVisible, currentAnnexes } from '../reanalysis/read.js';
+import { killed } from '../worker/control.js';
 import { buildPacket } from '../core/packet.js';
 import { specPage } from './pages-spec.js';
 import { researchRecord } from '../research/connectors.js';
@@ -925,6 +926,9 @@ export function createHandler({ auth, store, integrations, questModel = null, an
           throw refused('event not allowed');
         // Check the stage before storing any bytes, so a refused delivery leaves nothing behind.
         if (state.state !== 'SENDING') throw refused('event not allowed');
+        // An approval that has run out, or a stopped system, can't take a try either. The worker and gateway already refuse; the page route did not.
+        if (state.context.leash?.expiresAt && clock() >= Date.parse(state.context.leash.expiresAt)) throw refused('approval expired');
+        if (killed(store)) throw refused('system stopped');
         if (state.context.rules === 3 && (req.headers['x-post-id'] !== state.context.activePost?.id || req.headers['x-post-version'] !== state.context.activePost?.version)) throw refused('frozen or superseded post');
         const hash = store.putArtifact(deliver[1], input.html);
         const run = auth.createToken('run', deliver[1]);

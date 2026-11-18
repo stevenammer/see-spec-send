@@ -190,3 +190,26 @@ test('a reanalysis update stops showing once a later group change would let peop
     assert.doesNotMatch((await call(handler, 'GET', '/items/target', sam)).text, /Card digits appear/, 'on the item page too, for everyone');
   } finally { store.close(); }
 });
+
+test('whoever hand-delivers a try cannot also say it helps, and a model-built try is unchanged', async () => {
+  const { fixture, put } = await import('./helpers/gateway-fixture.mjs');
+  const { store, run } = fixture();
+  try {
+    for (const id of ['cleo', 'dana', 'erin']) store.registerPerson(id);
+    // A leader or steward uploads the page by hand: the run token's event carries who delivered it.
+    put(store, 'tried', run.run_actor, { approval: run.approval, spec_hash: run.spec_hash, iteration: 0, artifact_hash: 'ab'.repeat(32), delivered_by: 'cleo' });
+    assert.equal(store.read('item').state, 'TRYING');
+    assert.ok(store.read('item').context.ineligibleHelpers.includes('cleo'), 'the deliverer is ineligible');
+    assert.throws(() => put(store, 'helped', 'cleo', { artifact_hash: 'ab'.repeat(32) }), /not allowed/, 'the deliverer is refused');
+    put(store, 'helped', 'dana', { artifact_hash: 'ab'.repeat(32) });
+    assert.deepEqual(store.read('item').context.helpers, ['dana'], 'someone who didn’t shape it still counts');
+  } finally { store.close(); }
+});
+
+test('the page route that takes a hand-delivered try refuses once the approval has expired', () => {
+  const source = readFileSyncForTest('../app/http.js');
+  assert.match(source, /state\.context\.leash\?\.expiresAt && clock\(\) >= Date\.parse\(state\.context\.leash\.expiresAt\)\) throw refused\('approval expired'\)/);
+  assert.match(source, /if \(killed\(store\)\) throw refused\('system stopped'\)/);
+});
+import { readFileSync as readFileSyncImported } from 'node:fs';
+function readFileSyncForTest(path) { return readFileSyncImported(new URL(path, import.meta.url), 'utf8'); }

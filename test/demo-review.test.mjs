@@ -38,10 +38,10 @@ test('a saved log with too many rows is refused, not replayed', async () => {
 
 test('a session stops accepting steps at the cap', async () => {
   const session = fresh();
-  await perform(session, 'maya', 'post', { problem: 'p', verdict: 'build_needed', checks: { have: { on: true, note: '' } } });
+  await perform(session, 'nick', 'post', { problem: 'p', verdict: 'build_needed', checks: { have: { on: true, note: '' } } });
   session.log.append = async () => { throw new Error('should not be called'); };
   Object.defineProperty(session.log, 'length', { value: limits.steps });
-  const out = await perform(session, 'maya', 'spec', { must: 'a', how_we_know: 'b' });
+  const out = await perform(session, 'nick', 'spec', { must: 'a', how_we_know: 'b' });
   assert.equal(out.status, 'invalid');
 });
 

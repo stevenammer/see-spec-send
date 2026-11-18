@@ -11,14 +11,14 @@ const at = n => `2026-11-14T00:00:${String(n).padStart(2, '0')}.000Z`;
 const append = (store, event, n) => store.append('r2', { ...event, at: at(n) }, { idem: `r2:${n}` });
 const setup = () => {
   const store = new Store();
-  store.registerPerson('op'); store.registerPerson('maya');
+  store.registerPerson('op'); store.registerPerson('nick');
   append(store, { type: 'posted', actor: 'op', original: 'Callers lose context.', rules: 2 }, 1);
   return store;
 };
 
 test('R2 N-01: a tagged Effort answer stays beneath its exact triggering comment', async () => {
   const store = setup(); const see = store.read('r2').context.seeHash;
-  append(store, { type: 'commented', actor: 'maya', comment: '@effort what breaks next?', kind: 'comment', anchor_kind: 'see', anchor_hash: see }, 2);
+  append(store, { type: 'commented', actor: 'nick', comment: '@effort what breaks next?', kind: 'comment', anchor_kind: 'see', anchor_hash: see }, 2);
   const trigger = store.events('r2').at(-1);
   store.db.prepare("UPDATE effort_jobs SET state='blocked' WHERE kind!='tag'").run();
   const ledger = new Ledger(store); ledger.configure(fixturePolicy());
@@ -57,13 +57,13 @@ test('R2 N-06: history diff preserves line order and duplicate counts', () => {
 
 test('R2 N-04/N-05: the page distinguishes originator from steward and shows attributed credit', () => {
   const store = setup(); const see = store.read('r2').context.seeHash;
-  append(store, { type: 'commented', actor: 'maya', comment: 'Keep the caller note.', kind: 'comment', anchor_kind: 'see', anchor_hash: see }, 2);
+  append(store, { type: 'commented', actor: 'nick', comment: 'Keep the caller note.', kind: 'comment', anchor_kind: 'see', anchor_hash: see }, 2);
   const source = store.events('r2').at(-1).body_hash;
   append(store, { type: 'revised', actor: 'op', text: 'Callers lose context. Keep the caller note.', base_hash: see, credits: [{ comment: source, mode: 'quoted' }] }, 3);
-  const page = itemPage({ id: 'r2', ...store.read('r2'), effort: [] }, store.events('r2'), 'maya', false);
+  const page = itemPage({ id: 'r2', ...store.read('r2'), effort: [] }, store.events('r2'), 'nick', false);
   assert.match(page.replace(/<[^>]*>/g, ''), /Originator: op\. Current steward: op\./);
   assert.match(page, /href="\/people\/op"/);
-  assert.match(page, /credit: maya, quoted/);
+  assert.match(page, /credit: nick, quoted/);
   assert.match(page, new RegExp(`href="#comment-${source}"`));
 });
 

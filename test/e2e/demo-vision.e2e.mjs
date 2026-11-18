@@ -14,17 +14,17 @@ async function main(){
  try{
   const page=await browser.newPage({viewport:{width:390,height:844}});const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto(origin);const root=page.locator('#vision-conversation');
-  await root.locator('[name=vision-person] option[value=maya]').waitFor({state:'attached'});
+  await root.locator('[name=vision-person] option[value=nick]').waitFor({state:'attached'});
   await root.getByRole('button',{name:'Post conversation SEE'}).click();await root.getByText(/Effort \(AI fixture\)/).first().waitFor();
-  await root.locator('[name=vision-person]').selectOption('ben');await root.locator('[name=comment]').fill('Keep the original note visible. <img src=x onerror=alert(1)>');
+  await root.locator('[name=vision-person]').selectOption('steven');await root.locator('[name=comment]').fill('Keep the original note visible. <img src=x onerror=alert(1)>');
   await root.getByRole('button',{name:'Comment on conversation'}).click();await root.getByRole('button',{name:'Include comment (OP only)'}).waitFor();
-  await root.locator('[name=vision-person]').selectOption('maya');await root.getByRole('button',{name:'Include comment (OP only)'}).click();await root.locator('[data-vision-events] > li').filter({hasText:'maya: revised.'}).waitFor();
+  await root.locator('[name=vision-person]').selectOption('nick');await root.getByRole('button',{name:'Include comment (OP only)'}).click();await root.locator('[data-vision-events] > li').filter({hasText:'nick: revised.'}).waitFor();
   await root.getByRole('button',{name:'SPEC IT! (OP only)'}).click();await root.getByText(/Fixture Effort \(AI\): Which handoff/).waitFor();
   await root.getByRole('button',{name:'SEND IT! (OP only)'}).click();await root.locator('[data-vision-status]').filter({hasText:'SUBMITTED'}).waitFor();
   await root.getByRole('button',{name:'Approve conversation (independent leader)'}).click();await root.locator('[data-vision-result]').filter({hasText:'Refused:'}).waitFor();
-  await root.locator('[name=vision-person]').selectOption('lena');await root.getByRole('button',{name:'Approve conversation (independent leader)'}).click();await root.locator('[data-vision-status]').filter({hasText:'SENDING'}).waitFor();
+  await root.locator('[name=vision-person]').selectOption('jose');await root.getByRole('button',{name:'Approve conversation (independent leader)'}).click();await root.locator('[data-vision-status]').filter({hasText:'SENDING'}).waitFor();
   await root.getByRole('button',{name:'Deliver fixture try'}).click();await root.locator('[data-vision-status]').filter({hasText:'TRYING'}).waitFor();
-  await root.locator('[name=vision-person]').selectOption('ben');await root.getByRole('button',{name:'Say this try helps'}).click();await root.locator('[data-vision-status]').filter({hasText:'HELPS'}).waitFor();
+  await root.locator('[name=vision-person]').selectOption('steven');await root.getByRole('button',{name:'Say this try helps'}).click();await root.locator('[data-vision-status]').filter({hasText:'HELPS'}).waitFor();
   await root.getByRole('button',{name:'Fork conversation',exact:true}).click();await root.locator('[data-vision-status]').filter({hasText:'Approval 0'}).waitFor();
   await root.getByRole('button',{name:"Try reusing the parent's approval"}).click();await root.locator('[data-vision-result]').filter({hasText:'Refused:'}).waitFor();
   assert.equal(await page.locator('img').count(),0);assert.deepEqual(errors,[]);

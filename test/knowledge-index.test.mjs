@@ -13,11 +13,11 @@ const at = '2026-11-16T12:00:00.000Z';
 test('disconnected research source stays labeled not connected in the index', async () => {
   const store = new Store();
   try {
-    store.registerPerson('maya');
-    store.append('research', { type: 'posted', actor: 'maya', rules: 2, original: 'Find the export owner.', at }, { idem: 'post' });
+    store.registerPerson('nick');
+    store.append('research', { type: 'posted', actor: 'nick', rules: 2, original: 'Find the export owner.', at }, { idem: 'post' });
     const sources = await researchRecord({ at, input: { text: 'export owner' }, connectors: { 'internal prior work': () => 'Checked record', 'open source': () => '', 'commercial options': () => '' } });
-    store.append('research', { type: 'researched', actor: 'maya', sources, at }, { idem: 'research' });
-    const rows = searchKnowledge(store, 'maya', 'nothing checked');
+    store.append('research', { type: 'researched', actor: 'nick', sources, at }, { idem: 'research' });
+    const rows = searchKnowledge(store, 'nick', 'nothing checked');
     const row = rows.find(entry => entry.source_name === 'process change');
     assert.equal(row.type, 'research'); assert.equal(row.connected, false);
   } finally { store.close(); }
@@ -28,8 +28,8 @@ test('restore from an older backup does not revive retracted annexes or old appr
   const file = join(dir, 'live.sqlite'), backup = join(dir, 'older.sqlite'), restored = join(dir, 'restored.sqlite');
   const store = new Store(file);
   try {
-    store.registerPerson('maya');
-    store.append('case', { type: 'posted', actor: 'maya', rules: 3, original: 'Export loses notes.', at }, { idem: 'post' });
+    store.registerPerson('nick');
+    store.append('case', { type: 'posted', actor: 'nick', rules: 3, original: 'Export loses notes.', at }, { idem: 'post' });
     const source = store.events('case')[0].body_hash;
     const delta = store.knowledge.append('delta', { v: 1, source: { item: 'case', body_hash: source }, claims: [{ text: 'note' }] }, { at });
     const annex = store.knowledge.append('annex', { v: 1, parent: { item: 'case' }, delta: delta.hash }, { at });

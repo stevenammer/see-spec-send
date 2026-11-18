@@ -164,14 +164,14 @@ test('authority comes from the roster, not from the event', async () => {
   const roster = makeRoster();
   const log = createLog({ roster, item: demoItem });
   const base = { at: at(1) };
-  assert.equal((await log.append({ ...base, type: 'checked', actor: 'maya', problem: 'x', looked: ['have:x'], found: [], verdict: 'build_needed' }, { idem: 'a' })).ok, true);
-  assert.equal((await log.append({ ...base, type: 'specced', actor: 'maya', must: ['x'], how_we_know: ['y'], out_of_scope: [] }, { idem: 'b' })).ok, true);
-  // Ben claims leadership in every way an event can. He is a member in the roster.
-  const claim = await log.append({ ...base, type: 'approved', actor: 'ben', leader: true, kind: 'person', authority: { leader: true },
+  assert.equal((await log.append({ ...base, type: 'checked', actor: 'nick', problem: 'x', looked: ['have:x'], found: [], verdict: 'build_needed' }, { idem: 'a' })).ok, true);
+  assert.equal((await log.append({ ...base, type: 'specced', actor: 'nick', must: ['x'], how_we_know: ['y'], out_of_scope: [] }, { idem: 'b' })).ok, true);
+  // Steven claims leadership in every way an event can. They are a member in the roster.
+  const claim = await log.append({ ...base, type: 'approved', actor: 'steven', leader: true, kind: 'person', authority: { leader: true },
     spec_hash: log.replay().context.specHash, cap_usd: 1, quorum: 1 }, { idem: 'c' });
   assert.equal(claim.ok, false);
   assert.equal(claim.error, 'event not allowed');
-  assert.equal((await log.append({ ...base, type: 'approved', actor: 'ben', role: 'leader' }, { idem: 'd' })).error, 'event role is forbidden');
+  assert.equal((await log.append({ ...base, type: 'approved', actor: 'steven', role: 'leader' }, { idem: 'd' })).error, 'event role is forbidden');
   assert.equal((await log.append({ ...base, type: 'approved', actor: 'nobody' }, { idem: 'e' })).error, 'unknown actor');
   assert.equal(log.length, 2);
 });
@@ -185,7 +185,7 @@ test('the chain notices edits, reordering and removal', async () => {
 
 test('idempotent retries do not grow the log, and a reused key with a different event is refused', async () => {
   const log = createLog({ roster: makeRoster(), item: demoItem });
-  const first = { at: at(1), type: 'checked', actor: 'maya', problem: 'x', looked: ['have:x'], found: [], verdict: 'build_needed' };
+  const first = { at: at(1), type: 'checked', actor: 'nick', problem: 'x', looked: ['have:x'], found: [], verdict: 'build_needed' };
   assert.equal((await log.append(first, { idem: 'same' })).ok, true);
   assert.equal((await log.append(first, { idem: 'same' })).idempotent, true);
   assert.equal(log.length, 1);
@@ -208,20 +208,20 @@ test('the visitor path reaches the already-have ending and the shelved ending', 
   const mk = () => createSession({ log: createLog({ roster: makeRoster(), item: demoItem }), roster: makeRoster() });
   const checks = { have: { on: true, note: 'It was a setting' } };
   let session = mk();
-  assert.equal((await perform(session, 'ben', 'post', { problem: 'Reports are slow', verdict: 'already_have', checks })).status, 'accepted');
+  assert.equal((await perform(session, 'steven', 'post', { problem: 'Reports are slow', verdict: 'already_have', checks })).status, 'accepted');
   assert.equal(summary(session).state, 'SHELVED');
-  assert.equal((await perform(session, 'ben', 'spec', { must: 'a', how_we_know: 'b' })).status, 'refused');
+  assert.equal((await perform(session, 'steven', 'spec', { must: 'a', how_we_know: 'b' })).status, 'refused');
   session = mk();
-  await perform(session, 'ben', 'post', { problem: 'Reports are slow', verdict: 'build_needed', checks });
-  assert.equal((await perform(session, 'lena', 'shelve', { reason: 'not now' })).status, 'accepted');
+  await perform(session, 'steven', 'post', { problem: 'Reports are slow', verdict: 'build_needed', checks });
+  assert.equal((await perform(session, 'jose', 'shelve', { reason: 'not now' })).status, 'accepted');
   assert.equal(summary(session).state, 'SHELVED');
 });
 
 test('a leader who is the steward cannot approve, and a member cannot approve', async () => {
   const session = createSession({ log: createLog({ roster: makeRoster(), item: demoItem }), roster: makeRoster() });
-  await perform(session, 'lena', 'post', { problem: 'p', verdict: 'build_needed', checks: { have: { on: true, note: '' } } });
-  await perform(session, 'lena', 'spec', { must: 'a', how_we_know: 'b' });
-  assert.equal((await perform(session, 'lena', 'approve', { cap: '1', quorum: '1' })).rule, 'steward-cannot-approve');
-  assert.equal((await perform(session, 'ben', 'approve', { cap: '1', quorum: '1' })).rule, 'leaders-approve');
+  await perform(session, 'jose', 'post', { problem: 'p', verdict: 'build_needed', checks: { have: { on: true, note: '' } } });
+  await perform(session, 'jose', 'spec', { must: 'a', how_we_know: 'b' });
+  assert.equal((await perform(session, 'jose', 'approve', { cap: '1', quorum: '1' })).rule, 'steward-cannot-approve');
+  assert.equal((await perform(session, 'steven', 'approve', { cap: '1', quorum: '1' })).rule, 'leaders-approve');
   assert.equal((await perform(session, 'omar', 'approve', { cap: '1', quorum: '1' })).status, 'accepted');
 });

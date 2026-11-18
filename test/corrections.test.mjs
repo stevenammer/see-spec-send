@@ -7,10 +7,10 @@ import { searchKnowledge } from '../knowledge/index.js';
 
 const at = '2026-11-16T12:00:00.000Z';
 const setup = () => {
-  const store = new Store(); store.registerPerson('maya');
-  store.append('case', { type: 'posted', actor: 'maya', rules: 3, original: 'The handoff loses the caller note.', at }, { idem: 'post' });
+  const store = new Store(); store.registerPerson('nick');
+  store.append('case', { type: 'posted', actor: 'nick', rules: 3, original: 'The handoff loses the caller note.', at }, { idem: 'post' });
   const context = store.read('case').context;
-  store.append('case', { type: 'commented', actor: 'maya', kind: 'comment', comment: 'The caller note appears in the current export.', anchor_kind: 'see', anchor_hash: context.seeHash, post_id: context.activePost.id, post_version: context.activePost.version, at }, { idem: 'comment' });
+  store.append('case', { type: 'commented', actor: 'nick', kind: 'comment', comment: 'The caller note appears in the current export.', anchor_kind: 'see', anchor_hash: context.seeHash, post_id: context.activePost.id, post_version: context.activePost.version, at }, { idem: 'comment' });
   return store;
 };
 
@@ -20,14 +20,14 @@ test('erased source redacts dependent delta, annex, digest entry and index row',
     const source = store.events('case').at(-1).body_hash;
     const delta = store.knowledge.append('delta', { v: 1, source: { item: 'case', body_hash: source }, claims: [{ text: 'The current export has the note.' }] }, { at });
     const annex = store.knowledge.append('annex', { v: 1, parent: { item: 'case' }, delta: delta.hash, statement: 'Found by Effort (AI).' }, { at });
-    store.db.prepare('INSERT INTO digest_entries(id,person,annex_hash,created_at,seen_at,pinged) VALUES(?,?,?,?,NULL,0)').run('digest', 'maya', annex.hash, at);
-    assert.equal(searchKnowledge(store, 'maya', 'current export').length, 0, 'comments are not typed knowledge rows');
-    store.erase('case', source, 'maya', at);
+    store.db.prepare('INSERT INTO digest_entries(id,person,annex_hash,created_at,seen_at,pinged) VALUES(?,?,?,?,NULL,0)').run('digest', 'nick', annex.hash, at);
+    assert.equal(searchKnowledge(store, 'nick', 'current export').length, 0, 'comments are not typed knowledge rows');
+    store.erase('case', source, 'nick', at);
     assert.equal(store.knowledge.entries('delta')[0].erased, true);
     assert.equal(store.knowledge.entries('annex')[0].erased, true);
     assert.equal(store.db.prepare('SELECT count(*) AS n FROM digest_entries').get().n, 0);
     assert.ok(store.db.prepare('SELECT count(*) AS n FROM knowledge_dependencies WHERE source_body_hash=?').get(source).n >= 1);
-    assert.equal(searchKnowledge(store, 'maya', 'current export').length, 0, 'erased source has no index row');
+    assert.equal(searchKnowledge(store, 'nick', 'current export').length, 0, 'erased source has no index row');
   } finally { store.close(); }
 });
 
@@ -36,9 +36,9 @@ test('challenge is attributed, visible, and removes the claim from matcher suppo
   try {
     const source = store.events('case').at(-1).body_hash;
     const delta = store.knowledge.append('delta', { v: 1, source: { item: 'case', body_hash: source }, claims: [{ text: 'export caller note integration' }] }, { at });
-    challengeClaim(store, { target: source, actor: 'maya', note: 'This describes an old export, not the current one.', at });
+    challengeClaim(store, { target: source, actor: 'nick', note: 'This describes an old export, not the current one.', at });
     const correction = store.knowledge.entries('correction')[0];
-    assert.equal(correction.body.actor, 'maya'); assert.match(correction.body.note, /old export/);
+    assert.equal(correction.body.actor, 'nick'); assert.match(correction.body.note, /old export/);
     assert.equal(isChallenged(store, delta.hash, source), true);
     assert.deepEqual(findImpacts(store, { hash: delta.hash, source: { item: 'case', body_hash: source }, claims: [{ text: 'export caller note integration' }] }).checked, []);
   } finally { store.close(); }
@@ -49,7 +49,7 @@ test('correction never alters the source event or its hash', () => {
   try {
     const before = store.eventRows('case').map(row => row.hash);
     const source = store.events('case').at(-1).body_hash;
-    challengeClaim(store, { target: source, actor: 'maya', note: 'More context belongs here.', at });
+    challengeClaim(store, { target: source, actor: 'nick', note: 'More context belongs here.', at });
     assert.deepEqual(store.eventRows('case').map(row => row.hash), before);
     assert.equal(store.verify('case').ok, true);
   } finally { store.close(); }

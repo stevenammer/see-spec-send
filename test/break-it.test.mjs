@@ -102,7 +102,7 @@ async function call(handler, method, path, headers = {}, input = null) {
 
 test('through the real handler: a browser is never shown raw JSON for a page it cannot open, scripts still get JSON', async t => {
   const store = new Store(); t.after(() => store.close()); const auth = new Auth(store);
-  await auth.createUser('maya', 'maya-long-password-9x', false);
+  await auth.createUser('nick', 'nick-long-password-9x', false);
   const handler = createHandler({ store, auth, secure: false, origin: 'http://localhost' });
   const html = { accept: 'text/html,application/xhtml+xml' };
   // Signed out, in a browser: sent to sign in, for every page that needs a session.
@@ -116,7 +116,7 @@ test('through the real handler: a browser is never shown raw JSON for a page it 
   const api = await call(handler, 'GET', '/api/digest', html);
   assert.equal(api.status, 403, 'the API never redirects'); assert.match(api.text, /request refused/);
   // Signed in, in a browser: a page that says what happened, not JSON.
-  const login = await call(handler, 'POST', '/api/login', {}, { id: 'maya', password: 'maya-long-password-9x' });
+  const login = await call(handler, 'POST', '/api/login', {}, { id: 'nick', password: 'nick-long-password-9x' });
   const cookie = login.headers['set-cookie'].split(';')[0];
   for (const path of ['/items/zzz/spec', '/items/zzz', '/nonexistent-page']) {
     const r = await call(handler, 'GET', path, { ...html, cookie });
@@ -130,9 +130,9 @@ test('through the real handler: a browser is never shown raw JSON for a page it 
 
 test('through the real handler: a post made of spaces is refused, a real one is accepted', async t => {
   const store = new Store(); t.after(() => store.close()); const auth = new Auth(store);
-  await auth.createUser('maya', 'maya-long-password-9x', false);
+  await auth.createUser('nick', 'nick-long-password-9x', false);
   const handler = createHandler({ store, auth, secure: false, origin: 'http://localhost' });
-  const login = await call(handler, 'POST', '/api/login', {}, { id: 'maya', password: 'maya-long-password-9x' });
+  const login = await call(handler, 'POST', '/api/login', {}, { id: 'nick', password: 'nick-long-password-9x' });
   const csrf = JSON.parse(login.text).csrf, headers = { cookie: login.headers['set-cookie'].split(';')[0], origin: 'http://localhost', 'x-csrf-token': csrf };
   for (const original of ['', '   ', '\n\t \n', '\u00a0\u00a0']) assert.equal((await call(handler, 'POST', '/api/items', headers, { original })).status, 409, JSON.stringify(original));
   assert.equal((await call(handler, 'POST', '/api/items', headers, { original: 'A real problem.' })).status, 201);
@@ -149,9 +149,9 @@ test('a signed-in person can sign out, and a signed-out page has no sign-out but
 
 test('signing out through the real handler ends the session', async t => {
   const store = new Store(); t.after(() => store.close()); const auth = new Auth(store);
-  await auth.createUser('maya', 'maya-long-password-9x', false);
+  await auth.createUser('nick', 'nick-long-password-9x', false);
   const handler = createHandler({ store, auth, secure: false, origin: 'http://localhost' });
-  const login = await call(handler, 'POST', '/api/login', {}, { id: 'maya', password: 'maya-long-password-9x' });
+  const login = await call(handler, 'POST', '/api/login', {}, { id: 'nick', password: 'nick-long-password-9x' });
   const cookie = login.headers['set-cookie'].split(';')[0], csrf = JSON.parse(login.text).csrf;
   assert.equal((await call(handler, 'GET', '/api/me', { cookie })).status, 200);
   assert.equal((await call(handler, 'POST', '/api/logout', { cookie, origin: 'http://localhost', 'x-csrf-token': csrf }, {})).status, 204);

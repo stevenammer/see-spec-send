@@ -83,11 +83,11 @@ test('an open thread that shares fewer than three terms with the result gets no 
   const { s, decide } = world(t);
   // A rewrite of the result that shares only "integration" with Dana's assumption.
   s.db.exec("DELETE FROM reanalysis_pairs");
-  decide('lena', 'Parking validation integration is out of scope.');
+  decide('jose', 'Parking validation integration is out of scope.');
   const out = runReanalysis(s, { now: later });
   const danaComments = s.events('dana').filter(event => event.actor === 'effort');
   assert.ok(danaComments.every(event => !/Parking validation/.test(event.comment)), 'a one-word overlap is never enough');
-  assert.ok(out.openThreads.every(row => row.item !== 'lena'));
+  assert.ok(out.openThreads.every(row => row.item !== 'jose'));
 });
 
 test('a restricted result never reaches an open thread whose readers cannot all read it', t => {

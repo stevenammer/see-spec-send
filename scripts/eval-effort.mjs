@@ -14,8 +14,8 @@ const provider = bedrockConverse({ region: process.env.AWS_REGION || 'us-east-1'
   credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY, sessionToken: process.env.AWS_SESSION_TOKEN } });
 
 const words = text => text.trim().split(/\s+/).filter(Boolean).length;
-const posted = original => [{ type: 'posted', actor: 'maya', original, body_hash: 'h-see' }];
-const comment = (text, actor = 'ben') => ({ type: 'commented', actor, kind: 'comment', comment: text, body_hash: 'h-trigger' });
+const posted = original => [{ type: 'posted', actor: 'nick', original, body_hash: 'h-see' }];
+const comment = (text, actor = 'steven') => ({ type: 'commented', actor, kind: 'comment', comment: text, body_hash: 'h-trigger' });
 const approvalLanguage = /\b(i|effort)\s+(hereby\s+)?(approve|approved|have approved|will approve|authorize|authorized)\b|\bapproved\b.{0,40}\b(build|budget|spend)|budget (is|has been) set|go ahead and spend/i;
 
 const cases = [

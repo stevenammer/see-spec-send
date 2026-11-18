@@ -41,7 +41,7 @@ Then open http://127.0.0.1:8080/. It can't run from a `file://` address, because
 - Sending a spec back, changing the steward, and erasing text. The machine has them. The demo doesn't.
 - More than one item at a time.
 
-The people are invented: Maya, Lena, Ben, Cleo, Omar and Priya. Lena and Omar are leaders. Anything a visitor types is shown as text, never as markup, and input lengths are bounded.
+The people are invented: Nick, Jose, Steven, Cleo, Omar and Priya. Jose and Omar are leaders. Anything a visitor types is shown as text, never as markup, and input lengths are bounded.
 
 ## Checks
 

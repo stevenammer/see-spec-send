@@ -13,25 +13,25 @@ function trying(helpers = []) {
   return {
     id: 'item1',
     state: 'TRYING',
-    context: { steward: 'maya', approver: 'lead', helpers, quorum: 2, artifact: hash,
-      ineligibleHelpers: ['maya', 'lead'] },
+    context: { steward: 'nick', approver: 'lead', helpers, quorum: 2, artifact: hash,
+      ineligibleHelpers: ['nick', 'lead'] },
   };
 }
 const events = [
-  { type: 'checked', problem: 'A problem', actor: 'maya' },
-  { type: 'tried', actor: 'f'.repeat(64), delivered_by: 'maya', artifact_hash: hash },
+  { type: 'checked', problem: 'A problem', actor: 'nick' },
+  { type: 'tried', actor: 'f'.repeat(64), delivered_by: 'nick', artifact_hash: hash },
 ];
 
 test('the history names the person who delivered the try, never a token hash', () => {
-  const page = itemPage(trying(), events, 'ben', false);
-  assert.match(page, /maya delivered a try/);
+  const page = itemPage(trying(), events, 'steven', false);
+  assert.match(page, /nick delivered a try/);
   assert.doesNotMatch(page, new RegExp('f'.repeat(64)));
 });
 
 test('everyone can see the try, but only people who may vote get the button', () => {
-  const asSteward = itemPage(trying(), events, 'maya', false);
+  const asSteward = itemPage(trying(), events, 'nick', false);
   const asApprover = itemPage(trying(), events, 'lead', true);
-  const asMember = itemPage(trying(), events, 'ben', false);
+  const asMember = itemPage(trying(), events, 'steven', false);
   for (const page of [asSteward, asApprover, asMember])
     assert.match(page, /<iframe[^>]+sandbox="allow-scripts"/);
   assert.doesNotMatch(asSteward, /data-event="helped"/);
@@ -40,7 +40,7 @@ test('everyone can see the try, but only people who may vote get the button', ()
 });
 
 test('the sandbox never allows same-origin access', () => {
-  assert.doesNotMatch(itemPage(trying(), events, 'ben', false), /allow-same-origin/);
+  assert.doesNotMatch(itemPage(trying(), events, 'steven', false), /allow-same-origin/);
 });
 
 function setup() {
@@ -82,8 +82,8 @@ async function call(handler, method, path, input, headers = {}) {
 
 test('delivering outside the Send stage stores nothing', async () => {
   const { store, auth, handler } = setup();
-  await auth.createUser('maya', password, false);
-  const login = await call(handler, 'POST', '/api/login', { id: 'maya', password });
+  await auth.createUser('nick', password, false);
+  const login = await call(handler, 'POST', '/api/login', { id: 'nick', password });
   const headers = {
     cookie: login.headers['set-cookie'].split(';')[0],
     origin: 'https://localhost',
@@ -117,9 +117,9 @@ test('delivering outside the Send stage stores nothing', async () => {
 // Shared setup: an item that a leader has approved, so it is waiting for a try.
 async function itemInSend() {
   const { store, auth, handler } = setup();
-  await auth.createUser('maya', password, false);
+  await auth.createUser('nick', password, false);
   await auth.createUser('lead', password, true);
-  await auth.createUser('ben', password, false);
+  await auth.createUser('steven', password, false);
   await auth.createUser('cleo', password, false);
   const sign = async id => {
     const login = await call(handler, 'POST', '/api/login', { id, password });
@@ -129,7 +129,7 @@ async function itemInSend() {
       'x-csrf-token': login.body.csrf,
     };
   };
-  const maya = await sign('maya');
+  const nick = await sign('nick');
   const lead = await sign('lead');
   const made = await call(
     handler,
@@ -141,7 +141,7 @@ async function itemInSend() {
       have_note: 'looked',
       verdict: 'build_needed',
     },
-    maya,
+    nick,
   );
   const id = made.body.id;
   const events = `/api/items/${id}/events`;
@@ -150,7 +150,7 @@ async function itemInSend() {
     'POST',
     events,
     { type: 'specced', must: ['x'], how_we_know: ['y'], out_of_scope: [] },
-    maya,
+    nick,
   );
   await call(handler, 'POST', '/api/stepup', { password }, lead);
   const approved = await call(
@@ -161,25 +161,25 @@ async function itemInSend() {
     lead,
   );
   assert.equal(approved.status, 201);
-  return { store, handler, id, maya, lead, sign };
+  return { store, handler, id, nick, lead, sign };
 }
 
 test('a try of exactly 256 KB is accepted and one byte more is refused', async () => {
-  const { handler, id, maya } = await itemInSend();
+  const { handler, id, nick } = await itemInSend();
   const path = `/api/items/${id}/artifact`;
-  const tooBig = await call(handler, 'POST', path, { html: 'x'.repeat(256 * 1024 + 1) }, maya);
+  const tooBig = await call(handler, 'POST', path, { html: 'x'.repeat(256 * 1024 + 1) }, nick);
   assert.equal(tooBig.status, 409, 'one byte over the limit must be refused in the Send stage');
-  const multibyte = await call(handler, 'POST', path, { html: '€'.repeat(100_000) }, maya);
+  const multibyte = await call(handler, 'POST', path, { html: '€'.repeat(100_000) }, nick);
   assert.equal(multibyte.status, 409, 'the limit counts bytes, not characters');
-  const fits = await call(handler, 'POST', path, { html: 'x'.repeat(256 * 1024) }, maya);
+  const fits = await call(handler, 'POST', path, { html: 'x'.repeat(256 * 1024) }, nick);
   assert.equal(fits.status, 201, 'exactly 256 KB must be accepted');
 });
 
 test('the list never exposes who said it helps, only how many', async () => {
-  const { store, handler, id, maya, sign } = await itemInSend();
-  await call(handler, 'POST', `/api/items/${id}/artifact`, { html: '<h1>try</h1>' }, maya);
+  const { store, handler, id, nick, sign } = await itemInSend();
+  await call(handler, 'POST', `/api/items/${id}/artifact`, { html: '<h1>try</h1>' }, nick);
   const artifact = store.read(id).context.artifact;
-  for (const person of ['ben', 'cleo']) {
+  for (const person of ['steven', 'cleo']) {
     const headers = await sign(person);
     await call(
       handler,
@@ -193,7 +193,7 @@ test('the list never exposes who said it helps, only how many', async () => {
   assert.equal(entry.helpers, 2);
   for (const value of Object.values(entry))
     assert.notEqual(typeof value, 'object', 'only plain values');
-  assert.doesNotMatch(JSON.stringify(entry), /ben|cleo/, 'no helper identity in the list');
-  const page = await call(handler, 'GET', '/', undefined, await sign('maya'));
-  assert.doesNotMatch(page.text, /ben|cleo/, 'the feed page shows no helper identity');
+  assert.doesNotMatch(JSON.stringify(entry), /steven|cleo/, 'no helper identity in the list');
+  const page = await call(handler, 'GET', '/', undefined, await sign('nick'));
+  assert.doesNotMatch(page.text, /steven|cleo/, 'the feed page shows no helper identity');
 });

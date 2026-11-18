@@ -3,9 +3,9 @@
 export const item = 'item-1';
 
 export const people = Object.freeze([
-  { id: 'maya', name: 'Maya', leader: false, note: 'member' },
-  { id: 'lena', name: 'Lena', leader: true, note: 'leader' },
-  { id: 'ben', name: 'Ben', leader: false, note: 'member' },
+  { id: 'nick', name: 'Nick', leader: false, note: 'member' },
+  { id: 'jose', name: 'Jose', leader: true, note: 'leader' },
+  { id: 'steven', name: 'Steven', leader: false, note: 'member' },
   { id: 'cleo', name: 'Cleo', leader: false, note: 'member' },
   { id: 'omar', name: 'Omar', leader: true, note: 'leader' },
   { id: 'priya', name: 'Priya', leader: false, note: 'member' },

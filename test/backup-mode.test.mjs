@@ -11,7 +11,7 @@ const mode = path => statSync(path).mode & 0o777;
 test('a backup, its manifest and its key are owner-only even under a permissive umask', t => {
   const dir = mkdtempSync(join(tmpdir(), 'sss-backup-mode-'));
   const store = new Store(join(dir, 'db.sqlite')); t.after(() => store.close());
-  store.registerPerson('maya');
+  store.registerPerson('nick');
   const previous = process.umask(0);
   try {
     const plain = join(dir, 'plain.sqlite');

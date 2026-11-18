@@ -27,8 +27,8 @@ try{
  const store=new Store(file),auth=new Auth(store);
  if(!existsSync(access)){
   const password=randomBytes(15).toString('base64url');
-  for(const [id,leader]of [['maya',false],['ben',false],['lena',true]])await auth.createUser(id,password,leader);
-  accessText=`Local fixture preview. No real model or vendor is called.\nMembers: maya, ben\nIndependent leader: lena\nPassword for these preview accounts: ${password}\nData stays in this separate preview database.\n`;
+  for(const [id,leader]of [['nick',false],['steven',false],['jose',true]])await auth.createUser(id,password,leader);
+  accessText=`Local fixture preview. No real model or vendor is called.\nMembers: nick, steven\nIndependent leader: jose\nPassword for these preview accounts: ${password}\nData stays in this separate preview database.\n`;
   writeFileSync(access,accessText,{flag:'wx',mode:0o600});
  }else accessText=readFileSync(access,'utf8');
  const ledger=new Ledger(store);if(!store.db.prepare('SELECT 1 FROM gateway_policy WHERE id=1').get())ledger.configure(fixturePolicy());store.close();

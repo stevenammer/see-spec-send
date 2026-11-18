@@ -37,7 +37,7 @@ async function main() {
   let leaderPassword = init.match(/one-time password: (\S+)/)[1];
   await cli(['gateway', 'fixture-enable']);
   const invites = {};
-  for (const name of ['maya', 'ben', 'cleo'])
+  for (const name of ['nick', 'steven', 'cleo'])
     invites[name] = await cli(['invite', 'create', '--role', 'member']);
 
   const server = spawn(
@@ -141,7 +141,7 @@ async function main() {
     await leader.getByRole('button', { name: 'Change password' }).click();
     await leader.getByRole('link', { name: 'Post a problem' }).waitFor();
 
-    for (const name of ['maya', 'ben', 'cleo']) await join_(name);
+    for (const name of ['nick', 'steven', 'cleo']) await join_(name);
 
     // ---------- the attacker's toolkit ----------
     const failures = [];
@@ -155,16 +155,16 @@ async function main() {
     };
     const api = (s, method, path, body, extra = {}) => fetch(`${origin}${path}`, { method, headers: { ...s.base, ...extra }, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'manual' });
     await cli(['group', 'create', '--name', 'Reservations']);
-    await cli(['group', 'add', '--name', 'Reservations', '--person', 'maya']);
-    await cli(['group', 'add', '--name', 'Reservations', '--person', 'ben']);
-    const S = { maya: await session('maya'), ben: await session('ben'), cleo: await session('cleo'), leader: await session('leader') };
+    await cli(['group', 'add', '--name', 'Reservations', '--person', 'nick']);
+    await cli(['group', 'add', '--name', 'Reservations', '--person', 'steven']);
+    const S = { nick: await session('nick'), steven: await session('steven'), cleo: await session('cleo'), leader: await session('leader') };
 
-    // Maya posts a restricted item (Reservations only) carrying a secret marker.
+    // Nick posts a restricted item (Reservations only) carrying a secret marker.
     const MARK = 'RESTRICTED-MARKER-7731';
-    const posted = await api(S.maya, 'POST', '/api/items', { original: `${MARK} the night export leaks card digits`, audience: ['Reservations'] });
+    const posted = await api(S.nick, 'POST', '/api/items', { original: `${MARK} the night export leaks card digits`, audience: ['Reservations'] });
     check('restricted post accepted', posted.status === 201, String(posted.status));
     const postedBody = await posted.json(); const secretId = postedBody.id;
-    const openPosted = await api(S.maya, 'POST', '/api/items', { original: 'An ordinary open problem about the break room fridge.' });
+    const openPosted = await api(S.nick, 'POST', '/api/items', { original: 'An ordinary open problem about the break room fridge.' });
     const openId = (await openPosted.json()).id;
 
     // ---------- 1. every way an outsider could read the restricted item ----------
@@ -188,7 +188,7 @@ async function main() {
     check('outsider feed hides restricted text', !feed.includes(MARK) && !feed.includes('card digits'));
     const digest = await (await fetch(`${origin}/api/digest`, { headers: { cookie: S.cleo.cookie } })).text();
     check('outsider digest hides restricted text', !digest.includes(MARK));
-    const people_ = await (await fetch(`${origin}/people/maya`, { headers: { cookie: S.cleo.cookie } })).text();
+    const people_ = await (await fetch(`${origin}/people/nick`, { headers: { cookie: S.cleo.cookie } })).text();
     check('outsider contribution page hides restricted item', !people_.includes(secretId));
     const feedApi = await (await fetch(`${origin}/api/items`, { headers: { cookie: S.cleo.cookie } })).text();
     check('outsider item list hides restricted item', !feedApi.includes(MARK) && !feedApi.includes(secretId));
@@ -200,7 +200,7 @@ async function main() {
     const forkTry = await api(S.cleo, 'POST', `/api/items/${secretId}/fork`, { reason: 'copy it out for me please' });
     check('outsider cannot fork it', forkTry.status === 403, String(forkTry.status));
     // Insiders can still do the normal thing.
-    const insider = await (await fetch(`${origin}/items/${secretId}`, { headers: { cookie: S.ben.cookie } })).text();
+    const insider = await (await fetch(`${origin}/items/${secretId}`, { headers: { cookie: S.steven.cookie } })).text();
     check('insider still reads it', insider.includes(MARK));
 
     // ---------- 2. forged authority ----------
@@ -211,36 +211,36 @@ async function main() {
       ['prototype pollution key', JSON.parse('{"type":"commented","__proto__":{"isLeader":true},"comment":"x","anchor_kind":"see","anchor_hash":"x"}')],
     ];
     for (const [name, body] of forged) {
-      const r = await api(S.maya, 'POST', `/api/items/${openId}/events`, body);
+      const r = await api(S.nick, 'POST', `/api/items/${openId}/events`, body);
       check(`forged: ${name}`, r.status >= 400 && r.status < 500, String(r.status));
     }
-    const adminTry = await api(S.maya, 'POST', '/api/admin/people', { id: 'maya', action: 'promote' });
+    const adminTry = await api(S.nick, 'POST', '/api/admin/people', { id: 'nick', action: 'promote' });
     check('member cannot reach admin', adminTry.status >= 400, String(adminTry.status));
-    const adminPage = await fetch(`${origin}/admin`, { headers: { cookie: S.maya.cookie }, redirect: 'manual' });
+    const adminPage = await fetch(`${origin}/admin`, { headers: { cookie: S.nick.cookie }, redirect: 'manual' });
     check('member cannot open the admin page', adminPage.status !== 200, String(adminPage.status));
-    const selfLead = await api(S.maya, 'POST', '/api/people/maya/role', { leader: true });
+    const selfLead = await api(S.nick, 'POST', '/api/people/nick/role', { leader: true });
     check('member cannot make themself leader', selfLead.status >= 400, String(selfLead.status));
 
     // ---------- 3. cross-site and session attacks ----------
-    const noToken = await fetch(`${origin}/api/items`, { method: 'POST', headers: { cookie: S.maya.cookie, origin, 'content-type': 'application/json' }, body: JSON.stringify({ original: 'csrf without token' }) });
+    const noToken = await fetch(`${origin}/api/items`, { method: 'POST', headers: { cookie: S.nick.cookie, origin, 'content-type': 'application/json' }, body: JSON.stringify({ original: 'csrf without token' }) });
     check('POST without CSRF token refused', noToken.status >= 400, String(noToken.status));
-    const badOrigin = await fetch(`${origin}/api/items`, { method: 'POST', headers: { ...S.maya.base, origin: 'https://evil.example' }, body: JSON.stringify({ original: 'wrong origin' }) });
+    const badOrigin = await fetch(`${origin}/api/items`, { method: 'POST', headers: { ...S.nick.base, origin: 'https://evil.example' }, body: JSON.stringify({ original: 'wrong origin' }) });
     check('POST from another origin refused', badOrigin.status >= 400, String(badOrigin.status));
-    const lookalike = await fetch(`${origin}/api/items`, { method: 'POST', headers: { ...S.maya.base, origin: `${origin}.evil.example` }, body: JSON.stringify({ original: 'lookalike origin' }) });
+    const lookalike = await fetch(`${origin}/api/items`, { method: 'POST', headers: { ...S.nick.base, origin: `${origin}.evil.example` }, body: JSON.stringify({ original: 'lookalike origin' }) });
     check('look-alike origin refused', lookalike.status >= 400, String(lookalike.status));
-    const noOrigin = await fetch(`${origin}/api/items`, { method: 'POST', headers: { cookie: S.maya.cookie, 'x-csrf-token': S.maya.csrf, 'content-type': 'application/json' }, body: JSON.stringify({ original: 'no origin header at all' }) });
+    const noOrigin = await fetch(`${origin}/api/items`, { method: 'POST', headers: { cookie: S.nick.cookie, 'x-csrf-token': S.nick.csrf, 'content-type': 'application/json' }, body: JSON.stringify({ original: 'no origin header at all' }) });
     check('POST with no Origin or Referer refused', noOrigin.status >= 400, String(noOrigin.status));
-    const otherToken = await fetch(`${origin}/api/items`, { method: 'POST', headers: { ...S.maya.base, 'x-csrf-token': S.ben.csrf }, body: JSON.stringify({ original: 'ben token on maya session' }) });
+    const otherToken = await fetch(`${origin}/api/items`, { method: 'POST', headers: { ...S.nick.base, 'x-csrf-token': S.steven.csrf }, body: JSON.stringify({ original: 'steven token on nick session' }) });
     check("another person's CSRF token refused", otherToken.status >= 400, String(otherToken.status));
-    const textPlain = await fetch(`${origin}/api/items`, { method: 'POST', headers: { cookie: S.maya.cookie, origin, 'content-type': 'text/plain' }, body: JSON.stringify({ original: 'simple form post' }) });
+    const textPlain = await fetch(`${origin}/api/items`, { method: 'POST', headers: { cookie: S.nick.cookie, origin, 'content-type': 'text/plain' }, body: JSON.stringify({ original: 'simple form post' }) });
     check('text/plain simple-request post refused', textPlain.status >= 400, String(textPlain.status));
-    const getMutate = await fetch(`${origin}/api/items?original=x`, { headers: { cookie: S.maya.cookie } });
+    const getMutate = await fetch(`${origin}/api/items?original=x`, { headers: { cookie: S.nick.cookie } });
     check('GET never creates anything', getMutate.status !== 201);
     const cookieHeaders = (await fetch(`${origin}/signin`)).headers;
     const loginRes = await fetch(`${origin}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ id: 'cleo', password: 'cleo-long-password-9x' }) });
     const setCookie = loginRes.headers.get('set-cookie') || '';
     check('session cookie is HttpOnly and SameSite=Strict', /HttpOnly/i.test(setCookie) && /SameSite=Strict/i.test(setCookie), setCookie.slice(0, 120));
-    check('CORS: no wildcard allow-origin on the API', !(await fetch(`${origin}/api/me`, { headers: { cookie: S.maya.cookie, origin: 'https://evil.example' } })).headers.get('access-control-allow-origin'));
+    check('CORS: no wildcard allow-origin on the API', !(await fetch(`${origin}/api/me`, { headers: { cookie: S.nick.cookie, origin: 'https://evil.example' } })).headers.get('access-control-allow-origin'));
     const pre = await fetch(`${origin}/api/items`, { method: 'OPTIONS', headers: { origin: 'https://evil.example', 'access-control-request-method': 'POST' } });
     check('CORS preflight grants nothing', !pre.headers.get('access-control-allow-origin'), String(pre.status));
     // Old session after logout, and a forged cookie.
@@ -256,8 +256,8 @@ async function main() {
     check('the planted cookie is still worthless after the victim logs in', (await fetch(`${origin}/api/me`, { headers: { cookie: planted } })).status >= 400);
     // Login brute force: many wrong tries get slowed, and a spoofed X-Forwarded-For does not reset it.
     let slowed = 0;
-    for (let i = 0; i < 12; i += 1) { const r = await fetch(`${origin}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json', origin, 'x-forwarded-for': `10.9.${i}.${i}` }, body: JSON.stringify({ id: 'ben', password: `wrong-${i}` }) }); if (r.status === 429 || r.status === 403) slowed += 1; }
-    check('spoofed X-Forwarded-For does not defeat the login limit', (await fetch(`${origin}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json', origin, 'x-forwarded-for': '10.8.8.8' }, body: JSON.stringify({ id: 'ben', password: 'ben-long-password-9x' }) })).status >= 400, 'the right password still gets in while locked out');
+    for (let i = 0; i < 12; i += 1) { const r = await fetch(`${origin}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json', origin, 'x-forwarded-for': `10.9.${i}.${i}` }, body: JSON.stringify({ id: 'steven', password: `wrong-${i}` }) }); if (r.status === 429 || r.status === 403) slowed += 1; }
+    check('spoofed X-Forwarded-For does not defeat the login limit', (await fetch(`${origin}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json', origin, 'x-forwarded-for': '10.8.8.8' }, body: JSON.stringify({ id: 'steven', password: 'steven-long-password-9x' }) })).status >= 400, 'the right password still gets in while locked out');
 
     // ---------- 4. browser attacks: a hostile page on another site ----------
     const { createServer } = await import('node:http');
@@ -274,8 +274,8 @@ async function main() {
       </script>`);
     });
     await new Promise(r => evil.listen(evilPort, '127.0.0.2', r));
-    const victim = people.ben;
-    const before = (await (await fetch(`${origin}/api/items`, { headers: { cookie: S.ben.cookie } })).json());
+    const victim = people.steven;
+    const before = (await (await fetch(`${origin}/api/items`, { headers: { cookie: S.steven.cookie } })).json());
     const evilTab = await ctxOf(victim).newPage();
     await evilTab.goto(`http://127.0.0.2:${evilPort}/`);
     await evilTab.waitForTimeout(900);
@@ -284,7 +284,7 @@ async function main() {
     const landed = await evilTab.locator('body').innerText().catch(() => '');
     check('a cross-site form post does not act as the signed-in person', !/"id"|created|posted/.test(landed) || /refused|sign in/i.test(landed), landed.slice(0, 100));
     check('hostile page cannot read /api/me', !out.me || !/csrf/.test(out.me), JSON.stringify(out).slice(0, 160));
-    const afterList = await (await fetch(`${origin}/api/items`, { headers: { cookie: S.ben.cookie } })).text();
+    const afterList = await (await fetch(`${origin}/api/items`, { headers: { cookie: S.steven.cookie } })).text();
     check('hostile page created nothing', !/posted by an evil page|cross-site post/.test(afterList));
     const frameUrl = await evilTab.evaluate(() => { try { return document.getElementById('f').contentDocument?.body?.innerText?.slice(0, 40) ?? 'blocked'; } catch { return 'blocked'; } });
     check('hostile page cannot frame the app (clickjacking)', frameUrl === 'blocked' || frameUrl === '' , frameUrl);
@@ -293,7 +293,7 @@ async function main() {
 
     // Open redirects.
     for (const next of ['https://evil.example/', '//evil.example/', '/\\evil.example', 'javascript:alert(1)']) {
-      const r = await fetch(`${origin}/api/oidc/stepup/start?next=${encodeURIComponent(next)}`, { headers: { cookie: S.maya.cookie }, redirect: 'manual' });
+      const r = await fetch(`${origin}/api/oidc/stepup/start?next=${encodeURIComponent(next)}`, { headers: { cookie: S.nick.cookie }, redirect: 'manual' });
       const loc = r.headers.get('location') || '';
       check(`no open redirect via next=${next.slice(0, 20)}`, !/evil\.example/.test(loc) && !loc.startsWith('javascript:'), loc);
     }
@@ -302,11 +302,11 @@ async function main() {
 
     // ---------- 5. XSS and injection through every field, in a real browser ----------
     const PAY = ['<img src=x onerror="window.__pwn=1">', '"><script>window.__pwn=1</script>', "'-alert(1)-'", '</textarea><svg onload="window.__pwn=1">', 'javascript:window.__pwn=1', '{{7*7}}${7*7}', '‮reversed', '<a href="javascript:window.__pwn=1">x</a>'];
-    const xss = people.maya;
+    const xss = people.nick;
     for (const [i, payload] of PAY.entries()) {
-      const r = await api(S.maya, 'POST', '/api/items', { original: `Problem ${i}: ${payload}` });
+      const r = await api(S.nick, 'POST', '/api/items', { original: `Problem ${i}: ${payload}` });
       const id = (await r.json()).id;
-      await api(S.maya, 'POST', `/api/items/${id}/events`, { type: 'commented', comment: payload, anchor_kind: 'see', anchor_hash: (await (await fetch(`${origin}/api/items/${id}`, { headers: { cookie: S.maya.cookie } })).json()).state.context.seeHash });
+      await api(S.nick, 'POST', `/api/items/${id}/events`, { type: 'commented', comment: payload, anchor_kind: 'see', anchor_hash: (await (await fetch(`${origin}/api/items/${id}`, { headers: { cookie: S.nick.cookie } })).json()).state.context.seeHash });
       for (const path of [`/items/${id}`, `/search?q=${encodeURIComponent(payload)}`, `/knowledge?q=${encodeURIComponent(payload)}`, '/']) {
         await xss.goto(`${origin}${path}`); await xss.waitForTimeout(150);
         const hit = await xss.evaluate(() => window.__pwn === 1 || !!document.querySelector('img[onerror],svg[onload],script:not([src])'));
@@ -315,26 +315,26 @@ async function main() {
     }
     check('no stored or reflected XSS across items, comments, search, knowledge, feed', !failures.some(f => f.startsWith('XSS')));
     // Hostile usernames, group names and invite redemption.
-    const weirdIds = ['<script>x</script>', 'maya ', 'MAYA', 'mаya' /* cyrillic a */, 'a'.repeat(300), '../admin', 'null', '__proto__'];
+    const weirdIds = ['<script>x</script>', 'nick ', 'MAYA', 'mаya' /* cyrillic a */, 'a'.repeat(300), '../admin', 'null', '__proto__'];
     for (const id of weirdIds) {
       const inv = await cli(['invite', 'create', '--role', 'member']);
       const r = await fetch(`${origin}/api/invite/redeem`, { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ invite: inv, id, password: 'weird-long-password-9x' }) });
-      const ok = r.status >= 400 || !['maya', 'MAYA'].includes(id);
+      const ok = r.status >= 400 || !['nick', 'MAYA'].includes(id);
       check(`redeem with hostile id ${JSON.stringify(id).slice(0, 26)}`, ok, String(r.status));
     }
-    const impersonation = await fetch(`${origin}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ id: 'Maya', password: 'maya-long-password-9x' }) });
-    check('Maya is not maya (ids are exact)', impersonation.status >= 400, String(impersonation.status));
+    const impersonation = await fetch(`${origin}/api/login`, { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ id: 'Nick', password: 'nick-long-password-9x' }) });
+    check('Nick is not nick (ids are exact)', impersonation.status >= 400, String(impersonation.status));
 
     // ---------- 5b. a hostile try (delivered HTML) tries to break out of its frame ----------
-    const maya = people.maya, ben = people.ben;
-    const trapUrl = await postProblem(maya, 'Trap item for a hostile delivered try.');
-    await maya.locator('form[data-event=specced] [name=must]').fill('Do a thing.');
-    await maya.locator('form[data-event=specced] [name=how_we_know]').fill('It works.');
-    await maya.getByRole('button', { name: 'SPEC IT!' }).click();
-    await maya.getByRole('link', { name: 'Open the spec' }).waitFor();
-    await maya.goto(`${trapUrl}/spec`);
-    await maya.getByRole('button', { name: 'SEND IT!' }).click();
-    await maya.waitForFunction(() => !document.querySelector('form[data-send]'));
+    const nick = people.nick, steven = people.steven;
+    const trapUrl = await postProblem(nick, 'Trap item for a hostile delivered try.');
+    await nick.locator('form[data-event=specced] [name=must]').fill('Do a thing.');
+    await nick.locator('form[data-event=specced] [name=how_we_know]').fill('It works.');
+    await nick.getByRole('button', { name: 'SPEC IT!' }).click();
+    await nick.getByRole('link', { name: 'Open the spec' }).waitFor();
+    await nick.goto(`${trapUrl}/spec`);
+    await nick.getByRole('button', { name: 'SEND IT!' }).click();
+    await nick.waitForFunction(() => !document.querySelector('form[data-send]'));
     await leader.goto(trapUrl);
     await leader.locator('form[data-approve] [name=reason]').fill('Approved so the hostile try can be tested.');
     await leader.locator('form[data-approve] [name=cap_usd]').fill('2');
@@ -342,8 +342,8 @@ async function main() {
     await leader.locator('form[data-approve] [name=password]').fill(leaderPassword);
     await leader.locator('form[data-approve] button').click();
     await stage(leader, 'Send');
-    await maya.goto(trapUrl);
-    await maya.locator('form[data-artifact] [name=html]').waitFor();
+    await nick.goto(trapUrl);
+    await nick.locator('form[data-artifact] [name=html]').waitFor();
     const hostile = `<!doctype html><title>hostile</title><body id=b>hostile</body><script>
       const out = [];
       const note = (k, v) => out.push(k + '=' + v);
@@ -358,56 +358,56 @@ async function main() {
         fetch('https://example.com/', { mode: 'no-cors' }).then(() => note('external', 'reached'), e => note('external', 'blocked')),
       ]).then(() => { try { parent.postMessage({ type: 'helped' }, '*'); } catch (e) {} document.getElementById('b').textContent = out.join(' | '); });
     </script>`;
-    await maya.locator('form[data-artifact] [name=html]').fill(hostile);
-    await maya.locator('form[data-artifact] button').click();
-    await maya.locator('iframe[title="Playable try"]').waitFor();
-    await ben.goto(trapUrl);
-    await ben.locator('iframe[title="Playable try"]').waitFor();
-    const frame = ben.frameLocator('iframe[title="Playable try"]');
+    await nick.locator('form[data-artifact] [name=html]').fill(hostile);
+    await nick.locator('form[data-artifact] button').click();
+    await nick.locator('iframe[title="Playable try"]').waitFor();
+    await steven.goto(trapUrl);
+    await steven.locator('iframe[title="Playable try"]').waitFor();
+    const frame = steven.frameLocator('iframe[title="Playable try"]');
     await frame.locator('body').getByText('fetchme=').waitFor({ timeout: 15000 }).catch(() => {});
     const report = await frame.locator('body').innerText().catch(() => '');
     console.log('DEBUG hostile try saw:', report);
     check('hostile try: cookie unreadable', !/cookie="[^"]+"/.test(report) || /cookie=""/.test(report) || /cookie=blocked/.test(report), report);
     check('hostile try: cannot read the parent page', /parent=blocked/.test(report), report);
-    check('hostile try: cannot navigate the top page', ben.url() === trapUrl || !/pwned/.test(ben.url()), ben.url());
+    check('hostile try: cannot navigate the top page', steven.url() === trapUrl || !/pwned/.test(steven.url()), steven.url());
     check('hostile try: no pop-up window', !/open=opened/.test(report), report);
     check('hostile try: /api/me gives it nothing', !/fetchme=LEAKED/.test(report), report);
     check('hostile try: its post as the viewer did not work', !/post=201/.test(report), report);
     check('hostile try: external network blocked or contained', true);
-    await ben.waitForTimeout(500);
-    const afterTry = await (await fetch(`${origin}/api/items`, { headers: { cookie: S.ben.cookie } })).text();
-    check('hostile try created nothing as Ben', !afterTry.includes('posted by a hostile try'));
-    const trapState = await (await fetch(`${origin}/api/items/${trapUrl.split('/items/')[1]}`, { headers: { cookie: S.ben.cookie } })).json();
+    await steven.waitForTimeout(500);
+    const afterTry = await (await fetch(`${origin}/api/items`, { headers: { cookie: S.steven.cookie } })).text();
+    check('hostile try created nothing as Steven', !afterTry.includes('posted by a hostile try'));
+    const trapState = await (await fetch(`${origin}/api/items/${trapUrl.split('/items/')[1]}`, { headers: { cookie: S.steven.cookie } })).json();
     check('a postMessage from the try did not register a Helps vote', trapState.state.context.helpers.length === 0, JSON.stringify(trapState.state.context.helpers));
     // 6. path tricks, verbs, sizes
     for (const p of ['/assets/../cli.js', '/assets/%2e%2e/cli.js', '/assets/..%2fcore/store.js', '/assets/app.js/../../package.json', '//etc/passwd', '/items/%00', '/items/..%2f..%2fetc%2fpasswd', '/api/items/%2e%2e%2fsecret']) {
-      const r = await fetch(`${origin}${p}`, { headers: { cookie: S.maya.cookie }, redirect: 'manual' });
+      const r = await fetch(`${origin}${p}`, { headers: { cookie: S.nick.cookie }, redirect: 'manual' });
       const t = await r.text();
       check(`path trick ${p}`, !/createHandler|root:x:0|"scripts"|DatabaseSync/.test(t), `status ${r.status}`);
     }
     for (const m of ['PUT', 'DELETE', 'PATCH', 'TRACE', 'CONNECT']) {
-      try { const r = await fetch(`${origin}/api/items`, { method: m, headers: S.maya.base, body: m === 'TRACE' ? undefined : '{}' }); check(`verb ${m} on /api/items`, r.status >= 400, String(r.status)); } catch { check(`verb ${m} rejected by the client itself`, true); }
+      try { const r = await fetch(`${origin}/api/items`, { method: m, headers: S.nick.base, body: m === 'TRACE' ? undefined : '{}' }); check(`verb ${m} on /api/items`, r.status >= 400, String(r.status)); } catch { check(`verb ${m} rejected by the client itself`, true); }
     }
-    const big = await fetch(`${origin}/api/items`, { method: 'POST', headers: S.maya.base, body: JSON.stringify({ original: 'x'.repeat(5_000_000) }) });
+    const big = await fetch(`${origin}/api/items`, { method: 'POST', headers: S.nick.base, body: JSON.stringify({ original: 'x'.repeat(5_000_000) }) });
     check('5 MB body refused', big.status === 413 || big.status >= 400, String(big.status));
-    const deep = await fetch(`${origin}/api/items`, { method: 'POST', headers: S.maya.base, body: '['.repeat(50000) + ']'.repeat(50000) });
+    const deep = await fetch(`${origin}/api/items`, { method: 'POST', headers: S.nick.base, body: '['.repeat(50000) + ']'.repeat(50000) });
     check('deeply nested JSON refused without a 500', deep.status >= 400 && deep.status < 500, String(deep.status));
-    const badJson = await fetch(`${origin}/api/items`, { method: 'POST', headers: S.maya.base, body: '{"original": "x", ' });
+    const badJson = await fetch(`${origin}/api/items`, { method: 'POST', headers: S.nick.base, body: '{"original": "x", ' });
     check('broken JSON is a 4xx, not a 500', badJson.status >= 400 && badJson.status < 500, String(badJson.status));
-    const nul = await api(S.maya, 'POST', '/api/items', { original: 'null byte \u0000 and lone surrogate \ud800 test' });
+    const nul = await api(S.nick, 'POST', '/api/items', { original: 'null byte \u0000 and lone surrogate \ud800 test' });
     check('null byte and lone surrogate do not crash it', nul.status < 500, String(nul.status));
     const hdr = await fetch(`${origin}/signin`, { headers: { host: 'evil.example' } }).catch(() => null);
     check('odd Host header does not crash it', !hdr || hdr.status < 500);
     const any500 = [];
-    for (const p of ['/api/items/%', '/items/%E0%A4%A', '/search?q=%', '/search?q=%ff%fe', '/api/me?x=%zz']) { const r = await fetch(`${origin}${p}`, { headers: { cookie: S.maya.cookie } }); if (r.status >= 500) any500.push(`${p}:${r.status}`); }
+    for (const p of ['/api/items/%', '/items/%E0%A4%A', '/search?q=%', '/search?q=%ff%fe', '/api/me?x=%zz']) { const r = await fetch(`${origin}${p}`, { headers: { cookie: S.nick.cookie } }); if (r.status >= 500) any500.push(`${p}:${r.status}`); }
     check('malformed URLs never give a 500', any500.length === 0, any500.join(','));
 
     // ---------- 7. races ----------
-    const racePost = await (await api(S.maya, 'POST', '/api/items', { original: 'Race item: many people press the same button' })).json();
+    const racePost = await (await api(S.nick, 'POST', '/api/items', { original: 'Race item: many people press the same button' })).json();
     const inviteOnce = await cli(['invite', 'create', '--role', 'member']);
     const redeems = await Promise.all(Array.from({ length: 12 }, (_, i) => fetch(`${origin}/api/invite/redeem`, { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ invite: inviteOnce, id: `racer${i}`, password: 'racer-long-password-9x' }) })));
     check('one invite redeems exactly once under 12 parallel tries', redeems.filter(r => r.status === 201 || r.status === 200).length === 1, redeems.map(r => r.status).join(','));
-    const dup = await Promise.all(Array.from({ length: 15 }, () => api(S.maya, 'POST', '/api/items', { original: 'identical parallel post' }, { 'idempotency-key': 'same-key-123' })));
+    const dup = await Promise.all(Array.from({ length: 15 }, () => api(S.nick, 'POST', '/api/items', { original: 'identical parallel post' }, { 'idempotency-key': 'same-key-123' })));
     const ids = new Set(await Promise.all(dup.filter(r => r.status < 300).map(async r => (await r.json()).id)));
     check('same idempotency key makes one item under 15 parallel posts', ids.size === 1, `${ids.size} items`);
 

@@ -37,7 +37,7 @@ async function main() {
   let leaderPassword = init.match(/one-time password: (\S+)/)[1];
   await cli(['gateway', 'fixture-enable']);
   const invites = {};
-  for (const name of ['maya', 'ben', 'cleo'])
+  for (const name of ['nick', 'steven', 'cleo'])
     invites[name] = await cli(['invite', 'create', '--role', 'member']);
 
   const server = spawn(
@@ -141,32 +141,32 @@ async function main() {
     await leader.getByRole('button', { name: 'Change password' }).click();
     await leader.getByRole('link', { name: 'Post a problem' }).waitFor();
 
-    for (const name of ['maya', 'ben', 'cleo']) await join_(name);
+    for (const name of ['nick', 'steven', 'cleo']) await join_(name);
 
-    // SEE: Maya posts a problem she saw.
-    const maya = people.maya;
-    const itemUrl = await postProblem(maya, 'Every quote needs the same three numbers copied by hand.');
+    // SEE: Nick posts a problem she saw.
+    const nick = people.nick;
+    const itemUrl = await postProblem(nick, 'Every quote needs the same three numbers copied by hand.');
     // The original post sits in a collapsed section now; the record is there once it is opened.
-    await maya.getByText('Original post, versions and record').click();
-    await maya.getByRole('heading', { name: 'Original' }).waitFor();
+    await nick.getByText('Original post, versions and record').click();
+    await nick.getByRole('heading', { name: 'Original' }).waitFor();
 
     // The leader sees the same item but is not the steward, so there is no spec form.
     await leader.goto(itemUrl);
     assert.equal(await leader.locator('form[data-event=specced]').count(), 0);
 
     // SPEC IT!: only the steward writes it, then sends it for a decision.
-    await maya
+    await nick
       .locator('form[data-event=specced] [name=must]')
       .fill('Copy the three numbers into the quote.\nShow the total.');
-    await maya.locator('form[data-event=specced] [name=how_we_know]').fill('Reps stop copying by hand.');
-    await maya.getByRole('button', { name: 'SPEC IT!' }).click();
-    await maya.getByRole('link', { name: 'Open the spec' }).waitFor();
-    await maya.goto(`${itemUrl}/spec`);
-    await maya.getByRole('button', { name: 'SEND IT!' }).click();
-    await maya.waitForFunction(() => !document.querySelector('form[data-send]'));
-    await maya.goto(itemUrl);
-    await stage(maya, 'Decide');
-    assert.equal(await maya.locator('form[data-approve]').count(), 0, 'steward cannot approve');
+    await nick.locator('form[data-event=specced] [name=how_we_know]').fill('Reps stop copying by hand.');
+    await nick.getByRole('button', { name: 'SPEC IT!' }).click();
+    await nick.getByRole('link', { name: 'Open the spec' }).waitFor();
+    await nick.goto(`${itemUrl}/spec`);
+    await nick.getByRole('button', { name: 'SEND IT!' }).click();
+    await nick.waitForFunction(() => !document.querySelector('form[data-send]'));
+    await nick.goto(itemUrl);
+    await stage(nick, 'Decide');
+    assert.equal(await nick.locator('form[data-approve]').count(), 0, 'steward cannot approve');
 
     // Decide: a leader who is not the steward reads the packet and approves with a reason,
     // a cap, a quorum and a step-up.
@@ -210,35 +210,35 @@ async function main() {
     await stage(leader, 'Send');
 
     // Send: the steward delivers a playable try.
-    await maya.goto(itemUrl);
+    await nick.goto(itemUrl);
     const html =
       '<!doctype html><title>Try</title><button id="b">Total it</button>' +
       '<script>document.getElementById("b").onclick=()=>{document.body.append(" 42")}</script>';
-    await maya.locator('form[data-artifact] [name=html]').fill(html);
-    await maya.locator('form[data-artifact] button').click();
-    await maya.locator('iframe[title="Playable try"]').waitFor();
+    await nick.locator('form[data-artifact] [name=html]').fill(html);
+    await nick.locator('form[data-artifact] button').click();
+    await nick.locator('iframe[title="Playable try"]').waitFor();
     // The try screen, as a teammate who has never seen it.
-    const ben = people.ben;
-    await ben.goto(itemUrl);
-    await ben.locator('iframe[title="Playable try"]').waitFor();
-    const before = await ben.locator('main').innerText();
+    const steven = people.steven;
+    await steven.goto(itemUrl);
+    await steven.locator('iframe[title="Playable try"]').waitFor();
+    const before = await steven.locator('main').innerText();
     assert.match(before, /0 of 2 people have said it helps/);
     assert.match(before, /If it doesn't help, leave a comment/, 'the page says what to do if it did not help');
     assert.match(before, /Press this only if it really helped/, 'the button explains itself');
     // The next-step note links down to the try.
-    await ben.getByRole('link', { name: 'Jump to it' }).click();
-    assert.match(ben.url(), /#try$/);
+    await steven.getByRole('link', { name: 'Jump to it' }).click();
+    assert.match(steven.url(), /#try$/);
 
-    // A fast double press counts once and the page then says Ben already said it.
-    await ben.locator('form[data-event=helped] button').dblclick();
-    await ben.getByText('You said this helps. It counts once.').waitFor();
-    await ben.getByText('1 of 2 people have said it helps').waitFor();
-    assert.equal(await ben.locator('form[data-event=helped]').count(), 0, 'no second button after voting');
-    await ben.reload();
-    await ben.getByText('You said this helps. It counts once.').waitFor();
+    // A fast double press counts once and the page then says Steven already said it.
+    await steven.locator('form[data-event=helped] button').dblclick();
+    await steven.getByText('You said this helps. It counts once.').waitFor();
+    await steven.getByText('1 of 2 people have said it helps').waitFor();
+    assert.equal(await steven.locator('form[data-event=helped]').count(), 0, 'no second button after voting');
+    await steven.reload();
+    await steven.getByText('You said this helps. It counts once.').waitFor();
 
     // A forged second vote straight at the API is refused, and the count stays at one.
-    const forged = await ben.evaluate(async url => {
+    const forged = await steven.evaluate(async url => {
       const id = url.split('/items/')[1].split(/[#?]/)[0];
       const csrf = (await (await fetch('/api/me')).json()).csrf;
       const response = await fetch(`/api/items/${id}/events`, {
@@ -249,13 +249,13 @@ async function main() {
       return response.status;
     }, itemUrl);
     console.log('forged status', forged); assert.ok([400, 403, 409].includes(forged), `forged vote refused, got ${forged}`);
-    await ben.reload();
-    await ben.getByText('1 of 2 people have said it helps').waitFor();
+    await steven.reload();
+    await steven.getByText('1 of 2 people have said it helps').waitFor();
 
-    // Maya (steward) and the leader (approver) never see a vote button.
-    await maya.goto(itemUrl);
-    assert.equal(await maya.locator('form[data-event=helped]').count(), 0);
-    assert.match(await maya.locator('#try').innerText(), /You helped shape this one/);
+    // Nick (steward) and the leader (approver) never see a vote button.
+    await nick.goto(itemUrl);
+    assert.equal(await nick.locator('form[data-event=helped]').count(), 0);
+    assert.match(await nick.locator('#try').innerText(), /You helped shape this one/);
     assert.deepEqual(problems, []);
     console.log('try-it journey passed');
   } finally {

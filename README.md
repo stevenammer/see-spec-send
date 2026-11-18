@@ -18,13 +18,13 @@ This is my attempt at skipping that. Start with the people who have the problem.
 
 ## What it looks like
 
-Say Maya works in support, and she's tired of copying every refund into a spreadsheet by hand.
+Say Nick works in support, and they're tired of copying every refund into a spreadsheet by hand.
 
-1. **See it.** Maya posts the problem in plain words and says what she already checked. Is there a setting for this? A tool the company already pays for? A free one? Plenty of problems end right here, with "oh, it already does that." An AI called Effort replies first, always labeled as AI, and the rest of the team can add to the thread.
-2. **Spec it.** Maya writes down what the fix has to do ("show each refund once") and how everyone will know it worked ("nobody opens the spreadsheet anymore").
-3. **Send it.** A leader who *didn't* write the spec, say Lena, reads it and decides. If she approves, she sets a budget. An AI agent builds a small version in a locked box, and the box's only way out is a counted, capped connection to the AI. The team tries it.
+1. **See it.** Nick posts the problem in plain words and says what they already checked. Is there a setting for this? A tool the company already pays for? A free one? Plenty of problems end right here, with "oh, it already does that." An AI called Effort replies first, always labeled as AI. Then the team piles on. Steven says it gets worse when two people edit the sheet at the same time. Cleo asks whether the billing tool already has an export, and Nick checks.
+2. **Spec it.** Nick writes down what the fix has to do ("show each refund once") and how everyone will know it worked ("nobody opens the spreadsheet anymore"). Steven's point goes in, with his name on it.
+3. **Send it.** A leader who *didn't* write the spec, say Jose, reads it and asks a question in the thread before deciding. Then it's their call: **spend it** if it's worth a try, with a budget. **Suspend it** if it's not the right time, with a date to look again. Or send it back or decline it, with the reason on the record. If it's a go, an AI agent builds a small version in a locked box, and the box's only way out is a counted, capped connection to the AI. The team tries it.
 
-Then comes the part I care most about: **nothing counts as "it helped" until enough people who do the work say it helped.** Not Maya, who wrote the spec. Not Lena, who approved it. Other people, who actually tried it. If they don't, it gets shelved with a written reason, and the reason stays on the record.
+Then comes the part I care most about: **nothing counts as "it helped" until enough people who do the work say it helped.** Not Nick, who wrote the spec. Not Jose, who approved it. Other people, like Steven and Cleo, who actually tried it. If they don't, it gets shelved with a written reason, and the reason stays on the record.
 
 That rule isn't a policy in a handbook. The code enforces it. There's no "done" button anywhere, and a leader can't override it. You can [watch the real server refuse](docs/WATCH_IT_REFUSE.md) the person who wrote the spec, the leader who approved it, and a made-up "done" event.
 

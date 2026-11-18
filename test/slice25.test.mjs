@@ -127,19 +127,19 @@ test('container output that is a plain small static page is still accepted', () 
 });
 
 function viewerHtml(events) {
-  const item = { id: 'i', state: 'TRYING', context: { steward: 'maya', approver: 'lead', helpers: [], quorum: 2,
-    artifact: id('c'), ineligibleHelpers: ['maya', 'lead'] } };
-  return itemPage(item, events, 'ben', false);
+  const item = { id: 'i', state: 'TRYING', context: { steward: 'nick', approver: 'lead', helpers: [], quorum: 2,
+    artifact: id('c'), ineligibleHelpers: ['nick', 'lead'] } };
+  return itemPage(item, events, 'steven', false);
 }
 
 test('a model-built try is framed with no script permission', () => {
-  const modelEvents = [{ type: 'checked', problem: 'A problem', actor: 'maya' },
+  const modelEvents = [{ type: 'checked', problem: 'A problem', actor: 'nick' },
     { type: 'tried', actor: 'f'.repeat(64), artifact_hash: id('c'), model_output: true }];
   const model = viewerHtml(modelEvents);
   assert.match(model, /<iframe title="Playable try" sandbox="" src=/);
   assert.doesNotMatch(model, /allow-scripts/);
-  const manual = viewerHtml([{ type: 'checked', problem: 'A problem', actor: 'maya' },
-    { type: 'tried', actor: 'f'.repeat(64), delivered_by: 'maya', artifact_hash: id('c') }]);
+  const manual = viewerHtml([{ type: 'checked', problem: 'A problem', actor: 'nick' },
+    { type: 'tried', actor: 'f'.repeat(64), delivered_by: 'nick', artifact_hash: id('c') }]);
   assert.match(manual, /<iframe title="Playable try" sandbox="allow-scripts" src=/);
 });
 
@@ -166,9 +166,9 @@ test('the artifact route frames a model-built try with no allow-scripts and no s
   const { store } = sentItem(new ModelAdapter(html), html);
   const hash = store.read('i').context.artifact;
   assert.match(hash, /^[a-f0-9]{64}$/, 'the worker delivered the try');
-  const auth = new Auth(store); await auth.createUser('ben', password);
+  const auth = new Auth(store); await auth.createUser('steven', password);
   const handler = createHandler({ store, auth, secure: false, origin: 'http://127.0.0.1' });
-  const response = await call(handler, 'POST', '/api/login', { id: 'ben', password });
+  const response = await call(handler, 'POST', '/api/login', { id: 'steven', password });
   const cookie = response.headers['set-cookie'].split(';')[0];
   const topLevel = await call(handler, 'GET', `/api/items/i/artifact/${hash}`, undefined, { cookie });
   assert.equal(topLevel.status, 403, 'a top-level open must be refused');
@@ -183,9 +183,9 @@ test('the artifact route frames a model-built try with no allow-scripts and no s
 test('the item page frames a worker-built try with no script permission end to end', async () => {
   const html = page('<h1>model try</h1>');
   const { store } = sentItem(new ModelAdapter(html), html);
-  const auth = new Auth(store); await auth.createUser('ben', password);
+  const auth = new Auth(store); await auth.createUser('steven', password);
   const handler = createHandler({ store, auth, secure: false, origin: 'http://127.0.0.1' });
-  const response = await call(handler, 'POST', '/api/login', { id: 'ben', password });
+  const response = await call(handler, 'POST', '/api/login', { id: 'steven', password });
   const cookie = response.headers['set-cookie'].split(';')[0];
   const view = await call(handler, 'GET', '/items/i', undefined, { cookie });
   assert.match(view.text, /<iframe title="Playable try" sandbox=""/);

@@ -103,19 +103,19 @@ test('render: hostile text becomes text nodes, never elements or attributes', as
   const scan = node => walk(node, entry => { tags.add(entry.tag); Object.keys(entry.attrs).forEach(name => attrNames.add(name)); });
   const root = () => new Node('div');
   for (const payload of payloads) {
-    const sent = await perform(session, 'maya', 'post', { problem: payload, verdict: 'build_needed', checks: { have: { on: true, note: payload } } });
+    const sent = await perform(session, 'nick', 'post', { problem: payload, verdict: 'build_needed', checks: { have: { on: true, note: payload } } });
     assert.equal(sent.status, 'accepted');
-    await perform(session, 'maya', 'spec', { must: payload, how_we_know: payload, out_of_scope: payload });
-    await perform(session, 'lena', 'approve', { cap: payload, quorum: payload });
-    await perform(session, 'maya', 'shelve', { reason: payload });
-    await perform(session, 'lena', 'shelve', { reason: payload });
+    await perform(session, 'nick', 'spec', { must: payload, how_we_know: payload, out_of_scope: payload });
+    await perform(session, 'jose', 'approve', { cap: payload, quorum: payload });
+    await perform(session, 'nick', 'shelve', { reason: payload });
+    await perform(session, 'jose', 'shelve', { reason: payload });
     const rendered = [root(), root(), root(), root(), root()];
     renderStatus(fakeDocument, rendered[0], summary(session));
     renderEvents(fakeDocument, rendered[1], session.log.rows());
     renderRefusals(fakeDocument, rendered[2], session.refusals);
-    renderResult(fakeDocument, rendered[3], { status: 'refused', words: payload, machine: payload, rule: payload }, 'maya');
-    renderResult(fakeDocument, rendered[3], { status: 'invalid', message: payload }, 'maya');
-    renderWho(fakeDocument, rendered[4], 'maya');
+    renderResult(fakeDocument, rendered[3], { status: 'refused', words: payload, machine: payload, rule: payload }, 'nick');
+    renderResult(fakeDocument, rendered[3], { status: 'invalid', message: payload }, 'nick');
+    renderWho(fakeDocument, rendered[4], 'nick');
     rendered.forEach(scan);
     session.log = createLog({ roster: makeRoster(), item });
   }
@@ -129,10 +129,10 @@ test('render: hostile text becomes text nodes, never elements or attributes', as
   // The hostile problem text shows up as plain text where it was typed.
   const status = root();
   const hostile = fresh();
-  await perform(hostile, 'maya', 'post', { problem: payloads[0], verdict: 'build_needed', checks: { have: { on: true, note: 'n' } } });
-  await perform(hostile, 'maya', 'spec', { must: payloads[1], how_we_know: payloads[2] });
-  await perform(hostile, 'lena', 'approve', { cap: '1', quorum: '1' });
-  await perform(hostile, 'maya', 'deliver', { text: payloads[0] });
+  await perform(hostile, 'nick', 'post', { problem: payloads[0], verdict: 'build_needed', checks: { have: { on: true, note: 'n' } } });
+  await perform(hostile, 'nick', 'spec', { must: payloads[1], how_we_know: payloads[2] });
+  await perform(hostile, 'jose', 'approve', { cap: '1', quorum: '1' });
+  await perform(hostile, 'nick', 'deliver', { text: payloads[0] });
   renderStatus(fakeDocument, status, summary(hostile));
   assert.ok(textOf(status).includes(payloads[0]));
   const nodes = []; walk(status, node => nodes.push(node.tag));
@@ -149,40 +149,40 @@ test('render: the element builder refuses event-handler and unknown attributes',
 test('input is bounded: long or odd input is refused before it reaches the log', async () => {
   const session = fresh();
   const checks = { have: { on: true, note: 'x'.repeat(5000) } };
-  const long = await perform(session, 'maya', 'post', { problem: 'a'.repeat(limits.problem + 1), verdict: 'build_needed', checks });
+  const long = await perform(session, 'nick', 'post', { problem: 'a'.repeat(limits.problem + 1), verdict: 'build_needed', checks });
   assert.equal(long.status, 'invalid');
   assert.equal(session.log.length, 0);
-  assert.equal((await perform(session, 'maya', 'post', { problem: 'ok', verdict: 'bogus', checks })).status, 'invalid');
-  assert.equal((await perform(session, 'maya', 'post', { problem: 'ok', verdict: 'free', checks: {} })).status, 'invalid');
+  assert.equal((await perform(session, 'nick', 'post', { problem: 'ok', verdict: 'bogus', checks })).status, 'invalid');
+  assert.equal((await perform(session, 'nick', 'post', { problem: 'ok', verdict: 'free', checks: {} })).status, 'invalid');
   assert.equal(session.log.length, 0);
   // A long note is cut to its limit, as the real server does.
-  assert.equal((await perform(session, 'maya', 'post', { problem: 'ok', verdict: 'free', checks })).status, 'accepted');
+  assert.equal((await perform(session, 'nick', 'post', { problem: 'ok', verdict: 'free', checks })).status, 'accepted');
   assert.equal(session.log.events()[0].looked[0].length, 'have:'.length + limits.note);
   assert.equal(parseLines('a\n'.repeat(limits.lines + 1), { name: 'x' }).error !== undefined, true);
   assert.equal(parseLines('x'.repeat(limits.line + 1), { name: 'x' }).error !== undefined, true);
   for (const bad of ['', '-1', '1e3', '1.234', '10000', ' ', '0x10', 'NaN', '5; drop']) assert.ok(parseCap(bad).error, bad);
   for (const good of ['0', '5', '2.50', '9999.99']) assert.equal(parseCap(good).value, Number(good));
   for (const bad of ['0', '7', '-1', '1.5', 'x', '']) assert.ok(parseQuorum(bad).error, bad);
-  assert.equal((await perform(session, 'maya', 'deliver', { text: 'x'.repeat(limits.text + 1) })).status, 'invalid');
+  assert.equal((await perform(session, 'nick', 'deliver', { text: 'x'.repeat(limits.text + 1) })).status, 'invalid');
 });
 
 test('the roster is invented, fixed, and has leaders and members', () => {
-  assert.deepEqual(people.map(person => person.name), ['Maya', 'Lena', 'Ben', 'Cleo', 'Omar', 'Priya']);
-  assert.deepEqual(people.filter(person => person.leader).map(person => person.id), ['lena', 'omar']);
+  assert.deepEqual(people.map(person => person.name), ['Nick', 'Jose', 'Steven', 'Cleo', 'Omar', 'Priya']);
+  assert.deepEqual(people.filter(person => person.leader).map(person => person.id), ['jose', 'omar']);
   const roster = makeRoster();
-  assert.throws(() => { roster.ben.leader = true; }, TypeError);
+  assert.throws(() => { roster.steven.leader = true; }, TypeError);
   assert.throws(() => { roster.eve = { kind: 'person', leader: true }; }, TypeError);
 });
 
 test('delivering a try is limited to the steward or a leader, in the web layer', async () => {
   const session = fresh();
-  await perform(session, 'maya', 'post', { problem: 'p', verdict: 'build_needed', checks: { have: { on: true, note: '' } } });
-  await perform(session, 'maya', 'spec', { must: 'a', how_we_know: 'b' });
-  const early = await perform(session, 'maya', 'deliver', { text: 'try' });
+  await perform(session, 'nick', 'post', { problem: 'p', verdict: 'build_needed', checks: { have: { on: true, note: '' } } });
+  await perform(session, 'nick', 'spec', { must: 'a', how_we_know: 'b' });
+  const early = await perform(session, 'nick', 'deliver', { text: 'try' });
   assert.equal(early.rule, 'deliver-who');
-  await perform(session, 'lena', 'approve', { cap: '1', quorum: '1' });
-  assert.equal((await perform(session, 'ben', 'deliver', { text: 'try' })).status, 'refused');
-  assert.equal((await perform(session, 'lena', 'deliver', { text: 'try' })).status, 'accepted');
+  await perform(session, 'jose', 'approve', { cap: '1', quorum: '1' });
+  assert.equal((await perform(session, 'steven', 'deliver', { text: 'try' })).status, 'refused');
+  assert.equal((await perform(session, 'jose', 'deliver', { text: 'try' })).status, 'accepted');
   assert.equal(summary(session).state, 'TRYING');
 });
 

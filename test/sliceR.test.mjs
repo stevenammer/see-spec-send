@@ -164,16 +164,16 @@ test('R the fork route stores the reason and shows it with the parent link', asy
     return { status: res.status, headers: res.headers, text: res.text, body };
   };
   const store = new Store(); const auth = new Auth(store); const handler = createHandler({ store, auth, secure: false, origin: 'http://127.0.0.1' });
-  await auth.createUser('olive', 'Olive-long-password-9x', false); await auth.createUser('maya', 'Maya-long-password-9x', false);
+  await auth.createUser('olive', 'Olive-long-password-9x', false); await auth.createUser('nick', 'Nick-long-password-9x', false);
   const login = async (id, password) => { const r = await call(handler, 'POST', '/api/login', { id, password }); return { cookie: r.headers['set-cookie'].split(';')[0], origin: 'http://127.0.0.1', 'x-csrf-token': r.body.csrf }; };
-  const olive = await login('olive', 'Olive-long-password-9x'); const maya = await login('maya', 'Maya-long-password-9x');
+  const olive = await login('olive', 'Olive-long-password-9x'); const nick = await login('nick', 'Nick-long-password-9x');
   const made = await call(handler, 'POST', '/api/items', { original: 'Callers lose context during transfer.' }, olive);
   assert.equal(made.status, 201);
   const itemId = made.body.id;
   const seeHash = store.read(itemId).context.seeHash;
   const active = store.read(itemId).context.activePost;
-  store.append(itemId, { type: 'commented', actor: 'maya', comment: 'We need a different local workflow.', kind: 'alternative', anchor_kind: 'see', anchor_hash: seeHash,
-    post_id: active.id, post_version: active.version, at: new Date().toISOString() }, { idem: 'maya-alt' });
+  store.append(itemId, { type: 'commented', actor: 'nick', comment: 'We need a different local workflow.', kind: 'alternative', anchor_kind: 'see', anchor_hash: seeHash,
+    post_id: active.id, post_version: active.version, at: new Date().toISOString() }, { idem: 'nick-alt' });
   store.append(itemId, { type: 'specced', actor: 'olive', post_id: store.read(itemId).context.activePost.id, post_version: store.read(itemId).context.activePost.version, see_hash: seeHash, must: ['Keep context'], how_we_know: ['The next agent can see it'], out_of_scope: [], at: new Date().toISOString() }, { idem: 'status-spec' });
   for (const [state, label] of [['queued', 'waiting to start'], ['running', 'thinking'], ['blocked', 'blocked, not retrying'], ['failed', 'unavailable, retries exhausted']]) {
     store.db.prepare('UPDATE effort_jobs SET state=? WHERE item=?').run(state, itemId);
@@ -184,9 +184,9 @@ test('R the fork route stores the reason and shows it with the parent link', asy
     assert.ok(spec.text.includes(`Effort (the AI), SPEC draft: ${label}`));
     assert.ok(!spec.text.includes('Effort (the AI), first reply to the SEE'));
   }
-  const forked = await call(handler, 'POST', `/api/items/${made.body.id}/fork`, { reason: 'Our team needs a different local workflow.' }, maya);
+  const forked = await call(handler, 'POST', `/api/items/${made.body.id}/fork`, { reason: 'Our team needs a different local workflow.' }, nick);
   assert.equal(forked.status, 201);
   assert.equal(store.events(forked.body.id)[0].reason, 'Our team needs a different local workflow.');
-  const page = await call(handler, 'GET', `/items/${forked.body.id}`, undefined, maya);
+  const page = await call(handler, 'GET', `/items/${forked.body.id}`, undefined, nick);
   assert.match(page.text, /Our team needs a different local workflow/);
 });

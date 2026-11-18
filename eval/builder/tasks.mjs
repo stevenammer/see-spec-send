@@ -56,18 +56,18 @@ export const tasks = [
     async accept(page, ck, url) {
       await page.goto(url);
       const post = async (name, date, note) => { await page.locator('#name').fill(name); await page.locator('#date').fill(date); await page.locator('#note').fill(note); await page.getByRole('button', { name: 'Post swap' }).click(); };
-      await post('Maya', '2026-12-01', 'need nights'); await post('Ben', '2026-12-03', 'trade for days');
+      await post('Nick', '2026-12-01', 'need nights'); await post('Steven', '2026-12-03', 'trade for days');
       const cards = await page.locator('#board li').allInnerTexts();
-      ck('adds a card per post, newest first', cards.length === 2 && /Ben/.test(cards[0]) && /Maya/.test(cards[1]) && /trade for days/.test(cards[0]));
+      ck('adds a card per post, newest first', cards.length === 2 && /Steven/.test(cards[0]) && /Nick/.test(cards[1]) && /trade for days/.test(cards[0]));
       await page.reload();
       const reloaded = await page.locator('#board li').allInnerTexts();
       ck('keeps the board after a reload', reloaded.length === 2);
-      ck('keeps the same order after a reload (newest first)', reloaded.length === 2 && /Ben/.test(reloaded[0]) && /Maya/.test(reloaded[1]));
+      ck('keeps the same order after a reload (newest first)', reloaded.length === 2 && /Steven/.test(reloaded[0]) && /Nick/.test(reloaded[1]));
       await post('', '2026-12-05', 'nobody');
       ck('ignores a post with no name', (await page.locator('#board li').count()) === 2);
-      await page.locator('#board li', { hasText: 'Ben' }).getByRole('button', { name: 'Remove' }).click();
+      await page.locator('#board li', { hasText: 'Steven' }).getByRole('button', { name: 'Remove' }).click();
       const left = await page.locator('#board li').allInnerTexts();
-      ck('removes only the card it belongs to', left.length === 1 && /Maya/.test(left[0]) && !/Ben/.test(left[0]));
+      ck('removes only the card it belongs to', left.length === 1 && /Nick/.test(left[0]) && !/Steven/.test(left[0]));
       await page.reload();
       ck('keeps the removal after a reload', (await page.locator('#board li').count()) === 1);
     },

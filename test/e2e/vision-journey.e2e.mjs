@@ -36,7 +36,7 @@ async function main() {
   await cli(['init', '--id', 'admin']);
   await cli(['gateway', 'fixture-enable']);
   const invites = { leader: await cli(['invite', 'create', '--role', 'leader']) };
-  for (const name of ['olive', 'maya', 'ben', 'cara'])
+  for (const name of ['olive', 'nick', 'steven', 'cara'])
     invites[name] = await cli(['invite', 'create', '--role', 'member']);
 
   const children = [];
@@ -56,7 +56,7 @@ async function main() {
   const people = {};
 
   async function open(name) {
-    const context = await browser.newContext({ viewport: name === 'ben' ? { width: 390, height: 844 } : { width: 1280, height: 900 } });
+    const context = await browser.newContext({ viewport: name === 'steven' ? { width: 390, height: 844 } : { width: 1280, height: 900 } });
     const page = await context.newPage();
     page.on('pageerror', error => problems.push(`${name} page error: ${error.message}`));
     page.on('dialog', dialog => {
@@ -175,8 +175,8 @@ async function main() {
 
   try {
     await waitForServer();
-    for (const name of ['leader', 'olive', 'maya', 'ben']) await join_(name);
-    const { leader, olive, maya, ben } = people;
+    for (const name of ['leader', 'olive', 'nick', 'steven']) await join_(name);
+    const { leader, olive, nick, steven } = people;
     const leaderPassword = 'leader-long-password-9x';
 
     // 1. OP posts a SEE directly, skipping Vision Quest.
@@ -199,47 +199,47 @@ async function main() {
     step('Effort commented first, labeled AI and fixture');
 
     // 3. A member comments.
-    await maya.goto(itemUrl);
-    await maya.locator('form[data-event=commented] [name=comment]').first().fill('Does the caller repeat their account number?');
-    await maya.locator('form[data-event=commented]').first().getByRole('button', { name: 'Post comment' }).click();
-    await maya.getByText('Does the caller repeat their account number?').first().waitFor();
+    await nick.goto(itemUrl);
+    await nick.locator('form[data-event=commented] [name=comment]').first().fill('Does the caller repeat their account number?');
+    await nick.locator('form[data-event=commented]').first().getByRole('button', { name: 'Post comment' }).click();
+    await nick.getByText('Does the caller repeat their account number?').first().waitFor();
     step('member commented');
 
     // 3b. A mention asks Effort for a reply: a threaded-after AI comment with the fixture label.
     const mention = '@effort what is the risk here?';
-    await maya.locator('form[data-event=commented] [name=comment]').first().fill(mention);
-    await maya.locator('form[data-event=commented]').first().getByRole('button', { name: 'Post comment' }).click();
-    await maya.getByText(mention).first().waitFor();
-    await waitForAgentComments(maya, 2);
-    const agentLines = await agentComments(maya).allInnerTexts();
+    await nick.locator('form[data-event=commented] [name=comment]').first().fill(mention);
+    await nick.locator('form[data-event=commented]').first().getByRole('button', { name: 'Post comment' }).click();
+    await nick.getByText(mention).first().waitFor();
+    await waitForAgentComments(nick, 2);
+    const agentLines = await agentComments(nick).allInnerTexts();
     assert.equal(agentLines.length, 2, 'the first comment and exactly one reply to the mention');
     assert.match(agentLines[1], /effort \(Effort, AI\)/);
     assert.match(agentLines[1], /Fixture/i, 'the tagged reply must say it is a fixture');
-    const order = await maya.locator('li > p').allInnerTexts();
+    const order = await nick.locator('li > p').allInnerTexts();
     assert.ok(order.findIndex(line => line.includes(mention)) < order.findLastIndex(line => line.includes('Effort, AI')), "Effort's reply comes after the mention");
-    const mentionThread = maya.locator('li').filter({ has: maya.locator('p', { hasText: mention }) }).first();
+    const mentionThread = nick.locator('li').filter({ has: nick.locator('p', { hasText: mention }) }).first();
     assert.equal(await mentionThread.locator('li:has-text("Effort, AI")').count(), 1, 'the mention reply remains in its exact nested thread');
-    assert.match(await maya.locator('main').textContent(), /You can request 9 more mention replies; this item can accept 29 more/);
-    assert.match(await maya.locator('main').textContent(), /Model calls for mentions and SPEC drafts: 9 remaining for you, 29 for this item/);
+    assert.match(await nick.locator('main').textContent(), /You can request 9 more mention replies; this item can accept 29 more/);
+    assert.match(await nick.locator('main').textContent(), /Model calls for mentions and SPEC drafts: 9 remaining for you, 29 for this item/);
     step('@effort mention got a nested labeled AI reply and actual remaining allowances');
 
     // 4. Only OP can include it.
-    assert.equal(await maya.locator('form[data-include]').count(), 0, 'a member sees no Include control');
-    await ben.goto(itemUrl);
-    assert.equal(await ben.locator('form[data-include]').count(), 0, 'another member sees no Include control');
-    // Ben disagrees about the approach. A fork later needs exactly this: an alternative the steward did not take up.
-    await ben.locator('form[data-event=commented] [name=kind]').first().selectOption('alternative');
-    await ben.locator('form[data-event=commented] [name=comment]').first().fill('Pass the note through the transfer screen instead.');
-    await ben.locator('form[data-event=commented]').first().getByRole('button', { name: 'Post comment' }).click();
-    await ben.getByText('Pass the note through the transfer screen instead.').first().waitFor();
+    assert.equal(await nick.locator('form[data-include]').count(), 0, 'a member sees no Include control');
+    await steven.goto(itemUrl);
+    assert.equal(await steven.locator('form[data-include]').count(), 0, 'another member sees no Include control');
+    // Steven disagrees about the approach. A fork later needs exactly this: an alternative the steward did not take up.
+    await steven.locator('form[data-event=commented] [name=kind]').first().selectOption('alternative');
+    await steven.locator('form[data-event=commented] [name=comment]').first().fill('Pass the note through the transfer screen instead.');
+    await steven.locator('form[data-event=commented]').first().getByRole('button', { name: 'Post comment' }).click();
+    await steven.getByText('Pass the note through the transfer screen instead.').first().waitFor();
     const mayaHash = await olive.reload().then(() => olive.locator('li:has-text("Does the caller repeat") form[data-include] [name=comment]').first().inputValue());
     const baseHash = await olive.locator('form[data-event=revised] [name=base_hash]').inputValue();
-    const refused = await rawPost(maya, `/api/items/${itemId}/events`, {
-      type: 'revised', text: 'Maya rewrote it.', base_hash: baseHash, credits: [{ comment: mayaHash, mode: 'paraphrased' }],
+    const refused = await rawPost(nick, `/api/items/${itemId}/events`, {
+      type: 'revised', text: 'Nick rewrote it.', base_hash: baseHash, credits: [{ comment: mayaHash, mode: 'paraphrased' }],
     });
     assert.ok(refused >= 400, `a member's direct revise must be refused, got ${refused}`);
     await olive.reload();
-    assert.equal(await olive.locator('li:has-text("Maya rewrote it.")').count(), 0);
+    assert.equal(await olive.locator('li:has-text("Nick rewrote it.")').count(), 0);
     const include = olive.locator('li:has-text("Does the caller repeat") form[data-include]').first();
     await include.locator('[name=text]').fill('Callers lose context when a call is transferred. Does the caller repeat their account number?');
     await include.getByRole('button', { name: 'Include' }).click();
@@ -248,19 +248,19 @@ async function main() {
 
     // 4b. The credit and the diff show in the SEE history; Paraphrase makes another credited revision.
     const v2 = olive.locator('li:has-text("SEE v2:")').first();
-    assert.match(await v2.textContent(), /credit: maya, quoted/);
+    assert.match(await v2.textContent(), /credit: nick, quoted/);
     assert.match(await v2.locator('details').textContent(), /What changed[\s\S]*added: Callers lose context when a call is transferred\. Does the caller repeat their account number\?/);
     assert.match(await v2.locator('details').textContent(), /removed: Callers lose context when a call is transferred\./);
     const paraphrase = olive.locator('li:has-text("@effort what is the risk")').filter({ has: olive.locator('form[data-include]') }).first().locator('form[data-include]');
     await paraphrase.locator('[name=text]').fill('Callers lose context on transfer, and nobody says what the risk is.');
     await paraphrase.getByRole('button', { name: 'Paraphrase' }).click();
     await olive.getByText('SEE v3:').waitFor({ state: 'attached' });
-    assert.match(await olive.locator('li:has-text("SEE v3:")').first().textContent(), /credit: maya, paraphrased/);
+    assert.match(await olive.locator('li:has-text("SEE v3:")').first().textContent(), /credit: nick, paraphrased/);
     assert.equal(await olive.locator('li:has(> p:has-text("Effort, AI")) form[data-include]').count(), 0, "Effort's own comments cannot be included as credit");
     step('SEE history shows credit: paraphrased and What changed');
 
     // 5. Draft from the current curated SEE, then deliberately edit and publish.
-    assert.ok(await rawPost(maya, `/api/items/${itemId}/spec-draft`, { see_hash: await olive.locator('form[data-spec-prepare] [name=see_hash]').inputValue() }) >= 400);
+    assert.ok(await rawPost(nick, `/api/items/${itemId}/spec-draft`, { see_hash: await olive.locator('form[data-spec-prepare] [name=see_hash]').inputValue() }) >= 400);
     await olive.getByRole('button', { name: 'Draft SPEC for review' }).click();
     await eventually(olive, '[data-spec-draft]', 'reviewable structured SPEC draft');
     await olive.getByRole('button', { name: 'Review AI draft in the spec form' }).click();
@@ -283,10 +283,10 @@ async function main() {
     step('spec post shows Effort\'s Use as starting point comment');
 
     // 5b. SPEC Include is a real click, distinct from Paraphrase, and binds the current spec version.
-    await maya.goto(`${itemUrl}/spec`);
-    await maya.locator('form[data-event=commented] [name=comment]').first().fill('Keep the caller name with the transfer.');
-    await maya.locator('form[data-event=commented]').first().getByRole('button', { name: 'Post comment' }).click();
-    await maya.getByText('Keep the caller name with the transfer.').first().waitFor();
+    await nick.goto(`${itemUrl}/spec`);
+    await nick.locator('form[data-event=commented] [name=comment]').first().fill('Keep the caller name with the transfer.');
+    await nick.locator('form[data-event=commented]').first().getByRole('button', { name: 'Post comment' }).click();
+    await nick.getByText('Keep the caller name with the transfer.').first().waitFor();
     await olive.goto(`${itemUrl}/spec`);
     const specInclude = olive.locator('li:has-text("Keep the caller name") form[data-include="spec"]');
     await specInclude.getByRole('button', { name: 'Include' }).click();
@@ -316,9 +316,9 @@ async function main() {
 
     // 8. A different leader reads the packet and approves with a reason and step-up.
     await leader.getByRole('heading', { name: 'Decision packet' }).waitFor();
-    await ben.goto(itemUrl);
-    await ben.getByRole('heading', { name: 'Decision packet' }).waitFor();
-    assert.equal(await ben.locator('form[data-approve]').count(), 0, 'a member has no approve control');
+    await steven.goto(itemUrl);
+    await steven.getByRole('heading', { name: 'Decision packet' }).waitFor();
+    assert.equal(await steven.locator('form[data-approve]').count(), 0, 'a member has no approve control');
     const reason = 'Small enough to try and the spec is clear.';
     await leader.locator('form[data-approve] [name=reason]').fill(reason);
     await leader.locator('form[data-approve] [name=cap_usd]').fill('2');
@@ -328,31 +328,31 @@ async function main() {
     await leader.locator('form[data-approve] [name=password]').fill(leaderPassword);
     await leader.locator('form[data-approve] button').click();
     await leader.locator('.stage', { hasText: /Send/ }).waitFor();
-    await ben.goto(itemUrl);
-    await ben.getByText(reason).first().waitFor();
-    assert.match(await ben.locator('main').innerText(), /up to 2 additional build turns, 60 minutes/i);
-    assert.match(await ben.locator('main').innerText(), /Cap: \$2\.00/);
+    await steven.goto(itemUrl);
+    await steven.getByText(reason).first().waitFor();
+    assert.match(await steven.locator('main').innerText(), /up to 2 additional build turns, 60 minutes/i);
+    assert.match(await steven.locator('main').innerText(), /Cap: \$2\.00/);
     step('leader approved with a configurable leash and password step-up; member sees reason and bounds');
 
     // 9. A member forks an older spec on a phone, retaining only an explicitly unapproved draft.
-    await ben.goto(`${itemUrl}/spec`);
-    const selectedFrom = await ben.locator('form[data-fork] option', { hasText: 'Spec v1 (historical)' }).getAttribute('value');
-    await ben.locator('form[data-fork] [name=from]').selectOption(selectedFrom);
-    const oldSpec = await ben.evaluate(async ({ itemId, hash }) => {
+    await steven.goto(`${itemUrl}/spec`);
+    const selectedFrom = await steven.locator('form[data-fork] option', { hasText: 'Spec v1 (historical)' }).getAttribute('value');
+    await steven.locator('form[data-fork] [name=from]').selectOption(selectedFrom);
+    const oldSpec = await steven.evaluate(async ({ itemId, hash }) => {
       const data = await (await fetch(`/api/items/${itemId}`)).json();
       return data.events.find(event => event.body_hash === hash);
     }, { itemId, hash: selectedFrom.split(':')[1] });
-    await ben.locator('form[data-fork] [name=reason]').fill('Try passing it through the transfer screen instead.');
-    await ben.getByRole('button', { name: 'Fork', exact: true }).click();
-    await ben.waitForURL(url => url.href !== itemUrl && /\/items\/[^/]+$/.test(url.pathname));
-    await ben.getByText('Forked from').first().waitFor();
-    assert.equal(await ben.locator('form[data-approve]').count(), 0, 'a fork has no approval');
-    assert.equal(await ben.locator('iframe').count(), 0, 'a fork has no build');
-    assert.equal(await ben.locator('form[data-artifact]').count(), 0, 'a fork has no delivery');
-    await ben.getByRole('heading', { name: 'Fork starting spec (unapproved draft)' }).waitFor();
-    assert.equal(await ben.locator('form[data-event=specced] [name=must]').inputValue(), oldSpec.must.join('\n'));
-    assert.equal(await ben.locator('form[data-send]').count(), 0, 'draft has not become a saved spec');
-    assert.equal(ben.viewportSize().width, 390);
+    await steven.locator('form[data-fork] [name=reason]').fill('Try passing it through the transfer screen instead.');
+    await steven.getByRole('button', { name: 'Fork', exact: true }).click();
+    await steven.waitForURL(url => url.href !== itemUrl && /\/items\/[^/]+$/.test(url.pathname));
+    await steven.getByText('Forked from').first().waitFor();
+    assert.equal(await steven.locator('form[data-approve]').count(), 0, 'a fork has no approval');
+    assert.equal(await steven.locator('iframe').count(), 0, 'a fork has no build');
+    assert.equal(await steven.locator('form[data-artifact]').count(), 0, 'a fork has no delivery');
+    await steven.getByRole('heading', { name: 'Fork starting spec (unapproved draft)' }).waitFor();
+    assert.equal(await steven.locator('form[data-event=specced] [name=must]').inputValue(), oldSpec.must.join('\n'));
+    assert.equal(await steven.locator('form[data-send]').count(), 0, 'draft has not become a saved spec');
+    assert.equal(steven.viewportSize().width, 390);
     step('phone member forked a historical spec as an unapproved draft, with no inherited approval or build');
 
     // 10. The fake builder delivers a try for the parent.
@@ -361,15 +361,15 @@ async function main() {
     step('fake builder delivered a try');
 
     // 11. A member comments in the try thread; the OP adopts it as a builder instruction.
-    await maya.goto(itemUrl);
+    await nick.goto(itemUrl);
     const adoptable = 'Show the account number in bold.';
     const ignored = 'Also make everything purple.';
     for (const text of [adoptable, ignored]) {
-      await maya.getByLabel('Comment on this try').fill(text);
-      await maya.locator('form[data-event=commented]', { has: maya.getByLabel('Comment on this try') }).getByRole('button', { name: 'Post comment' }).click();
-      await maya.getByText(text).first().waitFor();
+      await nick.getByLabel('Comment on this try').fill(text);
+      await nick.locator('form[data-event=commented]', { has: nick.getByLabel('Comment on this try') }).getByRole('button', { name: 'Post comment' }).click();
+      await nick.getByText(text).first().waitFor();
     }
-    assert.equal(await maya.locator('form[data-adopt]').count(), 0, 'a member sees no Adopt control');
+    assert.equal(await nick.locator('form[data-adopt]').count(), 0, 'a member sees no Adopt control');
     await olive.goto(itemUrl);
     const row = olive.locator('li', { hasText: adoptable }).filter({ has: olive.locator('form[data-adopt]') }).last();
     await row.locator('form[data-adopt]').first().getByRole('button', { name: 'Adopt as builder instruction' }).click();
@@ -388,7 +388,7 @@ async function main() {
     assert.deepEqual(effortButtons, [], `Effort's frozen SEE comment has no reply controls, saw ${effortButtons}`);
     assert.equal(await olive.getByRole('button', { name: /delete|hide|remove|erase/i }).count(), 0, 'no delete or hide control anywhere on the OP page');
     const effortHash = (await effortItem.getAttribute('id')).replace(/^comment-/, '');
-    for (const [who, page] of [['OP', olive], ['member', ben], ['leader', leader]]) {
+    for (const [who, page] of [['OP', olive], ['member', steven], ['leader', leader]]) {
       const erase = await rawPost(page, `/api/items/${itemId}/events`, { type: 'erased', body_hash: effortHash });
       assert.ok(erase >= 400, `${who} cannot erase Effort's comment, got ${erase}`);
     }
@@ -397,37 +397,37 @@ async function main() {
     step("no delete or hide for Effort's comment");
 
     // 13. Reassignment needs recorded OP consent; the originator's credit stays.
-    await ben.goto(itemUrl);
-    assert.equal(await ben.locator('form[data-event=steward_changed]').count(), 0, 'a member has no reassign control');
+    await steven.goto(itemUrl);
+    assert.equal(await steven.locator('form[data-event=steward_changed]').count(), 0, 'a member has no reassign control');
     assert.equal(await olive.locator('form[data-event=steward_changed]').count(), 0, 'the original poster has no reassign control');
-    for (const [who, page] of [['member', ben], ['original poster', olive]]) {
-      const refusedReassign = await rawPost(page, `/api/items/${itemId}/events`, { type: 'steward_changed', steward: 'maya', reason: 'I would like to hand this over.' });
+    for (const [who, page] of [['member', steven], ['original poster', olive]]) {
+      const refusedReassign = await rawPost(page, `/api/items/${itemId}/events`, { type: 'steward_changed', steward: 'nick', reason: 'I would like to hand this over.' });
       assert.ok(refusedReassign >= 400, `${who} direct reassign must be refused, got ${refusedReassign}`);
     }
     await leader.goto(itemUrl);
     const reassign = leader.locator('form[data-event=steward_changed]');
-    await reassign.locator('[name=steward]').fill('maya');
+    await reassign.locator('[name=steward]').fill('nick');
     await reassign.locator('[name=reason]').fill('too short');
     await reassign.getByRole('button', { name: 'Reassign steward' }).click();
     assert.equal(await leader.getByText('reassigned the steward').count(), 0, 'a short note does not reassign');
-    await reassign.locator('[name=reason]').fill('Olive is moving to another team, Maya owns this now.');
+    await reassign.locator('[name=reason]').fill('Olive is moving to another team, Nick owns this now.');
     const deniedReassign = leader.waitForResponse(response => response.url().endsWith(`/api/items/${itemId}/events`) && response.request().method() === 'POST');
     await reassign.getByRole('button', { name: 'Reassign steward' }).click();
     assert.ok((await deniedReassign).status() >= 400, 'reassignment without consent is refused before proceeding');
     await reassign.locator('[role=alert]').waitFor();
     assert.equal(await leader.getByText('reassigned the steward').count(), 0, 'a leader cannot bypass the fourteen-day consent rule');
-    assert.equal(await rawPost(olive, `/api/items/${itemId}/events`, { type: 'checked_in', note: 'I consent to Maya taking this work.', consent: true }), 201);
+    assert.equal(await rawPost(olive, `/api/items/${itemId}/events`, { type: 'checked_in', note: 'I consent to Nick taking this work.', consent: true }), 201);
     await leader.reload();
-    await leader.locator('form[data-event=steward_changed] [name=steward]').fill('maya');
-    await leader.locator('form[data-event=steward_changed] [name=reason]').fill('Olive is moving to another team, Maya owns this now.');
+    await leader.locator('form[data-event=steward_changed] [name=steward]').fill('nick');
+    await leader.locator('form[data-event=steward_changed] [name=reason]').fill('Olive is moving to another team, Nick owns this now.');
     await leader.locator('form[data-event=steward_changed]').getByRole('button', { name: 'Reassign steward' }).click();
-    await leader.getByText(/reassigned the steward to maya\. Note: Olive is moving to another team, Maya owns this now\./).waitFor();
+    await leader.getByText(/reassigned the steward to nick\. Note: Olive is moving to another team, Nick owns this now\./).waitFor();
     await olive.goto(itemUrl);
     assert.equal(await olive.locator('form[data-event=revised]').count(), 0, 'the old poster can no longer revise');
     assert.ok(await olive.getByText('olive posted this SEE').count() > 0, "the old poster's own post is still credited");
-    assert.match(await olive.locator('li:has-text("SEE v2:")').first().textContent(), /credit: maya, quoted/, 'earlier credit remains');
-    await maya.goto(itemUrl);
-    assert.equal(await maya.locator('form[data-event=revised]').count(), 0, 'the frozen SEE stays read-only after reassignment');
+    assert.match(await olive.locator('li:has-text("SEE v2:")').first().textContent(), /credit: nick, quoted/, 'earlier credit remains');
+    await nick.goto(itemUrl);
+    assert.equal(await nick.locator('form[data-event=revised]').count(), 0, 'the frozen SEE stays read-only after reassignment');
     step('leader reassigned the steward with a note; originator credit remains');
 
     // 14. Mention cap: the 11th mention by one person in one day still lands, with no Effort reply.
@@ -465,29 +465,29 @@ async function main() {
     step('11th @effort mention landed with no Effort reply');
 
     // 15. Vision Quest, finished with a BUILD recommendation (not CONFIGURE), opens as a SEE with Effort's first reply.
-    await maya.goto(`${origin}/quest`);
+    await nick.goto(`${origin}/quest`);
     const picks = { have: 'unavailable', pay_for: 'unavailable', free: 'unavailable', setting: 'unavailable', playback: 'yes', risk: 'low', impact: '4', repeat: '4', control: '4', evidence: '4', approach: 'build' };
     const questForm = '#quest-content > form[data-quest-step]';
-    await maya.locator(questForm).waitFor();
+    await nick.locator(questForm).waitFor();
     for (let guard = 0; guard < 60; guard += 1) {
-      const form = maya.locator(questForm);
+      const form = nick.locator(questForm);
       if (!(await form.count())) break;
       const key = await form.getAttribute('data-quest-step');
       const field = form.locator('[name=answer]');
       if (picks[key]) await field.selectOption(picks[key]); else await field.fill(`${key}: transfers drop the account number every time on a real call`);
       await form.getByRole('button', { name: 'Save answer and continue' }).click();
-      await maya.waitForFunction(previous => document.querySelector('#quest-content > form[data-quest-step]')?.dataset.questStep !== previous, key, { timeout: 8000 }).catch(() => {});
+      await nick.waitForFunction(previous => document.querySelector('#quest-content > form[data-quest-step]')?.dataset.questStep !== previous, key, { timeout: 8000 }).catch(() => {});
     }
-    await maya.getByRole('heading', { name: 'BUILD', exact: true }).waitFor({ timeout: 8000 });
-    await maya.locator('[name=reviewed]').check();
-    await maya.getByRole('button', { name: 'Post my checked problem' }).click();
-    await maya.waitForURL(/\/items\/[^/]+$/);
+    await nick.getByRole('heading', { name: 'BUILD', exact: true }).waitFor({ timeout: 8000 });
+    await nick.locator('[name=reviewed]').check();
+    await nick.getByRole('button', { name: 'Post my checked problem' }).click();
+    await nick.waitForURL(/\/items\/[^/]+$/);
     // The original post sits in a collapsed section now; the record is there once it is opened.
-    await maya.getByText('Original post, versions and record').click();
-    await maya.getByRole('heading', { name: 'Original' }).waitFor();
-    await maya.getByRole('heading', { name: 'Vision Quest memo' }).waitFor();
-    await waitForAgentComments(maya, 1);
-    assert.match(await agentComments(maya).first().innerText(), /Fixture/i);
+    await nick.getByText('Original post, versions and record').click();
+    await nick.getByRole('heading', { name: 'Original' }).waitFor();
+    await nick.getByRole('heading', { name: 'Vision Quest memo' }).waitFor();
+    await waitForAgentComments(nick, 1);
+    assert.match(await agentComments(nick).first().innerText(), /Fixture/i);
     step('Vision Quest (BUILD) opened as a SEE with an Effort first reply');
 
     // 16. F-01 / REG-02: a plain comment and a check-in leave a delivered try alone; a SEE revision supersedes it.
@@ -514,19 +514,19 @@ async function main() {
     await leader.locator('.stage', { hasText: /Send/ }).waitFor();
     await olive.goto(regUrl);
     await eventually(olive, 'iframe[title="Playable try"]', 'the REG-02 try', 30000);
-    const regArtifact = await ben.goto(regUrl).then(() => ben.locator('form[data-event=helped] [name=artifact_hash]').inputValue());
+    const regArtifact = await steven.goto(regUrl).then(() => steven.locator('form[data-event=helped] [name=artifact_hash]').inputValue());
     const feedback = 'Please keep the number visible after the transfer.';
-    await maya.goto(regUrl);
-    await maya.getByLabel('Comment on this try').fill(feedback);
-    await maya.locator('form[data-event=commented]', { has: maya.getByLabel('Comment on this try') }).getByRole('button', { name: 'Post comment' }).click();
-    await maya.getByText(feedback).first().waitFor();
-    assert.equal(await rawPost(maya, `/api/items/${regId}/events`, { type: 'commented', comment: 'A late comment on the SEE.', kind: 'comment', anchor_kind: 'see', anchor_hash: await maya.locator('form[data-event=commented] [name=anchor_hash]').last().inputValue() }), 409);
-    assert.equal(await rawPost(maya, `/api/items/${regId}/events`, { type: 'checked_in', note: 'Still watching how this one goes.' }), 201);
+    await nick.goto(regUrl);
+    await nick.getByLabel('Comment on this try').fill(feedback);
+    await nick.locator('form[data-event=commented]', { has: nick.getByLabel('Comment on this try') }).getByRole('button', { name: 'Post comment' }).click();
+    await nick.getByText(feedback).first().waitFor();
+    assert.equal(await rawPost(nick, `/api/items/${regId}/events`, { type: 'commented', comment: 'A late comment on the SEE.', kind: 'comment', anchor_kind: 'see', anchor_hash: await nick.locator('form[data-event=commented] [name=anchor_hash]').last().inputValue() }), 409);
+    assert.equal(await rawPost(nick, `/api/items/${regId}/events`, { type: 'checked_in', note: 'Still watching how this one goes.' }), 201);
     await olive.goto(regUrl);
     await olive.locator('iframe[title="Playable try"]').waitFor();
     assert.equal(await olive.locator('.stage', { hasText: /Send/ }).count() > 0, true, 'a comment and a check-in leave the item in Send');
     assert.equal(await olive.getByText('This old approval is superseded.', { exact: false }).count(), 0, 'a comment and a check-in do not supersede the try');
-    assert.equal(await ben.goto(regUrl).then(() => ben.locator('form[data-event=helped]').count()), 1, 'the helper can still say it helps');
+    assert.equal(await steven.goto(regUrl).then(() => steven.locator('form[data-event=helped]').count()), 1, 'the helper can still say it helps');
     step('comment and check-in left the delivered try alone');
 
     // The old SEE is frozen. Advancing the current TRY freezes its feedback and old vote target.
@@ -534,13 +534,13 @@ async function main() {
     const feedbackRow = olive.locator('li', { hasText: feedback }).filter({ has: olive.locator('form[data-adopt]') }).last();
     await Promise.all([olive.waitForEvent('load'), feedbackRow.locator('form[data-adopt] button').click()]);
     await eventually(olive, 'iframe[title="Playable try"]', 'the next REG-02 try', 30000);
-    await ben.goto(regUrl);
-    const nextArtifact = await ben.locator('form[data-event=helped] [name=artifact_hash]').inputValue();
+    await steven.goto(regUrl);
+    const nextArtifact = await steven.locator('form[data-event=helped] [name=artifact_hash]').inputValue();
     assert.notEqual(nextArtifact, regArtifact);
-    const stale = await rawPost(ben, `/api/items/${regId}/events`, { type: 'helped', artifact_hash: regArtifact });
+    const stale = await rawPost(steven, `/api/items/${regId}/events`, { type: 'helped', artifact_hash: regArtifact });
     assert.ok(stale >= 400 && stale < 500, `a direct Helps for the old artifact must be refused, got ${stale}`);
-    assert.ok(await ben.getByText(regReason).count() > 0, 'the old approval reason stays visible as history');
-    assert.ok(await ben.getByText(feedback).count() > 0, 'the old try feedback stays visible as history');
+    assert.ok(await steven.getByText(regReason).count() > 0, 'the old approval reason stays visible as history');
+    assert.ok(await steven.getByText(feedback).count() > 0, 'the old try feedback stays visible as history');
     step('old SEE and TRY are frozen; old Helps refused and history retained');
 
     // 17. Decisions remain public with the exact reviewed packet, even after a return and new spec.
@@ -577,13 +577,13 @@ async function main() {
     await returnForm.locator('[name=reason]').fill(returnReason);
     await submitDecisionAndCapture(leader, returnForm, returnForm.getByRole('button', { name: 'Record decision' }), decisionId, 'decided');
     await leader.getByRole('heading', { name: 'Decision record' }).waitFor();
-    await ben.goto(decisionUrl);
-    await ben.getByText(returnReason).first().waitFor();
-    assert.equal(await ben.locator('form[data-event=returned]').count(), 0);
-    assert.match(await ben.locator('main').innerText(), new RegExp(returnedPacket));
-    await ben.getByText('Reviewed evidence snapshot', { exact: true }).click();
-    assert.match(await ben.locator('main').innerText(), /not connected/);
-    assert.match(await ben.locator('main').innerText(), /one hour to test the existing handoff view/);
+    await steven.goto(decisionUrl);
+    await steven.getByText(returnReason).first().waitFor();
+    assert.equal(await steven.locator('form[data-event=returned]').count(), 0);
+    assert.match(await steven.locator('main').innerText(), new RegExp(returnedPacket));
+    await steven.getByText('Reviewed evidence snapshot', { exact: true }).click();
+    assert.match(await steven.locator('main').innerText(), /not connected/);
+    assert.match(await steven.locator('main').innerText(), /one hour to test the existing handoff view/);
     step('return requires a reason and keeps its reviewed packet visible to members');
 
     await olive.goto(`${decisionUrl}/spec`);
@@ -607,15 +607,15 @@ async function main() {
       leader, notBuilt, notBuilt.getByRole('button', { name: 'Record decision' }), decisionId, 'decided',
     );
     await leader.getByRole('heading', { name: 'Decision history' }).waitFor();
-    await ben.goto(decisionUrl);
-    await waitForDecisionText(ben, noBuildReason, notBuiltDiagnostic);
-    assert.equal(ben.viewportSize().width, 390, 'member reads decision history at phone width');
-    assert.match(await ben.locator('main').innerText(), /Resolve without build/);
-    assert.match(await ben.locator('main').innerText(), /Use the existing handoff view\./);
-    assert.equal(await ben.locator('section:has(h2:text("Decision history")) > ol > li').count(), 1);
-    assert.equal(await ben.getByRole('heading', { name: 'Decision record', exact: true }).count(), 1);
-    assert.ok(await ben.getByText(returnReason).count() > 0, 'earlier return reason remains');
-    assert.equal(await ben.locator('iframe[title="Playable try"]').count(), 0);
+    await steven.goto(decisionUrl);
+    await waitForDecisionText(steven, noBuildReason, notBuiltDiagnostic);
+    assert.equal(steven.viewportSize().width, 390, 'member reads decision history at phone width');
+    assert.match(await steven.locator('main').innerText(), /Resolve without build/);
+    assert.match(await steven.locator('main').innerText(), /Use the existing handoff view\./);
+    assert.equal(await steven.locator('section:has(h2:text("Decision history")) > ol > li').count(), 1);
+    assert.equal(await steven.getByRole('heading', { name: 'Decision record', exact: true }).count(), 1);
+    assert.ok(await steven.getByText(returnReason).count() > 0, 'earlier return reason remains');
+    assert.equal(await steven.locator('iframe[title="Playable try"]').count(), 0);
     step('Resolve without build records a reason and action owner; prior return stays public');
 
     // 18. A completed/closed parent remains available as a historical fork source.
@@ -623,14 +623,14 @@ async function main() {
     await leader.locator('form[data-event=shelved] [name=reason]').fill('Keep this trial as history while trying another direction.');
     await leader.getByRole('button', { name: 'Shelve with a reason' }).click();
     await leader.locator('.stage', { hasText: 'Shelved' }).waitFor();
-    await ben.goto(itemUrl);
-    await ben.locator('form[data-fork] [name=from]').selectOption({ label: 'SEE v1 (historical)' });
-    await ben.locator('form[data-fork] [name=reason]').fill('Start over from the first observation after this trial closed.');
-    await ben.getByRole('button', { name: 'Fork', exact: true }).click();
-    await ben.waitForURL(url => url.href !== itemUrl && /\/items\/[^/]+$/.test(url.pathname));
-    await ben.getByText('Forked from').first().waitFor();
-    assert.equal(await ben.locator('.stage', { hasText: /^See$/ }).count(), 1);
-    assert.equal(await ben.locator('form[data-approve], form[data-send], iframe').count(), 0);
+    await steven.goto(itemUrl);
+    await steven.locator('form[data-fork] [name=from]').selectOption({ label: 'SEE v1 (historical)' });
+    await steven.locator('form[data-fork] [name=reason]').fill('Start over from the first observation after this trial closed.');
+    await steven.getByRole('button', { name: 'Fork', exact: true }).click();
+    await steven.waitForURL(url => url.href !== itemUrl && /\/items\/[^/]+$/.test(url.pathname));
+    await steven.getByText('Forked from').first().waitFor();
+    assert.equal(await steven.locator('.stage', { hasText: /^See$/ }).count(), 1);
+    assert.equal(await steven.locator('form[data-approve], form[data-send], iframe').count(), 0);
     await leader.goto(itemUrl);
     assert.equal(await leader.locator('.stage', { hasText: 'Shelved' }).count(), 1, 'fork leaves terminal parent closed');
     step('phone member forked a terminal parent without reopening it or inheriting its authority');
@@ -641,43 +641,43 @@ async function main() {
     await olive.getByRole('button', { name: 'Post SEE' }).click();
     await olive.waitForURL(/\/items\/(?!new$)[^/]+$/);
     const memoryUrl = olive.url(), memoryId = memoryUrl.split('/').at(-1);
-    await maya.goto(memoryUrl);
-    await maya.locator('form[data-event=commented] [name=comment]').first().fill('quartz memory marker <img src=x onerror=alert(1)>');
-    await maya.locator('form[data-event=commented]').first().getByRole('button', { name: 'Post comment' }).click();
-    await maya.getByText('quartz memory marker').first().waitFor();
-    await ben.goto(`${origin}/search?q=quartz`);
-    await ben.getByRole('link', { name: 'commented by maya', exact: true }).click();
-    await ben.getByRole('heading', { name: 'Work record', exact: true }).waitFor();
-    const memoryHash = await ben.locator('form[data-event=credit_note] [name=source]').inputValue();
-    await ben.locator('form[data-event=credit_note] [name=note]').fill('The searchable marker clarified the handoff detail.');
-    const acknowledgement = ben.waitForResponse(response => response.url().endsWith(`/api/items/${memoryId}/events`) && response.request().method() === 'POST');
-    const acknowledgementReload = ben.waitForNavigation({ waitUntil: 'load' });
-    await ben.getByRole('button', { name: 'Record acknowledgement' }).click();
+    await nick.goto(memoryUrl);
+    await nick.locator('form[data-event=commented] [name=comment]').first().fill('quartz memory marker <img src=x onerror=alert(1)>');
+    await nick.locator('form[data-event=commented]').first().getByRole('button', { name: 'Post comment' }).click();
+    await nick.getByText('quartz memory marker').first().waitFor();
+    await steven.goto(`${origin}/search?q=quartz`);
+    await steven.getByRole('link', { name: 'commented by nick', exact: true }).click();
+    await steven.getByRole('heading', { name: 'Work record', exact: true }).waitFor();
+    const memoryHash = await steven.locator('form[data-event=credit_note] [name=source]').inputValue();
+    await steven.locator('form[data-event=credit_note] [name=note]').fill('The searchable marker clarified the handoff detail.');
+    const acknowledgement = steven.waitForResponse(response => response.url().endsWith(`/api/items/${memoryId}/events`) && response.request().method() === 'POST');
+    const acknowledgementReload = steven.waitForNavigation({ waitUntil: 'load' });
+    await steven.getByRole('button', { name: 'Record acknowledgement' }).click();
     assert.equal((await acknowledgement).status(), 201);
     await acknowledgementReload;
-    await ben.goto(`${origin}/people/maya`);
-    await ben.getByRole('heading', { name: 'Contribution record: maya' }).waitFor();
-    assert.match(await ben.locator('main').innerText(), /credited/);
-    assert.equal(await rawPost(maya, `/api/items/${memoryId}/erase`, { body_hash: memoryHash }), 201);
-    await ben.goto(`${origin}/search?q=quartz`);
-    await ben.getByText('Nothing matches those words.', { exact: false }).waitFor();
+    await steven.goto(`${origin}/people/nick`);
+    await steven.getByRole('heading', { name: 'Contribution record: nick' }).waitFor();
+    assert.match(await steven.locator('main').innerText(), /credited/);
+    assert.equal(await rawPost(nick, `/api/items/${memoryId}/erase`, { body_hash: memoryHash }), 201);
+    await steven.goto(`${origin}/search?q=quartz`);
+    await steven.getByText('Nothing matches those words.', { exact: false }).waitFor();
     step('phone member found a source record, acknowledged its author, and erased text disappeared from search');
 
     // Optional mentoring remains separate from work records, even for a leader.
-    for (const person of [olive, maya]) {
+    for (const person of [olive, nick]) {
       await person.goto(`${origin}/mentoring`);
       await person.getByRole('button', { name: 'Opt in to mentoring', exact: true }).click();
       await person.getByRole('button', { name: 'Opt out and close active mentoring' }).waitFor();
     }
     await olive.goto(`${origin}/mentoring`);
-    await olive.locator('[name=mentor]').selectOption('maya');
+    await olive.locator('[name=mentor]').selectOption('nick');
     await olive.locator('[name=objective]').fill('Practice a clearer private handoff.');
     await olive.getByRole('button', { name: 'Send mentoring request' }).click();
     await olive.waitForURL(/\/mentoring\/[^/]+$/);
     const mentoringUrl=olive.url();
-    await maya.goto(mentoringUrl);
-    await maya.getByRole('button', { name: 'Accept mentoring' }).click();
-    await maya.getByLabel('Private check-in').waitFor();
+    await nick.goto(mentoringUrl);
+    await nick.getByRole('button', { name: 'Accept mentoring' }).click();
+    await nick.getByLabel('Private check-in').waitFor();
     await olive.goto(mentoringUrl);
     await olive.getByLabel('Private check-in').fill('hazelnut private mentoring reflection.');
     await olive.getByRole('button', { name: 'Add private check-in' }).click();
@@ -705,33 +705,33 @@ async function main() {
     step('two people opted in; leader could not read private notes; explicit evidence share was revoked');
 
     // A person selects evidence and human criteria; the app makes no model call.
-    await ben.goto(`${origin}/intelligence`);
-    await ben.locator('[name=question]').fill('What handoff friction should we investigate?');
-    await ben.locator('[name=objectives]').fill('Improve customer handoffs.');
-    await ben.locator('[name=constraints]').fill('Preserve employee privacy.\nUse synthetic data for experiments.');
-    await ben.locator('[name=items]').fill(`${itemId}\n${memoryId}`);
+    await steven.goto(`${origin}/intelligence`);
+    await steven.locator('[name=question]').fill('What handoff friction should we investigate?');
+    await steven.locator('[name=objectives]').fill('Improve customer handoffs.');
+    await steven.locator('[name=constraints]').fill('Preserve employee privacy.\nUse synthetic data for experiments.');
+    await steven.locator('[name=items]').fill(`${itemId}\n${memoryId}`);
     // Chrome's datetime-local reports whole minutes without seconds, so ':00' seconds must be sent as HH:mm
     // (a fill of 'T04:50:00' was rejected as malformed about once in sixty runs).
     const timeValue = time => { const value = new Date(time).toISOString().slice(0,19); return value.endsWith(':00') ? value.slice(0,16) : value; };
-    await ben.locator('[name=from]').fill(timeValue(Date.now()-3600000));
-    await ben.locator('[name=to]').fill(timeValue(Date.now()-1000));
-    await ben.getByRole('button',{name:'Prepare evidence packet',exact:true}).click();
-    await ben.locator('[data-analysis-export]:not([hidden])').waitFor();
-    const analysisPacket = JSON.parse(await ben.locator('[data-analysis-prompt]').inputValue());
+    await steven.locator('[name=from]').fill(timeValue(Date.now()-3600000));
+    await steven.locator('[name=to]').fill(timeValue(Date.now()-1000));
+    await steven.getByRole('button',{name:'Prepare evidence packet',exact:true}).click();
+    await steven.locator('[data-analysis-export]:not([hidden])').waitFor();
+    const analysisPacket = JSON.parse(await steven.locator('[data-analysis-prompt]').inputValue());
     assert.equal(analysisPacket.coverage.items.length,2);
     assert.doesNotMatch(JSON.stringify(analysisPacket),/hazelnut|quartz memory marker/);
     const answerFixture = structuredClone(analysisPacket.answer_contract);
     answerFixture.findings[0].claim='Synthetic answer fixture <img src=x onerror=alert(1)>.';
-    await ben.locator('[name=answer]').fill(JSON.stringify(answerFixture));
-    await ben.getByRole('button',{name:'Check citations and review answer',exact:true}).click();
-    await ben.locator('[data-analysis-answer]:not([hidden])').waitFor();
-    assert.match(await ben.locator('[data-analysis-answer]').innerText(),/Unverified model text/);
-    assert.equal(await ben.locator('[data-analysis-answer] img').count(),0);
-    assert.ok(await ben.locator('[data-analysis-answer] a[href*="/record/"]').count()>0);
+    await steven.locator('[name=answer]').fill(JSON.stringify(answerFixture));
+    await steven.getByRole('button',{name:'Check citations and review answer',exact:true}).click();
+    await steven.locator('[data-analysis-answer]:not([hidden])').waitFor();
+    assert.match(await steven.locator('[data-analysis-answer]').innerText(),/Unverified model text/);
+    assert.equal(await steven.locator('[data-analysis-answer] img').count(),0);
+    assert.ok(await steven.locator('[data-analysis-answer] a[href*="/record/"]').count()>0);
     answerFixture.findings[0].citations[0].hash='f'.repeat(64);
-    await ben.locator('[name=answer]').fill(JSON.stringify(answerFixture));
-    await ben.getByRole('button',{name:'Check citations and review answer',exact:true}).click();
-    await ben.locator('[data-analysis-review] [role=alert]').waitFor();
+    await steven.locator('[name=answer]').fill(JSON.stringify(answerFixture));
+    await steven.getByRole('button',{name:'Check citations and review answer',exact:true}).click();
+    await steven.locator('[data-analysis-review] [role=alert]').waitFor();
     step('phone member prepared cross-workstream evidence, private/erased content stayed out, cited model fixture rendered inert, fake citation refused');
 
     assert.deepEqual(problems, [], `browser problems:\n${problems.join('\n')}`);

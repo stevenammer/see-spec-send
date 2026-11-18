@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, chmodSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { adapters } from './adapters.js';
+import { serviceAccountTokens } from './vertex.js';
 import { priceRate } from '../gateway/ledger.js';
 
 const kinds = Object.keys(adapters);
@@ -29,9 +30,21 @@ export function validateProvider(provider) {
   if (provider.kind === 'bedrock') {
     if (typeof provider.region !== 'string' || !/^[a-z]{2}-[a-z]+-\d+$/.test(provider.region) || typeof provider.modelId !== 'string' || !provider.modelId) throw Error('invalid Bedrock provider');
     if (['apiKey', 'apiKeyEnv', 'apiKeyFile', 'credentials', 'accessKeyId', 'secretAccessKey', 'sessionToken', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN'].some(key => Object.hasOwn(provider, key))) throw Error('Bedrock credentials belong only in the environment');
+  } else if (provider.kind === 'vertex') {
+    // Two ways in. A service account file (with a project and location) uses the OpenAI-compatible endpoint. An API key
+    // read from the environment or a private file (Vertex express mode) uses the native endpoint. Never an inline key.
+    const viaAccount = typeof provider.serviceAccountFile === 'string';
+    const viaKey = Boolean(provider.apiKeyEnv || provider.apiKeyFile);
+    if (typeof provider.model !== 'string' || !provider.model || viaAccount === viaKey) throw Error('invalid Vertex provider');
+    if (viaAccount && (!provider.serviceAccountFile.startsWith('/') || typeof provider.project !== 'string' || !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(provider.project)
+      || typeof provider.location !== 'string' || !/^([a-z]+-[a-z]+\d+|global)$/.test(provider.location))) throw Error('invalid Vertex provider');
+    if (viaKey && provider.apiKeyEnv && provider.apiKeyFile) throw Error('choose one provider credential reference');
+    if (viaKey && provider.apiKeyEnv && !/^[A-Z_][A-Z0-9_]*$/.test(provider.apiKeyEnv)) throw Error('invalid API key environment name');
+    if (viaKey && provider.apiKeyFile && (typeof provider.apiKeyFile !== 'string' || !provider.apiKeyFile.startsWith('/'))) throw Error('API key file must be absolute');
+    if (['apiKey', 'private_key', 'privateKey', 'credentials', 'access_token'].some(key => Object.hasOwn(provider, key))) throw Error('Vertex providers name a credential file or variable, not a key');
   } else if (typeof provider.model !== 'string' || !provider.model) throw Error('invalid provider');
   if (!provider.price || !integer(provider.price.inputMicrosPerMillion) || !integer(provider.price.outputMicrosPerMillion)) throw Error('priced provider required');
-  if (provider.kind === 'bedrock') return provider;
+  if (provider.kind === 'bedrock' || provider.kind === 'vertex') return provider;
   if (provider.kind === 'command') return provider;
   if (typeof provider.url !== 'string' || !Array.isArray(provider.hosts) || !provider.hosts.length || !provider.hosts.every(host => typeof host === 'string' && host)) throw Error('provider URL and host allowlist required');
   if (provider.apiKeyEnv && provider.apiKeyFile) throw Error('choose one provider credential reference');
@@ -47,6 +60,7 @@ export function providerFor(name, env = process.env) {
     if (!accessKeyId || !secretAccessKey) throw Error('Bedrock credentials unavailable from environment');
     return adapters.bedrock({ ...provider, credentials: { accessKeyId, secretAccessKey, ...(sessionToken ? { sessionToken } : {}) } });
   }
+  if (provider.kind === 'vertex' && provider.serviceAccountFile) return adapters.vertex({ ...provider, tokens: serviceAccountTokens({ keyFile: provider.serviceAccountFile }) });
   const apiKey = provider.apiKeyEnv ? env[provider.apiKeyEnv] : provider.apiKeyFile ? readKeyFile(provider.apiKeyFile) : undefined;
   if ((provider.apiKeyEnv || provider.apiKeyFile) && !apiKey) throw Error('provider credential unavailable');
   return adapters[provider.kind]({ ...provider, apiKey });

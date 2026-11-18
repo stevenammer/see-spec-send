@@ -1,8 +1,9 @@
 // Builder evaluation.
 //   PLAYWRIGHT_DIR=/path/to/node_modules node scripts/builder-eval.mjs --selftest
 //   PLAYWRIGHT_DIR=... GEMINI_API_KEY=... node scripts/builder-eval.mjs --run --provider gemini --model gemini-2.5-flash
-//     [--builder opencode|claude-code|codex] [--tasks refunds,swaps,triage] [--repeat 1] [--wall-ms 300000] [--max-calls 40] [--out results.jsonl]
-// Providers: gemini and groq (free tiers, keys from the environment) and bedrock (AWS_* from the environment, paid).
+//     [--builder opencode|claude-code|codex] [--tasks refunds,swaps,triage] [--repeat 1] [--wall-ms 300000] [--max-calls 40] [--variant base|self-check|pitfalls|both] [--out results.jsonl]
+// Providers: gemini and groq (free tiers, keys from the environment), bedrock (AWS_* from the environment, paid) and
+// vertex (VERTEX_API_KEY from the environment, Gemini's native endpoint, paid).
 // For each task it judges a hand-written good bundle (must pass every check, and pass the host's own bundle validator)
 // and a deliberately broken one (must fail at least one check). A judge that can't tell those apart proves nothing
 // about a model's build. Run mode (a real builder and model) is added on top of this.
@@ -10,6 +11,7 @@ import { appendFileSync, chmodSync, existsSync, mkdtempSync, mkdirSync, readFile
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { tasks } from '../eval/builder/tasks.mjs';
+import { variants } from '../eval/builder/variants.mjs';
 import { judgeBundle, manifestFor } from '../eval/builder/judge.mjs';
 import { validateBundle } from '../worker/bundle.js';
 import { Store } from '../core/store.js';
@@ -19,6 +21,7 @@ import { Gateway, ChatGateway, createGatewayServer } from '../gateway/http.js';
 import { fixtureProvider } from '../gateway/fixture.js';
 import { openAICompatible } from '../provider/adapters.js';
 import { bedrockConverse } from '../provider/bedrock.js';
+import { geminiNative } from '../provider/gemini-native.js';
 import { OpenCodeAdapter } from '../worker/opencode.js';
 import { ClaudeCodeAdapter } from '../worker/claudecode.js';
 import { CodexAdapter } from '../worker/codex.js';
@@ -71,6 +74,11 @@ function providerFor(name, model) {
       credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY, sessionToken: process.env.AWS_SESSION_TOKEN } }),
       rate: PRICES[model] || PRICES['claude-sonnet'], label: model };
   }
+  if (name === 'vertex') {
+    // Vertex express mode: an API key in VERTEX_API_KEY, the native Gemini endpoint. Prices are set above list so a cap holds.
+    if (!process.env.VERTEX_API_KEY) throw Error('VERTEX_API_KEY is not set');
+    return { upstream: geminiNative({ apiKey: process.env.VERTEX_API_KEY, model, timeoutMs: 180_000, onHttpError: process.env.EVAL_DEBUG ? ({ status, text }) => appendFileSync('/tmp/claude-1000/builder-opt/vertex-errors.log', `${status} ${text.replaceAll(process.env.VERTEX_API_KEY, '[key]').slice(0, 1500)}\n`) : undefined }), rate: PRICES[model] || [1_000_000, 6_000_000], label: model };
+  }
   throw Error(`unknown provider ${name}`);
 }
 
@@ -114,7 +122,7 @@ async function runOnce({ task, providerName, model, wallMs, maxCalls }) {
   class Adapter extends Base { withDeadline(args) { const out = super.withDeadline(args); return process.argv.includes('--debug-agent') ? [...out.slice(0, out.lastIndexOf('/entrypoint.sh')), 'sh', '-c', DEBUG_SCRIPT] : out; } }
   const adapter = new Adapter(store, { docker: new DockerCli({ timeoutMs: 60_000 }), ledger, root: join(dir, 'runs'), gatewaySocket: socket, wallMs });
   const started = Date.now();
-  adapter.start({ id: run.id, spec: task.spec, instructions: [] });
+  adapter.start({ id: run.id, spec: task.spec, instructions: variants[arg('--variant', 'base')] || (() => { throw Error('unknown --variant'); })() });
   let status = adapter.status(run.id);
   let agentLog = ''; const logger = new DockerCli({ timeoutMs: 15_000 });
   const snapshot = () => { try { const text = String(logger.run(['logs', '--tail', '80', adapter.name(run.id)])); if (text.trim()) agentLog = text.slice(-3000); } catch { /* not running yet or already gone */ } };
@@ -136,7 +144,7 @@ async function runOnce({ task, providerName, model, wallMs, maxCalls }) {
   const refusal = hostAccepted ? null : (() => { try { validateBundle(bundle, manifestFor(bundle)); return null; } catch (error) { return String(error.message).slice(0, 120); } })();
   try { adapter.stop(run.id); } catch { /* already finished */ }
   server.close(); store.close();
-  return { task: task.id, builder: arg('--builder', 'opencode'), provider: providerName, model, builder_state: status.state, repaired: Boolean(repairReason), repair_reason: repairReason, host_accepted: hostAccepted, host_refusal: refusal,
+  return { task: task.id, variant: arg('--variant', 'base'), builder: arg('--builder', 'opencode'), provider: providerName, model, builder_state: status.state, repaired: Boolean(repairReason), repair_reason: repairReason, host_accepted: hostAccepted, host_refusal: refusal,
     judged: judged && !judged.error ? { passed: judged.passed, total: judged.total, ok: judged.ok, failed: judged.checks.filter(c => !c.ok).map(c => c.name), outside: judged.outside.length, page_errors: judged.errors.length } : judged,
     product_ok: Boolean(hostAccepted && judged && judged.ok), calls: receipts.length, input_tokens: inputTokens, output_tokens: outputTokens, cost_usd: Number((costMicros / 1e6).toFixed(4)), seconds, files, upstream_errors: errors.slice(0, 3), turns, agent_log: process.argv.includes('--logs') ? agentLog : undefined, dir };
 }
@@ -151,7 +159,7 @@ async function runMode() {
   for (const id of wanted) {
     const task = tasks.find(t => t.id === id); if (!task) { console.error(`unknown task ${id}`); process.exit(2); }
     for (let n = 1; n <= repeat; n += 1) {
-      if (providerName === 'bedrock' && spent >= budget) { console.log(`stopping: the ${budget} USD budget for this invocation is used up`); return; }
+      if (['bedrock', 'vertex'].includes(providerName) && spent >= budget) { console.log(`stopping: the ${budget} USD budget for this invocation is used up`); return; }
       const result = await runOnce({ task, providerName, model, wallMs, maxCalls }); result.attempt = n; spent += result.cost_usd;
       console.log(JSON.stringify(result));
       if (out) appendFileSync(out, `${JSON.stringify(result)}\n`);

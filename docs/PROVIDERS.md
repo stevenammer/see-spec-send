@@ -142,6 +142,25 @@ enabled and keeps its existing daily cap. `reanalysis run --verify
 --analysis-provider nova-lite` enables the same metered advisory check for that
 manual run. It can only hold a match or add uncertainty to its annex.
 
+## Google Vertex AI
+
+Vertex uses `"kind": "vertex"` and signs in with a service account, not an API key. The provider file names the project, the location, the model and an absolute path to the service account JSON. It can't contain a key. The JSON file must be readable by its owner only, and the service account should have just the Vertex AI User role, in a project of its own with a budget alert.
+
+```json
+{
+  "name": "vertex-flash",
+  "kind": "vertex",
+  "enabled": true,
+  "project": "your-project-id",
+  "location": "us-central1",
+  "model": "google/gemini-2.5-flash",
+  "serviceAccountFile": "/etc/see-spec-send/vertex-sa.json",
+  "price": { "inputMicrosPerMillion": 300000, "outputMicrosPerMillion": 2500000 }
+}
+```
+
+It talks to Vertex's OpenAI-compatible chat endpoint (`https://<location>-aiplatform.googleapis.com/v1/projects/<project>/locations/<location>/endpoints/openapi/chat/completions`), so it works for analysis lanes and, through the gateway, for the builder. The sign-in is a signed token exchanged with Google for a short-lived access token, using only Node's built-in crypto, and the token is reused until it's nearly out. The prices above are list prices set at or above the real ones so a cap holds. Check Google's current price page before you rely on them. It is tested against a stand-in server, and the first real run is the builder eval (`scripts/builder-eval.mjs --provider vertex`).
+
 ## Network boundary
 
 HTTPS is required. Plain HTTP is only available to an explicitly private-enabled

@@ -84,3 +84,22 @@ AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
 ```
 
 Results print one JSON line per run (calls, tokens, cost, what the host decided, what the judge found). `--rejudge FILE` re-judges saved builds without calling a model. `--debug-agent` writes the agent's own log for diagnosis.
+
+## Third batch: harder tasks and prompt variants (Nov 18, 2026)
+
+Haiku had shipped every easy task, so more runs on them couldn't tell one prompt from another. I added four harder tasks, each judged in real Chrome with a hand-written good page the judge must pass and a deliberately broken page it must catch: split a bill to the cent (the extra cents go to the first people), a checklist that survives a reload, compare two email lists (case and spaces ignored, sorted, counted), and a due-date list that flags what's overdue and keeps tied dates in entry order.
+
+Baseline (no extra instructions), Claude Haiku 4.5, two runs per task: **7 of 8 shipped**, about 6.5 cents a build, 16 to 25 seconds each. The one miss was the due-date list (6 of 7 checks).
+
+**Gemini 3.8 Flash on Vertex AI**, all seven tasks, two runs each: **13 of 14 shipped**, about 91 seconds a build, roughly 7 cents on my deliberately high price meter (the real bill is lower). The one miss was a build that ran out of wall time even though its page passed all 7 checks. The first attempts failed on every task: the builder's tool definitions carry JSON Schema keywords (`$schema`, `additionalProperties`) that Gemini rejects with a 400. The adapter now cuts schemas down to what Gemini accepts. That, the translation between the builder's chat format and Gemini's native one, and the Vertex sign-in are in `provider/` with tests.
+
+**Prompt variants** (carried as the steward's adopted builder instructions, so no image rebuild): a self-check ("restate each requirement, then re-read the code against it"), a pitfalls list ("keep ids exact, ordering words mean it, money in whole cents, replace means clear first, ignore blank input, save only when told") and both. On Gemini the baseline was already at the ceiling, so I stopped after six self-check builds (6 of 6). On Amazon Nova Lite, a much weaker and cheaper model, 14 builds each:
+
+| Variant | Shipped | Accepted by the host |
+| --- | --- | --- |
+| Baseline | 1 | 12 |
+| Self-check | 1 | 11 |
+| Pitfalls | 3 | 11 |
+| Both | 2 | 12 |
+
+Read plainly: none of the prompts moved Nova Lite in a way I'd trust. Three of fourteen against one of fourteen is noise at this size. Haiku and Gemini Flash don't need help, and Nova Lite can't use it. So I'm **not changing the builder's default prompt**. A model in the middle (Nova Pro, or a Gemini or Haiku with a handicap) is where a prompt could matter, and I haven't run that. Total spend on this batch was about $0.60 for the eight Haiku builds and about $1.4 for the Gemini runs on the high-priced meter, plus a few cents for Nova Lite.

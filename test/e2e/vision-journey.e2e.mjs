@@ -563,6 +563,7 @@ async function main() {
     await olive.waitForFunction(() => !document.querySelector('form[data-send]'));
     await leader.goto(decisionUrl);
     const returnForm = leader.locator('form[data-decision]');
+    await returnForm.locator('summary').click();
     await returnForm.locator('[name=disposition]').selectOption('return_for_revision');
     await returnForm.locator('[name=reason_code]').fill('existing_option_unchecked');
     await returnForm.locator('[name=needed]').fill('Check the existing handoff view.');
@@ -595,6 +596,7 @@ async function main() {
     await olive.waitForFunction(() => !document.querySelector('form[data-send]'));
     await leader.goto(decisionUrl);
     const notBuilt = leader.locator('form[data-decision]');
+    await notBuilt.locator('summary').click();
     await notBuilt.locator('[name=disposition]').selectOption('resolve_without_build');
     await notBuilt.locator('[name=reason_code]').fill('existing_option_sufficient');
     await notBuilt.locator('[name=alternative]').fill('Use the existing handoff view.');

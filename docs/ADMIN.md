@@ -7,7 +7,7 @@ temporary password. Save it before closing the terminal. It is never stored as
 plaintext. Sign in and change it before working. `person reset --id ID` prints a
 one-time reset code; a temporary credential does not grant normal app access.
 
-`node cli.js invite create --role member --expires 24h` prints one redeemable invite.
+`node cli.js invite create --role member --expires 24h` prints one redeemable invite. Add `--for <account id>` (lowercase letters, digits, dots, dashes) and that invite can only create that one account. For a pilot, make every invite `--for` the person it's going to, so a forwarded code can't become a second voter. The rule that the person who wrote the spec, the approver and the deliverer can't say it helps counts accounts, so who gets an account is the control.
 Roles are `member` or `leader`.
 
 `node cli.js person list` prints registered people and leader flags.

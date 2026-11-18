@@ -213,3 +213,16 @@ test('the page route that takes a hand-delivered try refuses once the approval h
 });
 import { readFileSync as readFileSyncImported } from 'node:fs';
 function readFileSyncForTest(path) { return readFileSyncImported(new URL(path, import.meta.url), 'utf8'); }
+
+test('an invite made for a named account only ever creates that account', async () => {
+  const store = new Store(); const auth = new Auth(store);
+  try {
+    const named = auth.createInvite('member', Date.now() + 3_600_000, { forId: 'nick' });
+    await assert.rejects(() => auth.redeem(named, 'steven2', 'steven2-long-password-9x'), /invite unavailable/, 'a different name is refused with the generic message');
+    assert.equal(auth.listInvites().find(row => row.for === 'nick')?.status, 'open', 'and the invite is still open for the right person');
+    await assert.doesNotReject(() => auth.redeem(named, 'nick', 'nick-long-password-9x'));
+    const open = auth.createInvite('member');
+    await assert.doesNotReject(() => auth.redeem(open, 'cleo', 'cleo-long-password-9x'), 'an unnamed invite still lets the redeemer pick');
+    assert.throws(() => auth.createInvite('member', Date.now() + 1000, { forId: 'Bad Name!' }), /invalid account id/);
+  } finally { store.close(); }
+});

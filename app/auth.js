@@ -76,11 +76,14 @@ export class Auth {
     this.store.registerPerson(id, { leader });
   }
 
-  createInvite(role, expires = this.clock() + 24 * 60 * minute) {
+  // An invite can be made for one named account. Whoever redeems it gets that account and no other, so a forwarded
+  // code can't be turned into a second, differently named person. Without a name, the redeemer picks one.
+  createInvite(role, expires = this.clock() + 24 * 60 * minute, { forId = null } = {}) {
     if (!['member', 'leader'].includes(role)) throw new Error('invalid invite role');
+    if (forId !== null && !validAccountId(forId)) throw new Error('invalid account id for invite');
     const value = token();
-    this.db.prepare('INSERT INTO invites(digest,role,expires) VALUES(?,?,?)')
-      .run(hash(value), role, expires);
+    this.db.prepare('INSERT INTO invites(digest,role,expires,for_id) VALUES(?,?,?,?)')
+      .run(hash(value), role, expires, forId);
     return value;
   }
 
@@ -139,6 +142,7 @@ export class Auth {
     try {
       const invite = this.db.prepare('SELECT * FROM invites WHERE digest=?').get(digest);
       if (!invite || invite.expires <= this.clock() || invite.revoked === 1) throw invalid('invite unavailable');
+      if (invite.for_id !== null && invite.for_id !== undefined && invite.for_id !== id) throw invalid('invite unavailable');
       const changed = this.db.prepare('UPDATE invites SET used=1 WHERE digest=? AND used=0').run(digest);
       if (changed.changes !== 1) throw invalid('invite unavailable');
       this.db.prepare('INSERT INTO users(id,password,leader) VALUES(?,?,?)')
@@ -349,8 +353,8 @@ export class Auth {
   // Shows a prefix of each invite's digest. The token itself is never stored or listed.
   listInvites() {
     const current = this.clock();
-    return this.db.prepare('SELECT digest, role, expires, used, revoked FROM invites ORDER BY expires, digest').all()
-      .map(row => ({ id: row.digest.slice(0, 12), role: row.role, expires: row.expires,
+    return this.db.prepare('SELECT digest, role, expires, used, revoked, for_id FROM invites ORDER BY expires, digest').all()
+      .map(row => ({ id: row.digest.slice(0, 12), role: row.role, expires: row.expires, ...(row.for_id ? { for: row.for_id } : {}),
         status: row.revoked === 1 ? 'revoked' : row.used === 1 ? 'used'
           : row.expires <= current ? 'expired' : 'open' }));
   }

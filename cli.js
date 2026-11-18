@@ -590,7 +590,7 @@ async function run(argv, env, write) {
   } else if (command === 'invite' && args[0] === 'create') {
     const role = value('--role');
     const hours = Number((value('--expires') || '24h').replace('h', ''));
-    write(auth.createInvite(role, Date.now() + hours * 60 * 60 * 1000));
+    write(auth.createInvite(role, Date.now() + hours * 60 * 60 * 1000, { forId: value('--for') || null }));
   } else if (command === 'invite' && args[0] === 'list') {
     for (const row of auth.listInvites()) write(JSON.stringify(row));
   } else if (command === 'invite' && args[0] === 'revoke') {

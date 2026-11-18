@@ -191,3 +191,10 @@ test('a spec page with no spec yet still has a page heading, and date boxes show
   const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
   assert.match(css, /input\[type=datetime-local\]:focus-within/);
 });
+
+test('the leader\'s other-decision form shows two fields first and folds the rest away, in plain words', () => {
+  const source = readFileSync(new URL('../app/pages.js', import.meta.url), 'utf8');
+  assert.match(source, /<details><summary>More detail about this decision \(all optional\)<\/summary><fieldset><legend>Outcome details<\/legend>/);
+  assert.match(source, /A short label for this decision/);
+  assert.doesNotMatch(source, /Reason code<input|Policy class reference|Approval leash/);
+});

@@ -261,6 +261,8 @@ const mutants = [
   ["audit: a hand-delivered try can't be voted on by its deliverer", "core/machine.js", "...(deliverer ? { ineligibleHelpers: addIneligible(context, deliverer) } : {}),", "", T(['audit-findings'])],
   ["audit: hand delivery refuses an expired approval", "app/http.js", "if (state.context.leash?.expiresAt && clock() >= Date.parse(state.context.leash.expiresAt)) throw refused('approval expired');", "", T(['audit-findings'])],
   ["audit: hand delivery refuses while the system is stopped", "app/http.js", "if (killed(store)) throw refused('system stopped');", "", T(['audit-findings'])],
+  ["audit: a named invite only makes its own account", "app/auth.js", "if (invite.for_id !== null && invite.for_id !== undefined && invite.for_id !== id) throw invalid('invite unavailable');", "", T(['audit-findings'])],
+  ["ui: the extra decision fields are folded away", "app/pages.js", "<details><summary>More detail about this decision (all optional)</summary><fieldset>", "<fieldset>", T(['ui-clarity'])],
   ["ui: Effort skip is in plain words", "app/pages-effort.js", "this stage was closed before Effort could answer, so it was skipped", "post superseded", T(['ui-clarity'])],
   ["break: mentoring ignores a second submit", "public/mentoring.js", "if(form.dataset.busy)return;", "", T(['break-it'])],
   ["break: mentoring buttons come back after a failure", "public/mentoring.js", "}catch{\n  release();", "}catch{\n  ", T(['break-it'])],

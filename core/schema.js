@@ -111,4 +111,5 @@ export const LEGACY_COLUMNS = [
   ['users', 'must_change', 'INTEGER NOT NULL DEFAULT 0'],
   ['users', 'temp_used', 'INTEGER NOT NULL DEFAULT 0'],
   ['invites', 'revoked', 'INTEGER NOT NULL DEFAULT 0'],
+  ['invites', 'for_id', 'TEXT'],
 ];

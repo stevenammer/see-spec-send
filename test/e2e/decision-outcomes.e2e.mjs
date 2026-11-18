@@ -48,6 +48,7 @@ async function main() {
     await op.waitForFunction(() => !document.querySelector('form[data-send]'));
     await leader.goto(itemUrl); await leader.getByRole('heading', { name: 'Decision packet' }).waitFor();
     const form = leader.locator('form[data-decision]');
+    await form.locator('summary').click();
     await form.locator('[name=disposition]').selectOption('defer'); await form.locator('[name=reason_code]').fill('dependency_outstanding');
     await form.locator('[name=reason]').fill('Wait for the service owner to confirm readiness.');
     await form.locator('[name=owner]').fill('service-owner'); await form.locator('[name=review_by]').fill('2026-12-01');

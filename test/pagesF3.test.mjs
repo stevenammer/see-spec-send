@@ -61,7 +61,7 @@ test('F3 approved leash stays visible to a member with its exact resource bounds
   const { append, render, spec, packet } = setup();
   append({ type: 'approved', actor: 'leader', spec_hash: spec, packet_hash: packet, reason: 'A small independent trial will answer this.', cap_usd: 2.5, quorum: 2, max_iterations: 2, window_minutes: 30, expires_at: '2026-11-14T00:30:04.000Z' });
   const page = render();
-  assert.match(page, /Approval leash/);
+  assert.match(page, /Limits of this approval/);
   assert.match(page, /up to 2 additional build turns, 30 minutes, until 2026-11-14T00:30:04.000Z/i);
   assert.match(page, /Cap: \$2\.50/);
   assert.match(page, /2 independent people must say it helps/);

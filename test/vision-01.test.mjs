@@ -64,7 +64,7 @@ test('V1 erasure preserves anchors and comments have their own 1,000-event cap',
   const seeHash = store.read('see').context.seeHash;
   append(store, 'see', { type: 'commented', actor: 'member', comment: 'A comment', kind: 'comment', anchor_kind: 'see', anchor_hash: seeHash }, 2);
   const target = store.events('see').at(-1).body_hash;
-  store.erase('see', target, 'op', at(3), { ground: 'privacy', note: 'Remove a member comment containing personal details.' });
+  store.erase('see', target, 'leader', at(3), { ground: 'privacy', note: 'Remove a member comment containing personal details.' });
   append(store, 'see', { type: 'commented', actor: 'op', comment: 'After erase', kind: 'comment', anchor_kind: 'see', anchor_hash: seeHash }, 4);
   assert.deepEqual(store.verifyAll(), [{ item: 'see', ok: true }]);
   append(store, 'see', { type: 'revised', actor: 'op', text: 'A state event still works', base_hash: seeHash }, 5);

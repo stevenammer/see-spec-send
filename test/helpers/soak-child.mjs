@@ -41,7 +41,7 @@ if (role === 'handler') {
     const member = members[n % members.length];
     const headers = { cookie: `sss=${member.value}`, origin: 'http://127.0.0.1', 'x-csrf-token': member.csrf };
     try {
-      const response = await request(handler, 'POST', '/api/items', { problem: `soak ${n}`, have: true, have_note: 'looked', verdict: 'build_needed' }, headers);
+      const response = await request(handler, 'POST', '/api/items', { original: `soak ${n}` }, headers);
       stats.ops += 1;
       if (response.status === 201) stats.ok += 1;
       else if (response.status === 429) stats.refused += 1;

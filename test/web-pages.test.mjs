@@ -46,7 +46,7 @@ test('the sandbox never allows same-origin access', () => {
 function setup() {
   const store = new Store();
   const auth = new Auth(store);
-  return { store, auth, handler: createHandler({ store, auth }) };
+  return { store, auth, handler: createHandler({ legacyPosts: true, store, auth }) };
 }
 
 async function call(handler, method, path, input, headers = {}) {

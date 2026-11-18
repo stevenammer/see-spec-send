@@ -223,7 +223,7 @@ async function main() {
     await steven.locator('iframe[title="Playable try"]').waitFor();
     const before = await steven.locator('main').innerText();
     assert.match(before, /0 of 2 people have said it helps/);
-    assert.match(before, /If it doesn't help, leave a comment/, 'the page says what to do if it did not help');
+    assert.match(before, /If it doesn't help, use the "It didn't help" box/, 'the page says what to do if it did not help');
     assert.match(before, /Press this only if it really helped/, 'the button explains itself');
     // The next-step note links down to the try.
     await steven.getByRole('link', { name: 'Jump to it' }).click();

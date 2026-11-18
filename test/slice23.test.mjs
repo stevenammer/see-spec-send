@@ -49,7 +49,7 @@ function fixture(options = {}) {
   const lines = [];
   const store = new Store();
   const auth = new Auth(store);
-  const handler = createHandler({ store, auth, secure: false, origin: ORIGIN, log: line => lines.push(line), ...options });
+  const handler = createHandler({ legacyPosts: true, store, auth, secure: false, origin: ORIGIN, log: line => lines.push(line), ...options });
   return { store, auth, handler, lines };
 }
 

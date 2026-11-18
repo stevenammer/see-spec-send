@@ -23,10 +23,10 @@ If you only do one thing, do this. It's what I'd run first, and it's what I'd te
 - **Quorum:** the approving leader sets how many people must say a try helped. Agree before week 1 that it's never less than 2, and that the people counted can't include anyone who shaped the SPEC or the try.
 - **What goes in:** non-sensitive problems only. Restricting a post to a group is possible (see ADMIN.md) but opt-in, and the post form doesn't have a field for it yet, so don't plan around it.
 - **The AI:** leave the AI builder off for the first pass, or put it behind one priced provider with the run limits set. Without a model, Effort doesn't reply, and a try is a page someone pastes in. Say that plainly to the team. See AGENT_HARNESSES.md for what has and hasn't been proven.
-- **Backups:** run a daily backup yourself (the tool doesn't schedule one). For example, a cron line such as `15 2 * * * node cli.js backup --to /backups/sss-$(date +\%F).db`, and check one restore before week 1.
+- **Backups:** install `docs/systemd/see-spec-send-backup.service` (it runs `node cli.js replicate`, a verified backup every hour, newest 72 kept; put the folder on another disk), or run `replicate` yourself. Check one restore before week 1 with `node cli.js backup verify --from <backup>` and a trial restore into a new path.
 - **Review:** the operator and a leader read the feed together once a week for a read-scope mistake, a surprising spend, or anything someone is uncomfortable with.
 - **What to measure:** decisions recorded with reasons, not fixes shipped. Counts don't prove quality or causation.
-- **What nobody gets:** there's no notification when something is waiting for a decision or a try is ready, there's no "doesn't help" button (say it in a comment), and votes are visible. Tell the team so nobody waits for a ping that won't come.
+- **What nobody gets:** there's no email or chat ping when something is waiting. The feed shows a "Waiting on you" list, and the outbound webhook in INTEGRATIONS.md sends each event's stage and link to a relay you run, which can post "waiting for a decision" to Slack or Teams. There's an "It didn't help" box on every try, but it's a comment, not a vote. Votes are visible. Tell the team so nobody waits for a ping that won't come.
 
 ## Roles
 

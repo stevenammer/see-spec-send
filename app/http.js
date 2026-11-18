@@ -257,7 +257,7 @@ const validEvent = input => {
 
 const postBinding = req => ({ post_id: req.headers['x-post-id'], post_version: req.headers['x-post-version'] });
 
-export function createHandler({ auth, store, integrations, questModel = null, analysisAskModel = null, analysisGateway = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, auditLog = null, trustedProxy = false, canRead: readPolicy = defaultCanRead, bundleServer = null, metricsToken = null, databaseSize = () => 0, readiness = null, disablePasswordLogin = false }) {
+export function createHandler({ auth, store, integrations, questModel = null, analysisAskModel = null, analysisGateway = null, secure = true, origin = 'https://localhost', clock = Date.now, log = () => {}, auditLog = null, trustedProxy = false, canRead: readPolicy = defaultCanRead, bundleServer = null, metricsToken = null, databaseSize = () => 0, readiness = null, disablePasswordLogin = false, legacyPosts = false }) {
   if (bundleServer && (!bundleServer.hostSuffix || typeof bundleServer.bundleUrl !== 'function')) throw new Error('invalid bundle server configuration');
   integrations ||= new Integrations(store, { origin });
   const mentoring = new Mentoring(store, { clock });
@@ -496,7 +496,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       if (req.method === 'GET' && url.pathname === '/') {
         const listing = store.listPage(pageAfter(url));
         // The JSON list already hides restricted items from people outside their audience. The page has to as well.
-        return page(res, feedPage(listing.items.filter(item => readable(item.id)), listing.next));
+        return page(res, feedPage(listing.items.filter(item => readable(item.id)), listing.next, { person: session.person, leader }));
       }
       if (req.method === 'GET' && url.pathname === '/items/new') return page(res, newItemPage());
       if (req.method === 'GET' && url.pathname === '/quest') {
@@ -703,6 +703,9 @@ export function createHandler({ auth, store, integrations, questModel = null, an
             rules: CURRENT_RULES, ...(input.audience ? { audience: input.audience } : {}), ...(input.related ? { related: input.related } : {}), at: new Date(clock()).toISOString() }, { idem });
           return json(res, 201, { id, state: store.read(id) });
         }
+        // The older problem-and-verdict way of posting made items under the first, weaker rule set (no decision packet, no
+        // reason or expiry on approval). New items are all made from the problem text, or from a finished Vision Quest.
+        if (!input.quest && !legacyPosts) return json(res, 409, { error: 'request refused', reason: 'post the problem text as "original"' });
         // Derive and validate before looking up a receipt, including the signed-in owner.
         const eventBody = input.quest ? fromQuest(input.quest, session.person) : checked(input);
         const id = input.quest ? createHash('sha256').update(canonical({

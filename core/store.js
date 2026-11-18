@@ -642,7 +642,8 @@ export class Store {
         else {
           if (['posted', 'forked', 'approved', 'returned', 'not_built', 'decided', 'experiment_not_helpful', 'op_withdrew', 'sent'].includes(target.type)) throw refused('decision records and original SEEs cannot erase');
           if (target.actor !== event.actor) {
-            if (!privileged) throw refused('event not allowed');
+            // Erasing someone else's words takes a leader. A steward can erase their own, not other people's comments on their post.
+            if (authority?.leader !== true) throw refused('event not allowed');
             if (!['privacy', 'legal', 'safety', 'customer or employee personal data'].includes(event.ground)) throw refused('erase ground required');
             if (typeof event.note !== 'string' || event.note.length < 1 || event.note.length > 2000) throw refused('erase note required');
           }
@@ -993,7 +994,7 @@ export class Store {
       const authority = this.actor(actor, item);
       if (!rules2 && !(authority?.leader || actor === this.read(item).context.steward)) throw refused('event not allowed');
       if (rules2 && target.actor !== actor) {
-        if (!(authority?.leader || actor === this.read(item).context.steward)) throw refused('event not allowed');
+        if (authority?.leader !== true) throw refused('event not allowed');
         if (!['privacy', 'legal', 'safety', 'customer or employee personal data'].includes(ground)) throw refused('erase ground required');
         if (typeof note !== 'string' || note.length < 1 || note.length > 2000) throw refused('erase note required');
       }

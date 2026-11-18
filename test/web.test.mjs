@@ -10,7 +10,7 @@ class Response { constructor() { this.headers = {}; this.status = 200; this.text
 async function call(handler, method, path, input, headers = {}) { const req = Readable.from(input === undefined ? [] : [JSON.stringify(input)]); req.method = method; req.url = path; req.headers = { ...(input === undefined ? {} : { 'content-type': 'application/json' }), ...headers }; req.socket = { remoteAddress: '127.0.0.1' }; const res = new Response(); await handler(req, res); return { ...res, body: res.text && res.headers['content-type']?.includes('json') ? JSON.parse(res.text) : {} }; }
 const cookie = response => response.headers['set-cookie'].split(';')[0];
 test('manual web path is authorized, escaped, sandboxed, and has strict pages', async () => {
-  const store = new Store(); const auth = new Auth(store); const handler = createHandler({ store, auth });
+  const store = new Store(); const auth = new Auth(store); const handler = createHandler({ legacyPosts: true, store, auth });
   for (const [id, leader] of [['lead', true], ['steward', false], ['one', false], ['two', false], ['member', false]]) await auth.createUser(id, password, leader);
   const login = async id => { const response = await call(handler, 'POST', '/api/login', { id, password }); const me = response.body; return { cookie: cookie(response), headers: { cookie: cookie(response), origin: 'https://localhost', 'x-csrf-token': me.csrf } }; };
   const l = await login('lead'); const s = await login('steward'); const m = await login('member'); const send = (who, path, input) => call(handler, 'POST', path, input, who.headers);

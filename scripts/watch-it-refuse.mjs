@@ -36,6 +36,8 @@ export async function run() {
     }
     let item;
     const send = async (who, label, path, input, key) => {
+      // A post is frozen once it moves on, so each request names the post it is about, the way the page does.
+      const active = item ? store.read(item).context.activePost : null;
       const response = await fetch(`${base}${path}`, {
         method: 'POST',
         headers: {
@@ -43,6 +45,7 @@ export async function run() {
           cookie: sessions[who].cookie,
           origin: base,
           'x-csrf-token': sessions[who].csrf,
+          ...(active ? { 'x-post-id': active.id, 'x-post-version': active.version } : {}),
         },
         body: JSON.stringify(input),
       });
@@ -59,19 +62,25 @@ export async function run() {
     const events = '/api/items/ITEM/events';
     const at = path => path.replace('ITEM', item);
 
-    await send('nick', 'post a problem', '/api/items', {
-      problem: 'We copy every refund into a spreadsheet by hand.', have: true,
-      have_note: 'Checked the billing tool settings.', verdict: 'build_needed',
+    await send('nick', 'post a problem', '/api/items', { original: 'We copy every refund into a spreadsheet by hand.' });
+    const see = store.read(item).context.seeHash;
+    await send('steven', 'add what they know in a comment', at(events), {
+      type: 'commented', kind: 'concern', comment: 'It gets worse when two of us edit the sheet at the same time.', anchor_kind: 'see', anchor_hash: see,
     });
     await send('nick', 'write the spec', at(events), {
-      type: 'specced', must: ['Show each refund once'], how_we_know: ['Nobody opens the spreadsheet'], out_of_scope: [],
+      type: 'specced', see_hash: see, must: ['Show each refund once'], how_we_know: ['Nobody opens the spreadsheet'], out_of_scope: [],
     });
+    const specHash = store.read(item).context.specHash;
+    await send('nick', 'send it for a decision', at('/api/items/ITEM/send'), { spec_hash: specHash });
     await fetch(`${base}/api/stepup`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie: sessions.jose.cookie, origin: base, 'x-csrf-token': sessions.jose.csrf },
       body: JSON.stringify({ password }),
     });
-    await send('jose', 'approve, cap $5, quorum 2', at(events), { type: 'approved', cap_usd: 5, quorum: 2 });
+    await send('jose', 'approve, cap $5, quorum 2', at(events), {
+      type: 'approved', spec_hash: specHash, packet_hash: store.read(item).context.sent.packetHash,
+      reason: 'Small enough to try, and the spec is clear.', cap_usd: 5, quorum: 2,
+    });
     const state = await send('nick', 'deliver one playable try', at('/api/items/ITEM/artifact'), { html: '<h1>Refunds</h1>' });
     const artifact = state.context.artifact;
     const help = { type: 'helped', artifact_hash: artifact };

@@ -77,9 +77,16 @@ test('F3 erase rules hold for a direct append of an erased event', () => {
   const erased = (actor, body_hash, extra = {}, n = 9) => () => store.append('f3', { type: 'erased', actor, body_hash, redacted_hash: 'r'.repeat(64), ...extra, at: at(n) }, { idem: `direct:${actor}:${n}` });
   store.registerPerson('other');
   assert.throws(erased('other', comment), /not allowed/, 'a person who is neither the author, a leader nor the steward cannot erase it');
-  assert.throws(erased('op', comment), /ground/, 'the steward needs a stated ground to erase someone else');
+  assert.throws(erased('op', comment), /not allowed/, 'the steward can\'t erase someone else\'s words, only a leader can');
   assert.throws(erased('leader', comment), /ground/);
   assert.throws(erased('leader', comment, { ground: 'privacy' }), /note/);
   assert.throws(erased('leader', op, { ground: 'privacy', note: 'x' }), /decision records|original/);
   assert.throws(erased('member', op), /decision records|original/);
+});
+
+test('F3 through the erase call itself: a steward can\'t erase another person\'s comment, a leader can with a ground and a note', () => {
+  const { store } = setup();
+  const comment = store.events('f3')[1].body_hash;
+  assert.throws(() => store.erase('f3', comment, 'op', at(20), { ground: 'privacy', note: 'The steward tries to remove it.' }), /not allowed/);
+  assert.doesNotThrow(() => store.erase('f3', comment, 'leader', at(21), { ground: 'privacy', note: 'Personal data, removed by a leader.' }));
 });

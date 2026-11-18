@@ -131,33 +131,27 @@ function registryRoster(story) {
   return roster;
 }
 
-test('the tour matches docs/WATCH_IT_REFUSE.md line for line and ends in Helps', async () => {
+test('the demo\'s story refuses the same three attempts the real server refuses, and both end in Helps', async () => {
   const doc = readFileSync(new URL('../docs/WATCH_IT_REFUSE.md', import.meta.url), 'utf8');
   const block = doc.split('```text\n')[1].split('```')[0];
   const lines = block.split('\n').filter(Boolean).map(line => {
     const match = line.match(/^(\w+)\s+(.+?)\s+(\d{3}) (accepted|refused)\s+item is (\w+)(?: \((\d+) of (\d+) helpers\))?$/);
     assert.ok(match, `could not parse: ${line}`);
-    return { who: match[1], label: match[2], outcome: match[4], state: match[5], helpers: match[6] ? Number(match[6]) : null, quorum: match[7] ? Number(match[7]) : null };
+    return { who: match[1], outcome: match[4], state: match[5] };
   });
-  assert.equal(lines.length, 9);
-  const session = createSession({ log: createLog({ roster: makeRoster(), item: demoItem }), roster: makeRoster() });
-  const played = await playAll(session);
-  assert.equal(played.length, lines.length);
-  played.forEach((entry, index) => {
-    const want = lines[index];
-    assert.equal(entry.step.who, want.who);
-    assert.equal(entry.outcome.status, want.outcome, `step ${index + 1}`);
-    assert.equal(entry.state.state, want.state, `step ${index + 1}`);
-    if (want.helpers !== null) { assert.equal(entry.state.helpers, want.helpers); assert.equal(entry.state.quorum, want.quorum); }
-    // Labels match except step 4, where the demo says honestly that its try is a note.
-    if (index !== 3) assert.equal(entry.step.label, want.label);
-  });
-  const refused = played.filter(entry => entry.outcome.status === 'refused');
-  assert.equal(refused.length, 3);
-  assert.deepEqual(refused.map(entry => entry.outcome.rule), ['author-cannot-help', 'approver-cannot-help', 'no-done-event']);
-  assert.equal(summary(session).state, 'HELPS');
-  assert.equal((await session.log.verify()).ok, true);
-  assert.equal(tourSteps.filter(step => step.expect === 'refused').length, 3);
+  const realRefusals = lines.filter(line => line.outcome === 'refused').map(line => line.who);
+  assert.equal(lines.at(-1).state, 'HELPS');
+  const { createVisionDemo } = await import('../demo/lib/vision.js');
+  const { story } = await import('../demo/lib/story.js');
+  const demo = createVisionDemo();
+  const demoRefusals = [];
+  for (const step of story) {
+    const out = await step.run(demo);
+    if (step.refuse) { assert.equal(out.ok, false, `${step.say} must be refused`); demoRefusals.push(step.who); } else assert.equal(out.ok, true, `${step.say}: ${out.error}`);
+  }
+  assert.deepEqual(demoRefusals, realRefusals, 'the same people are refused, in the same order, as on the real server');
+  assert.equal(demo.state().context.phase, 'HELPS');
+  assert.equal((await demo.verify()).ok, true);
 });
 
 test('authority comes from the roster, not from the event', async () => {

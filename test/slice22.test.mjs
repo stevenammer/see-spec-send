@@ -46,7 +46,7 @@ test('worker reads only SENDING items on a pass, not every item in the database'
 test('lock contention answers 503 with Retry-After and is not worded as a refusal', async t => {
   const file = join(directory(t), 'db.sqlite');
   const store = new Store(file, { busyMs: 50 });
-  const auth = new Auth(store); const handler = createHandler({ store, auth });
+  const auth = new Auth(store); const handler = createHandler({ legacyPosts: true, store, auth });
   const headers = await member(auth, handler, 'one');
   const made = await call(handler, 'POST', '/api/items', problem, headers);
   assert.equal(made.status, 201);
@@ -67,7 +67,7 @@ test('lock contention answers 503 with Retry-After and is not worded as a refusa
 
 // B12: the feed and the item API are paged at a fixed size, and the feed reads only one page.
 test('feed and item API are paged at a fixed size and the feed reads one page of items', async () => {
-  const store = new Store(); const auth = new Auth(store); const handler = createHandler({ store, auth });
+  const store = new Store(); const auth = new Auth(store); const handler = createHandler({ legacyPosts: true, store, auth });
   const headers = await member(auth, handler, 'one');
   store.registerPerson('author');
   for (let n = 0; n < 2000; n += 1) put(store, `item-${String(n).padStart(4, '0')}`, 'checked', 'author', { problem: `problem ${n}`, looked: ['x'], found: [], verdict: 'build_needed' });
@@ -95,7 +95,7 @@ test('feed and item API are paged at a fixed size and the feed reads one page of
 test('a member gets 60 writes a minute and the 61st is refused with 429', async () => {
   let now = 1_000_000;
   const store = new Store(); const auth = new Auth(store);
-  const handler = createHandler({ store, auth, clock: () => now });
+  const handler = createHandler({ legacyPosts: true, store, auth, clock: () => now });
   const one = await member(auth, handler, 'one'); const two = await member(auth, handler, 'two');
   for (let n = 0; n < 60; n += 1) assert.equal((await call(handler, 'POST', '/api/items', problem, one)).status, 201, `write ${n + 1}`);
   assert.equal((await call(handler, 'POST', '/api/items', problem, one)).status, 429);
@@ -107,7 +107,7 @@ test('a member gets 60 writes a minute and the 61st is refused with 429', async 
 
 // B12: one event is capped at 16 KB (413), and 200 state-changing events cap an item (429).
 test('an event over 16 KB is 413 and an item at 200 state-changing events is 429', async () => {
-  const store = new Store(); const auth = new Auth(store); const handler = createHandler({ store, auth });
+  const store = new Store(); const auth = new Auth(store); const handler = createHandler({ legacyPosts: true, store, auth });
   const headers = await member(auth, handler, 'one'); store.registerPerson('author');
   const made = await call(handler, 'POST', '/api/items', problem, headers);
   const events = `/api/items/${made.body.id}/events`;
@@ -122,7 +122,7 @@ test('an event over 16 KB is 413 and an item at 200 state-changing events is 429
 
 // B12: gateway receipts are verified once for the whole item page, not once per item.
 test('the item API verifies gateway receipts once per request', async t => {
-  const store = new Store(); const auth = new Auth(store); const handler = createHandler({ store, auth });
+  const store = new Store(); const auth = new Auth(store); const handler = createHandler({ legacyPosts: true, store, auth });
   const headers = await member(auth, handler, 'one');
   for (let n = 0; n < 5; n += 1) assert.equal((await call(handler, 'POST', '/api/items', problem, headers)).status, 201);
   let verifications = 0; const receipts = Ledger.prototype.receipts;

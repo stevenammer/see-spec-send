@@ -100,7 +100,20 @@ export function redeemPage() {
   );
 }
 
-export function feedPage(items, next = null) {
+// A short list of what is waiting on this person, so nobody has to scan the whole feed or wait for a ping that doesn't exist.
+function waitingOn(items, person, leader) {
+  if (!person) return '';
+  const rows = [];
+  for (const item of items) {
+    if (leader && item.state === 'SUBMITTED' && item.steward !== person) rows.push([item, 'is waiting for your decision']);
+    else if (item.state === 'SPECCED' && item.steward === person) rows.push([item, 'has a spec that is ready to send for a decision']);
+    else if (item.state === 'TRYING' && item.steward !== person) rows.push([item, 'has a try ready. Use it and say whether it helped']);
+  }
+  if (!rows.length) return '';
+  return `<section class="waiting"><h2>Waiting on you</h2><ul>${rows.slice(0, 8).map(([item, what]) => `<li><a href="/items/${encodeURIComponent(item.id)}">${escape(item.problem)}</a> ${what}.</li>`).join('')}</ul></section>`;
+}
+
+export function feedPage(items, next = null, { person = null, leader = false } = {}) {
   const cards =
     items
       .map(
@@ -111,7 +124,7 @@ export function feedPage(items, next = null) {
   return shell(
     'The work',
     '<div class="top"><h1>The work</h1><div><a class="button" href="/quest">Start a Vision Quest (recommended)</a> ' +
-      `<a class="button" href="/items/new">Post a problem directly</a></div></div><p class="intro">A Vision Quest is a short set of guided questions that helps you describe a problem well, with no AI involved. Or post the problem directly if you already know what you want to say.</p><ul class="feed">${cards}</ul>` +
+      `<a class="button" href="/items/new">Post a problem directly</a></div></div>${waitingOn(items, person, leader)}<p class="intro">A Vision Quest is a short set of guided questions that helps you describe a problem well, with no AI involved. Or post the problem directly if you already know what you want to say.</p><ul class="feed">${cards}</ul>` +
       (next ? `<p><a href="/?after=${encodeURIComponent(next)}">Next page</a></p>` : ''),
   );
 }
@@ -284,7 +297,7 @@ export function itemPage(item, events, person, leader) {
     ? `<form data-event="commented"><h2>Join the thread</h2><label>Comment<textarea name="comment" required maxlength="4000"></textarea></label><label>Type<select name="kind"><option value="comment">Comment</option><option value="question">Question</option><option value="concern">Concern</option><option value="alternative">Alternative (a different approach)</option></select></label><input type="hidden" name="anchor_kind" value="see"><input type="hidden" name="anchor_hash" value="${escape(context.seeHash)}"><button>Post comment</button></form>`
     : `<form data-event="commented"><h2>Comment</h2><label>Comment<textarea name="comment" required maxlength="4000"></textarea></label>${anchor ? `<input type="hidden" name="anchor_kind" value="${anchor.kind}"><input type="hidden" name="anchor_hash" value="${escape(anchor.hash)}"><p>Attached to the current ${anchor.kind} version.</p>` : '<p>There is no spec version yet.</p>'}<button>Post comment</button></form>`;
   const tryThread = rules2 && item.state === 'TRYING' && context.artifact
-    ? `<h2>Try thread</h2><form data-event="commented"><label>Comment on this try<textarea name="comment" required maxlength="4000"></textarea></label><input type="hidden" name="kind" value="comment"><input type="hidden" name="anchor_kind" value="artifact"><input type="hidden" name="anchor_hash" value="${escape(context.artifact)}"><button>Post comment</button></form>${renderThread(events, { ...context, steward: context.steward === person ? context.steward : null }, 'artifact') || '<p>No try comments yet.</p>'}` : '';
+    ? `<h2>Try thread</h2><form data-event="commented" class="didnt-help"><label>It didn't help. What was missing or wrong?<small>This isn't a vote. It goes in the thread for the team and the leader, who can close the try as not helpful.</small><textarea name="comment" required maxlength="4000"></textarea></label><input type="hidden" name="kind" value="concern"><input type="hidden" name="anchor_kind" value="artifact"><input type="hidden" name="anchor_hash" value="${escape(context.artifact)}"><button>It didn't help</button></form><form data-event="commented"><label>Comment on this try<textarea name="comment" required maxlength="4000"></textarea></label><input type="hidden" name="kind" value="comment"><input type="hidden" name="anchor_kind" value="artifact"><input type="hidden" name="anchor_hash" value="${escape(context.artifact)}"><button>Post comment</button></form>${renderThread(events, { ...context, steward: context.steward === person ? context.steward : null }, 'artifact') || '<p>No try comments yet.</p>'}` : '';
   // Feedback on a superseded try stays readable as history (read-only: no reply, adopt or include controls).
   const oldTryFeedback = rules2 && context.superseded && item.state !== 'TRYING'
     ? events.filter(event => event.type === 'commented' && event.anchor_kind === 'artifact')
@@ -361,7 +374,7 @@ export function itemPage(item, events, person, leader) {
       ? '<p><strong>This is waiting for a leader\'s decision.</strong> You can approve it with a budget, send it back with a reason, or record that it won\'t be built.</p>'
       : '<p><strong>Waiting for a leader\'s decision.</strong> A leader who didn\'t write the spec will approve it, send it back, or record that it won\'t be built.</p>';
     if (state === 'SENDING') return '<p><strong>Approved.</strong> A small version is being built. It will show up here when it\'s ready to try.</p>';
-    if (state === 'TRYING') return '<p><strong>A try is ready.</strong> <a href="#try">Jump to it</a>, use it, then say whether it helped. It only counts as a win when enough people who do the work say it helps. If it doesn\'t help, leave a comment saying what was missing. Don\'t press the button.</p>';
+    if (state === 'TRYING') return '<p><strong>A try is ready.</strong> <a href="#try">Jump to it</a>, use it, then say whether it helped. It only counts as a win when enough people who do the work say it helps. If it doesn\'t help, use the "It didn\'t help" box under the try and say what was missing. Don\'t press the button.</p>';
     if (state === 'HELPS') return '<p><strong>People who do the work said it helps.</strong> The record of how it got here is below.</p>';
     if (state === 'SHELVED') return '<p><strong>This was shelved.</strong> The reason is on the record below.</p>';
     return '';

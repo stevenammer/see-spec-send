@@ -26,6 +26,7 @@ Plain steps for the person running this. Everything here uses commands that exis
 Run this on a schedule you can stand behind, and after every upgrade.
 
 - Back up: `node cli.js backup --to <new path>` (add `--encrypt-to <key file>` to encrypt; the key is never stored in the backup).
+- Schedule it: `docs/systemd/see-spec-send-backup.service` runs `node cli.js replicate --every 1h --keep 72` as a service.
 - Verify without touching live data: `node cli.js backup verify --from <backup>`.
 - Restore: `node cli.js restore --from <backup>` into a new `SSS_DB`. The restored copy starts with the stop latch set. Clear it deliberately once you have checked it.
 - Prune old backups: `node cli.js backup prune --dir <dir> --keep N`. It never removes the newest backup or one that fails verification.

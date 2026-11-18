@@ -226,3 +226,13 @@ test('an invite made for a named account only ever creates that account', async 
     assert.throws(() => auth.createInvite('member', Date.now() + 1000, { forId: 'Bad Name!' }), /invalid account id/);
   } finally { store.close(); }
 });
+
+test('the older problem-and-verdict way of posting is closed by default, and posting the problem text still works', async t => {
+  const { handler, as } = await world(t);
+  const nick = await as('riya');
+  const old = await call(handler, 'POST', '/api/items', nick, { problem: 'Queue backs up at noon', have: true, have_note: 'looked', verdict: 'build_needed' });
+  assert.equal(old.status, 409); assert.match(old.text, /original/);
+  const current = await call(handler, 'POST', '/api/items', nick, { original: 'Queue backs up at noon' });
+  assert.equal(current.status, 201);
+  assert.equal(JSON.parse(current.text).state.context.rules, 3, 'new items are on the current rule set');
+});

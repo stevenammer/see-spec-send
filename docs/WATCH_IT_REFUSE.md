@@ -7,8 +7,10 @@ Run it yourself: `node scripts/watch-it-refuse.mjs`. It starts the server on a f
 throwaway in-memory database, so it touches nothing on disk. This is its output:
 
 ```text
-nick   post a problem                               201 accepted item is CHECKED
+nick   post a problem                               201 accepted item is SEEN
+steven add what they know in a comment              201 accepted item is SEEN
 nick   write the spec                               201 accepted item is SPECCED
+nick   send it for a decision                       201 accepted item is SUBMITTED
 jose   approve, cap $5, quorum 2                    201 accepted item is SENDING
 nick   deliver one playable try                     201 accepted item is TRYING (0 of 2 helpers)
 

@@ -157,7 +157,7 @@ test('Effort says in plain words when it skipped a stage that closed first', () 
 test('the try screen says what to do if it did not help, and shows who already said it helps', () => {
   const trying = world('approved'); trying.item.state = 'TRYING'; trying.item.context = trying.item.context;
   const fresh = text(itemPage(trying.item, trying.events, 'steven', false));
-  assert.match(fresh, /If it doesn't help, leave a comment/);
+  assert.match(fresh, /If it doesn't help, use the "It didn't help" box/);
   assert.match(fresh, /Press this only if it really helped/);
   assert.match(itemPage(trying.item, trying.events, 'steven', false), /href="#try"/);
   assert.match(itemPage(trying.item, trying.events, 'steven', false), /<section id="try">/);
@@ -197,4 +197,31 @@ test('the leader\'s other-decision form shows two fields first and folds the res
   assert.match(source, /<details><summary>More detail about this decision \(all optional\)<\/summary><fieldset><legend>Outcome details<\/legend>/);
   assert.match(source, /A short label for this decision/);
   assert.doesNotMatch(source, /Reason code<input|Policy class reference|Approval leash/);
+});
+
+test('the feed lists what is waiting on you, and only what is yours to do', () => {
+  const items = [
+    { id: 'a', state: 'SUBMITTED', problem: 'Refunds by hand', steward: 'nick', helpers: 0, quorum: 2 },
+    { id: 'b', state: 'SPECCED', problem: 'Queue at noon', steward: 'steven', helpers: 0, quorum: 2 },
+    { id: 'c', state: 'TRYING', problem: 'Note layout', steward: 'nick', helpers: 1, quorum: 2 },
+    { id: 'd', state: 'SUBMITTED', problem: 'Their own item', steward: 'jose', helpers: 0, quorum: 2 },
+  ];
+  const leader = text(feedPage(items, null, { person: 'jose', leader: true }));
+  assert.match(leader, /Waiting on you/);
+  assert.match(leader, /Refunds by hand is waiting for your decision/);
+  assert.doesNotMatch(leader, /Their own item is waiting for your decision/, 'a leader never decides their own item');
+  assert.match(leader, /Note layout has a try ready/);
+  assert.doesNotMatch(leader, /Queue at noon has a spec/, 'only the steward is told to send it');
+  const steward = text(feedPage(items, null, { person: 'steven', leader: false }));
+  assert.match(steward, /Queue at noon has a spec that is ready to send/);
+  assert.doesNotMatch(steward, /waiting for your decision/, 'a member is never asked to decide');
+  assert.doesNotMatch(text(feedPage(items, null, { person: 'nobody', leader: false }).replace(/<li><a[^>]*>(Refunds|Queue)[^<]*<\/a>[^<]*<\/li>/g, '')), /Refunds by hand is waiting/);
+  assert.doesNotMatch(text(feedPage([], null, { person: 'steven' })), /Waiting on you/, 'nothing waiting, no box');
+});
+
+test('a try can be marked as not helping, in words and as a comment, without it being a vote', () => {
+  const source = readFileSync(new URL('../app/pages.js', import.meta.url), 'utf8');
+  assert.match(source, /It didn't help\. What was missing or wrong\?<small>This isn't a vote\./);
+  assert.match(source, /<form data-event="commented" class="didnt-help">/);
+  assert.match(source, /name="kind" value="concern"><input type="hidden" name="anchor_kind" value="artifact">/);
 });

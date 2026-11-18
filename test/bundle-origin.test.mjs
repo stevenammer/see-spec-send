@@ -40,6 +40,8 @@ test('artifact hash prefix lookup is read-only and refuses ambiguous or short pr
   const { store, artifactHash } = readyBundle(); try {
     assert.equal(store.artifactByHashPrefix(artifactHash.slice(0, 31)), null);
     assert.equal(store.artifactByHashPrefix(artifactHash.slice(0, 32)).hash, artifactHash);
+    store.db.prepare('UPDATE bodies SET erased=1 WHERE hash=?').run(artifactHash);
+    assert.equal(store.artifactByHashPrefix(artifactHash.slice(0, 32)), null, 'an erased artifact is no longer served');
   } finally { store.close(); }
 });
 

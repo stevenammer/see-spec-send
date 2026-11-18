@@ -96,3 +96,72 @@ test('the home feed page hides a restricted problem from people outside its audi
   assert.match(await feedFor('riya'), /Private export problem for reservations only/, 'a member of the audience does');
   assert.match(await feedFor('pat'), /An open workspace problem/, 'open items still show');
 });
+
+test('a steward who has left the audience can no longer steer, send, research or draft on a restricted item, and a restricted item cannot be renewed into an open copy', async t => {
+  const { handler, store, as } = await world(t);
+  const riya = await as('riya');
+  const renewal = await call(handler, 'POST', '/api/items/secret/renew', riya, { annex: 'a'.repeat(64), what_is_new: 'Something new came in.', reason: 'The facts changed since then.' });
+  assert.equal(renewal.status, 409); assert.match(renewal.text, /restricted items cannot be renewed yet/);
+  store.groupRemove('Reservations', 'sam');
+  const sam = await as('sam');
+  for (const [path, body] of [['research', {}], ['spec-draft', {}], ['send', {}], ['steer', { instruction: 'Do something else entirely please' }], ['artifact', { html: '<p>x</p>' }]]) {
+    const r = await call(handler, 'POST', `/api/items/secret/${path}`, sam, body);
+    assert.equal(r.status, 403, `${path} refused once the steward is outside the audience`);
+  }
+  const open = await call(handler, 'POST', '/api/items/open/research', sam, {});
+  assert.notEqual(open.status, 403, 'an open item is unaffected');
+});
+
+test('a failed provider call keeps its spend hold but stops blocking other calls once its timeout has passed', async t => {
+  const { fixture, request } = await import('./helpers/gateway-fixture.mjs');
+  const { Gateway } = await import('../gateway/http.js');
+  let now = 1_800_000_000_000;
+  const { store, ledger, token } = fixture(':memory:', { concurrency: 1, timeout_ms: 2000 }, 0.1, { clock: () => now });
+  t.after(() => store.close());
+  const gateway = new Gateway(ledger, () => { throw new Error('upstream rejected the request'); });
+  assert.equal((await gateway.call(token, 'bad-1', request())).status, 202, 'the failure is an unresolved hold');
+  assert.throws(() => ledger.reserve(token, 'too-soon', request()), /concurrency/, 'while it could still be running it holds the slot');
+  now += 3_500;
+  const held = ledger.receipts().reduce((n, row) => n + row.charged_micros, 0);
+  assert.ok(held > 0, 'the money stays held until an operator releases it');
+  assert.doesNotThrow(() => ledger.reserve(token, 'later', request()), 'after the timeout the slot is free again');
+  assert.equal(ledger.receipts().reduce((n, row) => n + row.charged_micros, 0) >= held, true, 'and the earlier hold is still counted');
+});
+
+test('the Quest gateway counts every lane’s spend against the shared caps, analysis included', async () => {
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../gateway/quest.js', import.meta.url), 'utf8');
+  for (const lane of ['receipts()', 'effortReceipts()', 'analysisReceipts()']) assert.ok(source.includes(`this.ledger.${lane}`), `Quest adds up ${lane}`);
+});
+
+test('erasing wording also removes it from a built bundle that copied it, and an erased artifact is no longer served', () => {
+  const store = new Store();
+  try {
+    const wording = 'The night export leaks card digits';
+    const bundle = JSON.stringify({ sss_bundle: 1, manifest: { files: [] }, files: { 'index.html': Buffer.from(`<h1>${wording}</h1>`).toString('base64') } });
+    const hash = 'ab'.repeat(32);
+    store.db.prepare('INSERT INTO bodies(hash,bytes,erased) VALUES(?,?,0)').run(hash, bundle);
+    const keep = store.db.prepare('INSERT INTO bodies(hash,bytes,erased) VALUES(?,?,0)');
+    keep.run('cd'.repeat(32), JSON.stringify({ sss_bundle: 1, manifest: { files: [] }, files: { 'index.html': Buffer.from('<h1>Something else entirely</h1>').toString('base64') } }));
+    assert.equal(store.redactStoredCopies({ original: wording }, 'ef'.repeat(32)), 1, 'exactly the bundle that quoted it is redacted');
+    const row = store.db.prepare('SELECT bytes, erased FROM bodies WHERE hash=?').get(hash);
+    assert.equal(row.erased, 1);
+    assert.ok(!row.bytes.includes('sss_bundle') && !Buffer.from(row.bytes).toString().includes(wording));
+    assert.equal(store.db.prepare('SELECT erased FROM bodies WHERE hash=?').get('cd'.repeat(32)).erased, 0, 'an unrelated bundle is left alone');
+    assert.equal(store.artifactByHashPrefix(hash), null, 'an erased artifact is not served by the bundle origin');
+  } finally { store.close(); }
+});
+
+test('the chat gateway refuses image, audio and file message parts it can’t meter, and still takes text parts', async () => {
+  const { fixture, request } = await import('./helpers/gateway-fixture.mjs');
+  const { ChatGateway } = await import('../gateway/http.js');
+  const { store, ledger, token } = fixture(':memory:', { concurrency: 5 });
+  try {
+    const chat = parts => ({ model: ledger.rate.model, stream: false, messages: [{ role: 'user', content: parts }], max_tokens: 5 });
+    const gateway = new ChatGateway(ledger, { chat: async () => ({ choices: [], usage: { prompt_tokens: 1, completion_tokens: 1 } }) });
+    for (const part of [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }, { type: 'input_audio', input_audio: {} }, { type: 'file', file: {} }, null]) {
+      await assert.rejects(() => gateway.call(token, `img-${Math.random().toString(36).slice(2)}`, chat([{ type: 'text', text: 'hi' }, part])), /invalid chat payload/);
+    }
+    await assert.doesNotReject(() => gateway.call(token, 'text-ok', chat([{ type: 'text', text: 'hi' }])));
+  } finally { store.close(); }
+});

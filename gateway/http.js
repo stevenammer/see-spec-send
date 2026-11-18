@@ -46,6 +46,11 @@ function validateChat(raw, ledger) {
   request.max_tokens = Math.min(asked, policy.output_tokens);
   if (request.model !== ledger.rate.model || !Array.isArray(request.messages) || request.messages.length === 0
     || typeof request.stream !== 'boolean') throw Error('invalid chat payload');
+  // Only text is metered by the byte count above. An image, audio or file part can cost far more than its bytes suggest,
+  // so a message may carry text parts and nothing else.
+  for (const message of request.messages) {
+    if (Array.isArray(message?.content) && message.content.some(part => !part || !['text', 'input_text', 'output_text'].includes(part.type))) throw Error('invalid chat payload');
+  }
   if (Buffer.byteLength(JSON.stringify(request), 'utf8') > policy.input_bytes) throw Error('chat limit');
   return { request, input: proxyInput(request) };
 }

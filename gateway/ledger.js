@@ -89,6 +89,9 @@ export class Ledger {
     this.store = store;
     this.db = store.db;
     this.clock = clock;
+    // When each call started in this process. A call with an unknown outcome keeps its spend hold until an operator
+    // releases it, but it only occupies a concurrency slot while it could still be running (see reserve).
+    this.started = new Map();
     demand(validRate(rate), 'invalid gateway rate');
     this.rate = Object.freeze({ ...rate });
   }
@@ -301,8 +304,12 @@ export class Ledger {
       const combined = this.allMeteredReceipts();
       demand(add(sum(combined), worst) <= policy.global_micros, 'global cap exceeded');
       demand(add(sum(combined.filter(row => row.day === day)), worst) <= policy.day_micros, 'day cap exceeded');
-      demand(rows.filter(row => ['reserved', 'dispatched'].includes(row.state)).length < policy.concurrency,
-        'gateway concurrency exceeded');
+      // A stuck hold stays in the spend totals above, but it stops counting as "running" once its timeout has passed,
+      // so one run's failing calls can't use up the gateway's slots for every other run. After a restart nothing is running.
+      const now = this.clock();
+      const running = rows.filter(row => ['reserved', 'dispatched'].includes(row.state)
+        && this.started.has(row.id) && now - this.started.get(row.id) <= (JSON.parse(row.policy).timeout_ms ?? 60_000) + 1000);
+      demand(running.length < policy.concurrency, 'gateway concurrency exceeded');
       const row = {
         id: digest(canonical([run.id, idem])), run: run.id, idem, item: run.item, approval: run.approval,
         spec_hash: run.spec_hash, approval_hash: approved.body_hash, cap_micros: cap,
@@ -315,6 +322,8 @@ export class Ledger {
       this.db.prepare(`INSERT INTO gateway_receipts(${keys.join(',')}) VALUES(${keys.map(() => '?').join(',')})`)
         .run(...Object.values(row));
       this.db.prepare('UPDATE gateway_integrity SET receipt_count=receipt_count+1 WHERE id=1').run();
+      this.started.set(row.id, this.clock());
+      for (const [id, at] of this.started) if (this.clock() - at > 3_600_000) this.started.delete(id);
       return { row, fresh: true };
     });
   }

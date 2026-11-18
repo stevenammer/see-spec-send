@@ -662,10 +662,15 @@ export function createHandler({ auth, store, integrations, questModel = null, an
           store.db.prepare('DELETE FROM digest_entries WHERE person=? AND annex_hash=?').run(session.person, annex.hash);
         return json(res, 201, response);
       }
+      // Steward-only write routes are matched before the generic read check below, so each one needs the same read-scope test.
+      const scopedWrite = url.pathname.match(/^\/api\/items\/([^/]+)\/(research|spec-draft|send|steer|artifact)$/);
+      if (req.method === 'POST' && scopedWrite && store.readScope(scopedWrite[1]) && !readable(scopedWrite[1])) return json(res, 403, { error: 'request refused' });
       const renew = url.pathname.match(/^\/api\/items\/([^/]+)\/renew$/);
       if (req.method === 'POST' && renew) {
         if (!exactKeys(input, ['annex', 'what_is_new', 'reason']) || !hex(input.annex) || !text(input.what_is_new, 2000) || !text(input.reason, 2000)) return json(res, 409, { error: 'request refused' });
         if (!readable(renew[1])) return json(res, 403, { error: 'request refused' });
+        // Like a fork, a renewal copies the SEE text into a new item with no audience, so a restricted item can't be renewed yet.
+        if (store.readScope(renew[1])?.audience?.length) return json(res, 409, { error: 'request refused', reason: 'restricted items cannot be renewed yet' });
         const key = req.headers['idempotency-key'] || randomUUID();
         const id = createHash('sha256').update(canonical(['renewal', session.person, renew[1], input.annex, key])).digest('hex');
         const point = store.forkPoint(renew[1], undefined, undefined, { extended: true });

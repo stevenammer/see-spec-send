@@ -79,6 +79,16 @@ function redactBody(type, body) {
   return tombstone;
 }
 
+// A model-built bundle stores its files as base64 inside JSON, so the erased wording would never match the stored bytes.
+// Decode the files too before looking for it.
+function readableText(bytes) {
+  if (!bytes.startsWith('{"sss_bundle"')) return bytes;
+  try {
+    const bundle = JSON.parse(bytes);
+    return [bytes, ...Object.values(bundle.files || {}).map(file => Buffer.from(String(file), 'base64').toString('utf8'))].join('\n');
+  } catch { return bytes; }
+}
+
 export class Store {
   migrateStagePosts() {
     this.db.exec(`CREATE TABLE stage_posts(item TEXT NOT NULL, post_id TEXT NOT NULL, kind TEXT NOT NULL,
@@ -503,14 +513,14 @@ export class Store {
   }
 
   artifact(item, hash) {
-    const row = this.db.prepare('SELECT bytes FROM bodies WHERE hash=?').get(hash);
+    const row = this.db.prepare('SELECT bytes FROM bodies WHERE hash=? AND erased=0').get(hash);
     if (!row || scopedBodyHash(item, row.bytes) !== hash) return null;
     return row.bytes;
   }
 
   artifactByHashPrefix(prefix) {
     if (typeof prefix !== 'string' || !/^[a-f0-9]{32,64}$/.test(prefix)) return null;
-    const rows = this.db.prepare('SELECT hash,bytes FROM bodies WHERE hash LIKE ? LIMIT 2').all(`${prefix}%`)
+    const rows = this.db.prepare('SELECT hash,bytes FROM bodies WHERE hash >= ? AND hash < ? AND erased=0 LIMIT 2').all(prefix, `${prefix}g`)
       .filter(row => /^[a-f0-9]{64}$/.test(row.hash));
     if (rows.length !== 1) return null;
     const row = rows[0];
@@ -1111,7 +1121,7 @@ export class Store {
     const placeholder = JSON.stringify({ redacted: true, note: 'This copy contained text that was erased.' });
     let changed = 0;
     for (const row of this.db.prepare('SELECT hash, bytes FROM bodies WHERE erased=0 AND hash != ? AND hash NOT IN (SELECT body_hash FROM events)').all(exceptHash)) {
-      if (typeof row.bytes === 'string' && [...wording].some(text => row.bytes.includes(text))) {
+      if (typeof row.bytes === 'string' && [...wording].some(text => readableText(row.bytes).includes(text))) {
         this.db.prepare('UPDATE bodies SET bytes=?, erased=1 WHERE hash=?').run(placeholder, row.hash); changed += 1;
       }
     }

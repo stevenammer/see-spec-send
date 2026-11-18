@@ -149,3 +149,22 @@ test('the first attempt\'s manifest is cleared while the repair runs, so it cann
   assert.equal(a.status(request.id).state, 'running');
   assert.equal(existsSync(a.paths(request.id).manifest), false);
 });
+
+test('a builder that plants a link where the manifest should be is refused quickly, and nothing is read through it', t => {
+  class LinkDocker extends Docker {
+    run(args) {
+      this.calls.push(args);
+      const work = /src=([^,]+)/.exec(args.find(value => value.includes('dst=/work')))[1];
+      mkdirSync(join(work, 'bundle'), { recursive: true });
+      symlinkSync('/dev/zero', join(work, 'manifest.json'));
+      this.live.set(args[args.indexOf('--name') + 1], { State: { Running: false, ExitCode: 0 } });
+      return 'fake';
+    }
+  }
+  const { a } = adapter(t, { docker: new LinkDocker(), ledger: new Ledger() });
+  a.start(request);
+  const started = Date.now();
+  const result = a.status(request.id);
+  assert.ok(Date.now() - started < 2000, 'it did not hang reading an endless file');
+  assert.notEqual(result.state, 'ready', 'a build whose manifest is a link is never accepted');
+});

@@ -40,3 +40,7 @@ The one thing that can go wrong quietly is the client address. The app rate-limi
 6. Turn on Cloudflare's managed WAF rules and a rate limit on `/api/login` and `/api/invite/redeem` as a second layer. The app's own limits stay on.
 
 After it's up, check it from outside: `curl -I https://your.host/signin` should show `strict-transport-security` and the app's `content-security-policy`, and two different networks should not share a sign-in limit.
+
+## Give the builder's work folder its own size limit
+
+The builder container writes into a per-run folder under the builds root, and nothing in the app caps how many bytes or files it writes there before the 30-second wall clock ends. Put the builds root on its own volume with a size and inode limit (a separate filesystem, a quota, or a size-limited tmpfs) so a runaway build can't fill the disk the database lives on.

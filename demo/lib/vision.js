@@ -20,7 +20,7 @@ export function createVisionDemo() {
   return log.append({...body,...binding,type,actor,at:new Date().toISOString()},{idem:`vision:${log.length+1}`});
  };
  const firstReply=async kind=>append('commented','effort',{kind:'agent',job:`fixture:${kind}`,receipt:'fixture receipt',model:'fixture:demo',
-  comment:`Fixture Effort (AI): ${kind==='see'?'What happens when the note reaches the next person?':'Which handoff edge case should this draft cover?'}`,
+  comment:`Fixture Effort (AI): ${kind==='see'?'What have you already tried, and what happened?':'What would you check to know this worked?'}`,
   anchor_kind:kind,anchor_hash:kind==='see'?context().seeHash:context().specHash});
  const api={
   state:()=>({item:log.item,context:context(),events:log.events(),packet:packets.get(context().sent?.packetHash),hasParentApproval:!!parentApproval}),
@@ -29,14 +29,17 @@ export function createVisionDemo() {
   async include(actor,hash){const source=log.events().find(row=>row.type==='commented'&&row.body_hash===hash&&row.actor!=='effort');
    if(!source)return {ok:false,error:'Pick a person\'s comment in this branch.'};
    return append('revised',actor,{base_hash:context().seeHash,text:`${currentSee()}\n${source.comment}`,credits:[{comment:hash,mode:'quoted'}]});},
-  async spec(actor,must){const first=!context().specHash;const out=await append('specced',actor,{see_hash:context().seeHash,must:must.split('\n').filter(Boolean),how_we_know:['An independent person checks the handoff.'],out_of_scope:['External data and production deployment']});if(out.ok&&first)await firstReply('spec');return out;},
+  async spec(actor,must,howWeKnow='An independent person checks the handoff.'){const first=!context().specHash;const out=await append('specced',actor,{see_hash:context().seeHash,must:must.split('\n').filter(Boolean),how_we_know:[howWeKnow],out_of_scope:['External data and production deployment']});if(out.ok&&first)await firstReply('spec');return out;},
   async send(actor){const c=context();const packet=JSON.stringify({label:'Fixture decision packet',original:log.events()[0]?.original,see:currentSee(),specHash:c.specHash,
    research:'No source connected, nothing checked',estimate:'No estimate',openConcerns:log.events().filter(row=>row.type==='commented'&&row.actor!=='effort').map(row=>row.comment)});
    const hash=await log.hashArtifact(packet);const out=await append('sent',actor,{spec_hash:c.specHash,packet_hash:hash});if(out.ok)packets.set(hash,packet);return out;},
-  approve(actor,reason){const c=context();return append('approved',actor,{spec_hash:c.specHash,packet_hash:c.sent?.packetHash,reason,cap_usd:2,quorum:1,max_iterations:2,window_minutes:10});},
+  approve(actor,reason,quorum=1){const c=context();return append('approved',actor,{spec_hash:c.specHash,packet_hash:c.sent?.packetHash,reason,cap_usd:2,quorum,max_iterations:2,window_minutes:10});},
   async deliver(){const c=context();if(c.leash?.expiresAt&&new Date().getTime()>=new Date(c.leash.expiresAt).getTime())return {ok:false,error:'The fixture approval window expired.'};
    const artifact=await log.hashArtifact('Fixture static handoff note. No model built this.');return append('tried',runToken,{approval:c.approval,spec_hash:c.specHash,iteration:c.iteration,artifact_hash:artifact});},
   helps(actor){return append('helped',actor,{artifact_hash:context().artifact});},
+  // Nothing in the rules marks an item finished by hand. This sends the event anyway so a visitor can watch it refused.
+  done(actor){return append('done',actor,{});},
+  tamper(){const n=log.length;return n&&log.tamper(n)?n:0;},
   async fork(actor,reason){const previous=log;const row=previous.rows().at(-1);if(!row)return {ok:false,error:'Post a SEE first.'};
    const original=currentSee();parentApproval=previous.events().filter(event=>event.type==='approved').at(-1)||null;
    branch+=1;log=fresh();const out=await append('forked',actor,{original,rules:3,reason,parent:{item:previous.item,seq:row.seq,hash:row.hash}});

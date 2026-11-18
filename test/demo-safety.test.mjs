@@ -92,8 +92,9 @@ test('contrast: text and button colors reach WCAG AA', () => {
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   };
   const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
-  const pairs = [['17212b', 'ffffff'], ['064f9e', 'ffffff'], ['ffffff', '075b9c'], ['4d0d14', 'fbe9ea'], ['17212b', 'd9f4e4'],
-    ['3a4754', 'ffffff'], ['4a5866', 'eef1f4'], ['17212b', 'eef1f4']];
+  // text, muted text, links, buttons, badges and refusals on the dark panels they actually sit on
+  const pairs = [['ece6d6', '131312'], ['ece6d6', '0c0c0b'], ['ece6d6', '1b1b1a'], ['a9a59a', '131312'], ['a9a59a', '1b1b1a'], ['8ab8ff', '131312'],
+    ['0c0c0b', '8ab8ff'], ['86dba1', '131312'], ['0c0c0b', '86dba1'], ['6fd6c6', '131312'], ['c9a8ff', '131312'], ['ff9b9b', '131312'], ['ff9b9b', '1c1313'], ['0c0c0b', 'c9a8ff']];
   for (const [fg, bg] of pairs) assert.ok(ratio(fg, bg) >= 4.5, `${fg} on ${bg} is ${ratio(fg, bg).toFixed(2)}`);
 });
 

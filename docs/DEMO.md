@@ -1,10 +1,10 @@
 # The demo site
 
-## Current conversation panel
+## What the page is
 
-The first panel walks the rules-2 conversation: post in your own words, see a labeled Effort fixture reply, discuss, include as OP, publish a SPEC, SEND a frozen packet, and seek an independent leader approval. Delivering a try is a fixture. An independent member can confirm Helps. A fork starts without approval, and trying the parent's approval is refused. Every person is fictional; there's no model, database or server behind the panel. The older manual example remains below it for comparison.
+A forum thread, like the real app: a post, replies from teammates, a labeled AI reply, decision and try cards, and a "helps" count. Pick who you're viewing as at the top, or press "Watch it play out" and a team does the whole thing in about half a minute: Nick posts a problem, Steven and Cleo add what they know, Nick brings Steven's comment in with credit and writes the spec, Jose (a leader who didn't write it) spends on a small try, and then Nick and Jose both try to say it helps and are refused, someone tries to mark it done by hand and is refused, and Steven and Cleo say it helps.
 
-`PLAYWRIGHT_DIR=/path/to/node_modules npm run test:demo-vision` drives the current panel in real Chrome at phone width and checks hostile text stays inert. The same journey also has a pure state-machine test. The full app's private mentoring is separate and isn't simulated in this anonymous page.
+`PLAYWRIGHT_DIR=/path/to/node_modules npm run test:demo-vision` drives the page in real Chrome at phone width, including the scripted story, and checks hostile text stays inert.
 
 A small site in `demo/` that lets anyone try the main rule without installing anything. It's plain files. There's no build step, no dependencies, no accounts and no cookies. After it loads, it makes no network requests, and a Content-Security-Policy in the page enforces that.
 

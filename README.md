@@ -4,9 +4,9 @@
 
 [![CI](https://github.com/stevenammer/see-spec-send/actions/workflows/ci.yml/badge.svg)](https://github.com/stevenammer/see-spec-send/actions/workflows/ci.yml) [![CodeQL](https://github.com/stevenammer/see-spec-send/actions/workflows/codeql.yml/badge.svg)](https://github.com/stevenammer/see-spec-send/actions/workflows/codeql.yml) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/stevenammer/see-spec-send/badge)](https://scorecard.dev/viewer/?uri=github.com/stevenammer/see-spec-send) [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 
-**Want to see it before you read about it?** [Try the demo](https://stevenammer.github.io/see-spec-send/). It runs in your browser, the people are made up, and nothing leaves your page. Click "Show me the rule being enforced" and watch it say no.
+**Want to see it before you read about it?** [Try the demo](https://stevenammer.github.io/see-spec-send/). It runs in your browser, the people are made up, and nothing leaves your page. Click "Watch it play out" and watch it say no.
 
-![Clicking "Show me the rule being enforced" in the demo: the people who wrote or approved the spec try to say it helps, and are refused](docs/screens/demo-refusal.gif)
+![Clicking "Watch it play out" in the demo: the people who wrote or approved the spec try to say it helps, and are refused](docs/screens/demo-refusal.gif)
 
 ## Why I built this
 

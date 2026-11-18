@@ -117,5 +117,10 @@ export function contributionMemory(store, viewer, subject) {
     FROM contributions c JOIN actors viewer ON viewer.id=? AND viewer.kind='person'
     LEFT JOIN person_state ps ON ps.id=viewer.id
     JOIN events e ON e.item=c.item AND e.seq=c.seq
-    WHERE c.person=? AND COALESCE(ps.disabled,0)=0 ORDER BY e.at,c.item,c.seq,c.action`).all(viewer, subject);
+    WHERE c.person=? AND COALESCE(ps.disabled,0)=0
+    AND (NOT EXISTS(SELECT 1 FROM events first JOIN bodies fb ON fb.hash=first.body_hash
+      WHERE first.item=c.item AND first.seq=1 AND json_array_length(json_extract(fb.bytes,'$.audience')) > 0)
+      OR EXISTS(SELECT 1 FROM events first JOIN bodies fb ON fb.hash=first.body_hash JOIN group_members gm ON gm.person=viewer.id
+        WHERE first.item=c.item AND first.seq=1 AND gm.group_name IN (SELECT value FROM json_each(json_extract(fb.bytes,'$.audience')))))
+    ORDER BY e.at,c.item,c.seq,c.action`).all(viewer, subject);
 }

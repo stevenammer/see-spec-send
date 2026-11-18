@@ -783,6 +783,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       };
       const recon = url.pathname.match(/^\/api\/items\/([^/]+)\/reconciliation$/);
       if (req.method === 'GET' && recon) {
+        if (store.readScope(recon[1]) && !readable(recon[1])) return json(res, 403, { error: 'request refused' });
         const { report, state, inactivity } = reconcileFor(recon[1]);
         return json(res, 200, { ...report, steward: state.context.steward,
           you: forkEligibility(report, { person: session.person, steward: state.context.steward }),
@@ -790,6 +791,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       }
       const transferRequest = url.pathname.match(/^\/api\/items\/([^/]+)\/reconciliation\/transfer-request$/);
       if (req.method === 'POST' && transferRequest) {
+        if (store.readScope(transferRequest[1]) && !readable(transferRequest[1])) return json(res, 403, { error: 'request refused' });
         if (!exactKeys(input, ['reason']) || !text(input.reason, 2000)) return json(res, 409, { error: 'request refused' });
         const { report, state, inactivity } = reconcileFor(transferRequest[1]);
         const eligibility = transferEligibility(report, inactivity, { person: session.person, steward: state.context.steward });
@@ -809,6 +811,10 @@ export function createHandler({ auth, store, integrations, questModel = null, an
           || (input.from !== undefined && (!input.from || !exactKeys(input.from, ['kind', 'hash', 'post_id'])
             || !['see', 'spec', 'artifact', 'snapshot'].includes(input.from.kind) || !hex(input.from.hash)
             || (input.from.kind === 'snapshot' ? !text(input.from.post_id, 160) : input.from.post_id !== undefined)))) return json(res, 409, { error: 'request refused' });
+        // A fork copies the SEE text into a new item that has no audience of its own, so forking a restricted item would
+        // hand its text to the whole workspace. Until a fork can inherit the audience, restricted items refuse it.
+        if (store.readScope(fork[1]) && !readable(fork[1])) return json(res, 403, { error: 'request refused' });
+        if (store.readScope(fork[1])?.audience?.length) return json(res, 409, { error: 'request refused', reason: 'restricted items cannot be forked yet' });
         const key = req.headers['idempotency-key'] || randomUUID();
         const id = createHash('sha256').update(canonical(['fork-request', session.person, fork[1], key])).digest('hex');
         const existing = store.events(id)[0];

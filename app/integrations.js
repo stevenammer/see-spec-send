@@ -108,7 +108,7 @@ export class Integrations {
   async receive(source, timestamp, supplied, bytes, headers = {}) {
     const row = await this.sql.get('SELECT * FROM integration_sources WHERE name=? AND enabled=1', source);
     const time = Number(timestamp);
-    if (!row || !Number.isSafeInteger(time) || Math.abs(this.clock() - time) > WINDOW || !this.secrets(row.secret).map(candidate => equal(signature(candidate, timestamp, bytes), String(supplied || '').replace(/^sha256=/, ''))).includes(true) || !this.allowed(source)) throw refused('inbound refused');
+    if (!row || !Number.isSafeInteger(time) || Math.abs(this.clock() - time) > WINDOW || !this.secrets(row.secret).map(candidate => equal(signature(candidate, timestamp, bytes), String(supplied || '').replace(/^sha256=/, ''))).includes(true) || !(await this.allowed(source))) throw refused('inbound refused');
     let input; try { input = strictSeen(JSON.parse(bytes.toString('utf8'))); } catch { throw refused('inbound refused'); }
     const idem = headers['idempotency-key'];
     if (!text(idem) || idem.length > 160) throw refused('inbound refused');

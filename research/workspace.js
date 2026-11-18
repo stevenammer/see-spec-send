@@ -1,8 +1,11 @@
+import { audienceCovers } from '../access/read.js';
 // Optional in-workspace research. No external search, model, or network call.
 export function workspaceRecords(store, person, item, text) {
   if (store.db.prepare("SELECT enabled FROM research_config WHERE source='this_workspace'").get()?.enabled !== 1) return [];
   const query = String(text || '').match(/[\p{L}\p{N}_-]+/gu)?.slice(0, 4).join(' ') || '';
-  return store.search(person, query, { limit: 6 }).filter(row => row.item !== item).slice(0, 5);
+  // The result is written into this item's own record, so everyone who can read this item must be able to read the source too.
+  const target = store.readScope(item);
+  return store.search(person, query, { limit: 6 }).filter(row => row.item !== item && audienceCovers(store.readScope(row.item), target)).slice(0, 5);
 }
 export function workspaceConnectors(store, person) {
   if (store.db.prepare("SELECT enabled FROM research_config WHERE source='this_workspace'").get()?.enabled !== 1) return {};

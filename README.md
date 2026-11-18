@@ -43,7 +43,7 @@ Early, and I'm building it in public. It isn't ready to drop into a big company 
 **Works, and you can check it yourself:**
 
 - The core loop above, in a real web app and in the demo.
-- Over 700 automated tests on every push, plus walkthroughs in a real browser and an accessibility check.
+- Over 800 automated tests on every push, plus walkthroughs in a real browser and an accessibility check.
 - Effort and the "ask the organization" answers have had a first real-model test too ([docs/MODEL_EVAL.md](docs/MODEL_EVAL.md)). That test found the answer cap was cutting every thorough answer off, and it's fixed.
 - Bring your own model and your own agent. The builder can be OpenCode, Claude Code or Codex, behind a gateway that meters and caps every call, and the models can be Claude, GPT, Gemini, Bedrock or local ([docs/AGENT_HARNESSES.md](docs/AGENT_HARNESSES.md), including what's proven and what isn't).
 - The AI builder works on small tasks. On three made-up workplace tools, judged in a real browser, Claude Haiku 4.5 shipped 11 of 12 builds for about five cents each. The write-up is [docs/BUILDER_EVAL.md](docs/BUILDER_EVAL.md), including why that's thin evidence.
@@ -58,7 +58,7 @@ Early, and I'm building it in public. It isn't ready to drop into a big company 
 - Not yet tested against a real Okta, Entra or Google login.
 - No automatic failover and no Postgres version. A person decides when to switch to the copy. [The plan for Postgres](docs/POSTGRES_PLAN.md) is written down, and the dependency question is settled: SQLite stays the dependency-free default, and Postgres would be an optional extra.
 - No Teams or Microsoft 365 integration yet. That's planned.
-- The AI parts are mostly tested with stand-in models. You plug in your own model. The builder has had a first real test (below), and the rest hasn't.
+- Most of the tests use stand-in models, so the real-model testing is thin. Effort, the answers and the builder each had one first test with Claude Haiku 4.5 (above), and that's all. You plug in your own model, so check it on your own work.
 - **No real pilot with real employees.** That's the one that matters most, and it's what I'd like to do next.
 
 The complete, honest table is [docs/STATUS.md](docs/STATUS.md).
@@ -85,7 +85,7 @@ npm run test:listen    # real server, short end-to-end
 npm run test:container # needs Docker; uses a local mock model, never a real one
 ```
 
-I break the controls on purpose (about 500 deliberate breaks so far) because a test that can't fail doesn't count. A weekly CI job runs them split into parallel pieces (about an hour in total), and you can start it any time from the Actions tab. So far I've run one piece of the full set and all of the newer set there. The first scheduled run is the next Sunday. The browser tests (`npm run test:e2e`, `test:vision`, `test:hostile-render` and friends) need Playwright and Chrome. Set `PLAYWRIGHT_DIR` to the folder that holds Playwright.
+I break the controls on purpose (over 600 deliberate breaks so far) because a test that can't fail doesn't count. A weekly CI job runs them split into parallel pieces (about an hour in total), and you can start it any time from the Actions tab. So far I've run one piece of the full set and all of the newer set there. The first scheduled run is the next Sunday. The browser tests (`npm run test:e2e`, `test:vision`, `test:hostile-render` and friends) need Playwright and Chrome. Set `PLAYWRIGHT_DIR` to the folder that holds Playwright.
 
 **Security and trust.** It has no runtime dependencies. Start with [SECURITY.md](SECURITY.md) (how to report a problem), then the [threat model](docs/THREAT_MODEL.md), [threats being watched right now](docs/SECURITY_WATCH.md), the [vendor questionnaire](docs/VENDOR_QUESTIONNAIRE.md), the [pilot guide](docs/PILOT_GUIDE.md) and the generated [table of every route and how it's authenticated](docs/ROUTE_TABLE.md). Failover, backups and what erasure does to a replica are in [docs/HA.md](docs/HA.md).
 
@@ -101,7 +101,7 @@ I break the controls on purpose (about 500 deliberate breaks so far) because a t
 
 I write the specs and decide what's safe to ship. AI agents write most of the code. Then I try to break what comes back, and I keep every attack that found a real bug as a permanent test. So far that's a money rounding bug, a reused retry key that silently dropped an event, a stale builder that could deliver under a newer approval, and a same-origin check that a lookalike address could fool. A second AI, set loose as a hostile reviewer, found four more: world-readable database files, a verifier that said "ok" to forged metadata, a lockout that let a stranger lock you out, and a rate limiter that never forgot.
 
-I've called a real free-tier model by hand once. No paid hosted model has been called in any test.
+The real-model tests were small and cheap: Claude Haiku 4.5 on Amazon Bedrock, a few dollars in total (the builder tests cost about $2.30), on made-up data. Nothing has run against real employee data, and none of the models you can plug in has been tested beyond that.
 
 ## Words used here
 

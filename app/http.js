@@ -212,7 +212,7 @@ const validEvent = input => {
           && hex(input.spec_hash) && hex(input.packet_hash) && text(input.reason, 2000))
         || (exactKeys(input, ['type', 'spec_hash', 'packet_hash', 'reason', 'cap_usd', 'quorum', 'max_iterations', 'window_minutes'])
           && hex(input.spec_hash) && hex(input.packet_hash) && text(input.reason, 2000)))
-      && typeof input.cap_usd === 'number' && Number.isInteger(input.quorum) && input.quorum >= 1
+      && typeof input.cap_usd === 'number' && input.cap_usd <= 10000 && Number.isInteger(input.quorum) && input.quorum >= 1
       && (input.max_iterations === undefined || (Number.isInteger(input.max_iterations) && input.max_iterations >= 1 && input.max_iterations <= 5))
       && (input.window_minutes === undefined || (Number.isInteger(input.window_minutes) && input.window_minutes >= 1));
     case 'returned': case 'not_built': return exactKeys(input, ['type', 'reason', 'restricted_evidence', 'pivot_note', 'spec_hash', 'packet_hash'])

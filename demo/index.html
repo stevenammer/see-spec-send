@@ -17,6 +17,17 @@
   <noscript><p class="refused">This demo needs JavaScript and a static file server. It can't run from a file:// address.</p></noscript>
 </header>
 <main>
+  <section aria-labelledby="h-tour">
+    <h2 id="h-tour">The short version: watch the rule refuse</h2>
+    <p>One click plays the same steps as the <a href="https://github.com/stevenammer/see-spec-send/blob/main/docs/WATCH_IT_REFUSE.md">watch it refuse</a> page in the repo. It starts a fresh item, so it clears what you've done.</p>
+    <div class="row">
+      <button type="button" id="tour-all">Show me the rule being enforced</button>
+      <button type="button" id="tour-start" class="quiet">Go one step at a time</button>
+      <button type="button" id="tour-next" class="quiet" disabled>Next step</button>
+    </div>
+    <div id="tour-out" tabindex="-1"></div>
+  </section>
+
   <section id="vision-conversation" aria-labelledby="h-conversation">
     <h2 id="h-conversation">Play a whole item, start to finish</h2>
     <p>Post the problem (that's the SEE), talk it over, write the spec, and send it. A different person, a leader, decides. Anyone can fork it, but a fork never inherits the approval. Effort is the AI that replies first, and the builder is a stand-in. Both are labeled as fakes here: no model, no database, no sign-in, and no money moves.</p>
@@ -35,17 +46,6 @@
     <h3>Conversation and version history</h3><ol data-vision-events></ol>
     <h3>Frozen decision packet</h3><pre data-vision-packet></pre>
   </section>
-  <section aria-labelledby="h-tour">
-    <h2 id="h-tour">The short version: watch the rule refuse</h2>
-    <p>One click plays the same steps as the <a href="https://github.com/stevenammer/see-spec-send/blob/main/docs/WATCH_IT_REFUSE.md">watch it refuse</a> page in the repo. It starts a fresh item, so it clears what you've done.</p>
-    <div class="row">
-      <button type="button" id="tour-all">Show me the rule being enforced</button>
-      <button type="button" id="tour-start" class="quiet">Go one step at a time</button>
-      <button type="button" id="tour-next" class="quiet" disabled>Next step</button>
-    </div>
-    <div id="tour-out" tabindex="-1"></div>
-  </section>
-
   <section aria-labelledby="h-who">
     <h2 id="h-who">Who are you acting as?</h2>
     <p>Pick a person. Lena and Omar are leaders and the others are members. What each person is allowed to do comes from this list, never from what a step says about itself.</p>

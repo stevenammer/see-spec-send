@@ -186,3 +186,13 @@ test('Mentoring and Investigate pages can sign out, and mentoring forms are not 
   assert.match(mentoring, /if\(form\.dataset\.busy\)return;/); assert.match(mentoring, /\}catch\{\n  release\(\);/);
   assert.match(mentoring, /You may have been signed out, or the request may have changed/);
 });
+
+test('a typo-sized approval cap is stopped in the page, asked about in the browser, and refused by the server', () => {
+  const read = file => readFileSync(new URL(file, import.meta.url), 'utf8');
+  assert.match(read('../app/http.js'), /input\.cap_usd <= 10000/, 'the server ceiling');
+  assert.match(read('../app/pages.js'), /name="cap_usd" type="number" min="0" max="10000"/, 'the field limit');
+  assert.match(read('../app/pages.js'), /The highest allowed is \$10,000/, 'the field says the limit');
+  const client = read('../public/app.js');
+  assert.match(client, /const BIG_CAP_USD = 100;/);
+  assert.match(client, /Number\(input\.cap_usd\) > BIG_CAP_USD && !\(await askConfirm/, 'a big cap asks first');
+});

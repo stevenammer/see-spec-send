@@ -24,7 +24,7 @@ export const STEPS = [
   choice('playback', 'Did I get that right?', [
     ['yes', 'Yes, that is my account'], ['no', 'No, I need to correct it'],
   ]),
-  text('priority', 'If someone defended the current priority, what would they say?'),
+  text('priority', 'If someone argued this is not worth fixing right now, what would they say?'),
   text('frontline', 'What exception would the person doing this work worry about?'),
   text('skeptic', 'What would someone who has seen failed initiatives challenge?'),
   text('strongest', "What's the strongest reason not to proceed?"),

@@ -660,7 +660,7 @@ async function main() {
     assert.match(await ben.locator('main').innerText(), /credited/);
     assert.equal(await rawPost(maya, `/api/items/${memoryId}/erase`, { body_hash: memoryHash }), 201);
     await ben.goto(`${origin}/search?q=quartz`);
-    await ben.getByText('No matching records.', { exact: true }).waitFor();
+    await ben.getByText('Nothing matches those words.', { exact: false }).waitFor();
     step('phone member found a source record, acknowledged its author, and erased text disappeared from search');
 
     // Optional mentoring remains separate from work records, even for a leader.
@@ -684,7 +684,7 @@ async function main() {
     await olive.getByText('hazelnut private mentoring reflection.', { exact: false }).waitFor();
     assert.equal((await leader.goto(mentoringUrl)).status(),404,'leadership grants no private mentoring access');
     await leader.goto(`${origin}/search?q=hazelnut`);
-    await leader.getByText('No matching records.', { exact: true }).waitFor();
+    await leader.getByText('Nothing matches those words.', { exact: false }).waitFor();
     await olive.goto(mentoringUrl);
     await olive.locator('[name=text]').last().fill('One explicitly shared sponsor receipt.');
     await olive.locator('[name=scope]').selectOption('SPONSOR_SHARED');

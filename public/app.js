@@ -16,6 +16,23 @@ function explain(path, status) {
   return 'That did not go through. Check the form and try again.';
 }
 
+// A big number gets one plain "are you sure" before anything is sent.
+const BIG_CAP_USD = 100;
+function askConfirm(message) {
+  return new Promise(resolve => {
+    const dialog = document.createElement('dialog');
+    const text = document.createElement('p'); text.textContent = message;
+    const ok = document.createElement('button'); ok.textContent = 'Yes, set this cap';
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'No, go back';
+    const form = document.createElement('form'); form.method = 'dialog'; form.append(text, ok, cancel); dialog.append(form);
+    let answer = false;
+    form.addEventListener('submit', () => { answer = true; });
+    cancel.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => { dialog.remove(); resolve(answer); });
+    document.body.append(dialog); dialog.showModal(); ok.focus();
+  });
+}
+
 // A password prompt that hides what you type (the browser's built-in pop-up shows it in plain text).
 function askPassword(message) {
   return new Promise(resolve => {
@@ -150,6 +167,7 @@ document.addEventListener('submit', async event => {
       return;
     }
     if (form.dataset.approve) {
+      if (Number(input.cap_usd) > BIG_CAP_USD && !(await askConfirm(`That lets the AI spend up to $${Number(input.cap_usd).toLocaleString('en-US')} on this one try. Most tries need a few dollars. Is that what you meant?`))) { release(); return; }
       if (input.password === undefined) {
         // Single sign-on: no fresh sign-in yet means go to the identity provider and come back to this page.
         if (!form.querySelector('[data-sso-ready]')) { location.href = `/api/oidc/stepup/start?next=${encodeURIComponent(location.pathname)}`; return; }

@@ -173,6 +173,34 @@ async function main() {
     await leader
       .locator('form[data-approve] [name=reason]')
       .fill('Small enough to try and the spec is clear.');
+    // A typo-sized cap never goes through. The page limits it, and the server refuses it too.
+    const approveForm = leader.locator('form[data-approve]');
+    await approveForm.locator('[name=quorum]').fill('2');
+    await approveForm.locator('[name=password]').fill(leaderPassword);
+    await approveForm.locator('[name=cap_usd]').fill('999999999');
+    assert.equal(await approveForm.evaluate(f => f.checkValidity()), false, 'the field refuses a huge cap');
+    const forgedCap = await leader.evaluate(async password => {
+      const csrf = (await (await fetch('/api/me')).json()).csrf;
+      const headers = { 'content-type': 'application/json', 'x-csrf-token': csrf };
+      await fetch('/api/stepup', { method: 'POST', headers, body: JSON.stringify({ password }) });
+      const form = document.querySelector('form[data-approve]');
+      const active = document.querySelector('[data-active-post]');
+      if (active) { headers['x-post-id'] = active.dataset.activePost; headers['x-post-version'] = active.dataset.postVersion; }
+      const id = location.pathname.split('/items/')[1];
+      const send = cap => fetch(`/api/items/${id}/events`, { method: 'POST', headers, body: JSON.stringify({ type: 'approved',
+        spec_hash: form.spec_hash.value, packet_hash: form.packet_hash.value, reason: 'A real reason for this test.', cap_usd: cap, quorum: 2 }) }).then(r => r.status);
+      return { huge: await send(999999999), over: await send(10000.01) };
+    }, leaderPassword);
+    assert.equal(forgedCap.huge, 409, 'the server refuses a huge cap');
+    assert.equal(forgedCap.over, 409, 'and anything over the ceiling');
+    // A big but allowed cap asks first. Saying no sends nothing.
+    await approveForm.locator('[name=cap_usd]').fill('500');
+    await approveForm.locator('button').click();
+    await leader.getByText('Most tries need a few dollars. Is that what you meant?').waitFor();
+    await leader.getByRole('button', { name: 'No, go back' }).click();
+    await leader.waitForTimeout(500);
+    assert.equal(await leader.locator('form[data-approve]').count(), 1, 'still undecided after saying no');
+    assert.equal(await leader.locator('.stage', { hasText: 'Decide' }).count(), 1);
     await leader.locator('form[data-approve] [name=cap_usd]').fill('2');
     await leader.locator('form[data-approve] [name=quorum]').fill('2');
     await leader.locator('form[data-approve] [name=password]').fill(leaderPassword);

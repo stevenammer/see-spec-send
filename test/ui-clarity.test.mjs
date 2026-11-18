@@ -166,3 +166,11 @@ test('the try screen says what to do if it did not help, and shows who already s
   assert.match(text(after), /You said this helps\. It counts once\./);
   assert.doesNotMatch(after, /data-event="helped"/);
 });
+
+test('Search says what to do when nothing matches, or when the box is empty', async () => {
+  const { searchPage } = await import('../app/pages-memory.js');
+  assert.match(text(searchPage('zzz', [])), /Nothing matches those words\. Try fewer or different words/);
+  assert.match(searchPage('zzz', []), /href="\/items\/new"/);
+  assert.match(text(searchPage('', [])), /Type a few words from the problem/);
+  assert.match(text(searchPage('zzz', [], { related: true })), /No related work found/);
+});

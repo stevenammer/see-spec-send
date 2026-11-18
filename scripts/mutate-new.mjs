@@ -233,6 +233,8 @@ const mutants = [
   ["ui: Search empty box says what to type", "app/pages-memory.js", "Type a few words from the problem you have in mind.", "No matching records.", T(['ui-clarity'])],
   ["ui: sign-in links to the glossary", "app/pages.js", ' <a href="/words">What do these words mean?</a></p>${password', '</p>${password', T(['ui-clarity'])],
   ["ui: raw packet is folded away", "app/pages.js", "<details><summary>The exact record that was reviewed, for auditors</summary>", "<details><summary>x</summary>", T(['ui-clarity'])],
+  ["ui: empty spec page keeps its heading", "app/pages-spec.js", "<h1>Spec</h1><p>No spec has been written yet.</p>", "<p>No spec has been written yet.</p>", T(['ui-clarity'])],
+  ["ui: date boxes show keyboard focus", "public/app.css", "input[type=datetime-local]:focus-within,\ninput[type=date]:focus-within {", "input[type=x]:focus-within {", T(['ui-clarity'])],
   ["ui: Effort skip is in plain words", "app/pages-effort.js", "this stage was closed before Effort could answer, so it was skipped", "post superseded", T(['ui-clarity'])],
   ["break: mentoring ignores a second submit", "public/mentoring.js", "if(form.dataset.busy)return;", "", T(['break-it'])],
   ["break: mentoring buttons come back after a failure", "public/mentoring.js", "}catch{\n  release();", "}catch{\n  ", T(['break-it'])],

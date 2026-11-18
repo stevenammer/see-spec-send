@@ -2,7 +2,7 @@
 
 **A free, open-source way for the people at a company to get the annoying problems everyone already knows about actually fixed, with AI doing the building and the people who do the work deciding whether it helped.**
 
-[![CI](https://github.com/stevenammer/see-spec-send/actions/workflows/ci.yml/badge.svg)](https://github.com/stevenammer/see-spec-send/actions/workflows/ci.yml) [![CodeQL](https://github.com/stevenammer/see-spec-send/actions/workflows/codeql.yml/badge.svg)](https://github.com/stevenammer/see-spec-send/actions/workflows/codeql.yml) [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
+[![CI](https://github.com/stevenammer/see-spec-send/actions/workflows/ci.yml/badge.svg)](https://github.com/stevenammer/see-spec-send/actions/workflows/ci.yml) [![CodeQL](https://github.com/stevenammer/see-spec-send/actions/workflows/codeql.yml/badge.svg)](https://github.com/stevenammer/see-spec-send/actions/workflows/codeql.yml) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/stevenammer/see-spec-send/badge)](https://scorecard.dev/viewer/?uri=github.com/stevenammer/see-spec-send) [![Security policy](https://img.shields.io/badge/security-policy-blue)](SECURITY.md)
 
 **Want to see it before you read about it?** [Try the demo](https://stevenammer.github.io/see-spec-send/). It runs in your browser, the people are made up, and nothing leaves your page. Click "Show me the rule being enforced" and watch it say no.
 
@@ -89,7 +89,7 @@ npm run test:container # needs Docker; uses a local mock model, never a real one
 
 I break the controls on purpose (over 600 deliberate breaks so far) because a test that can't fail doesn't count. A weekly CI job runs them split into parallel pieces (about an hour in total), and you can start it any time from the Actions tab. So far I've run one piece of the full set and all of the newer set there. The first scheduled run is the next Sunday. The browser tests (`npm run test:e2e`, `test:vision`, `test:hostile-render` and friends) need Playwright and Chrome. Set `PLAYWRIGHT_DIR` to the folder that holds Playwright.
 
-**Security and trust.** It has no runtime dependencies. Start with [SECURITY.md](SECURITY.md) (how to report a problem), then the [threat model](docs/THREAT_MODEL.md), [threats being watched right now](docs/SECURITY_WATCH.md), the [vendor questionnaire](docs/VENDOR_QUESTIONNAIRE.md), the [pilot guide](docs/PILOT_GUIDE.md) and the generated [table of every route and how it's authenticated](docs/ROUTE_TABLE.md). Failover, backups and what erasure does to a replica are in [docs/HA.md](docs/HA.md).
+**Security and trust.** It has no runtime dependencies. CodeQL, a container scan (Trivy), a Dockerfile and workflow lint, and the OpenSSF Scorecard run in CI. Start with [SECURITY.md](SECURITY.md) (how to report a problem), then the [threat model](docs/THREAT_MODEL.md), [threats being watched right now](docs/SECURITY_WATCH.md), the [vendor questionnaire](docs/VENDOR_QUESTIONNAIRE.md), the [pilot guide](docs/PILOT_GUIDE.md) and the generated [table of every route and how it's authenticated](docs/ROUTE_TABLE.md). Failover, backups and what erasure does to a replica are in [docs/HA.md](docs/HA.md).
 
 ![The work feed at phone width](docs/screens/feed-390.png)
 

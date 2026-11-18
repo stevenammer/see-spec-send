@@ -10,7 +10,7 @@ export function specPage(item, events, person) {
   const context = item.context;
   const specs = events.filter(event => event.type === 'specced');
   const current = specs.at(-1);
-  if (!current) return shell('Spec', '<p><a href="/">Back to the work</a></p><p>No spec has been written yet.</p>');
+  if (!current) return shell('Spec', '<p><a href="/">Back to the work</a></p><h1>Spec</h1><p>No spec has been written yet.</p>');
   const active = context.rules !== 3 || context.activePost?.kind === 'spec';
   const own = active && context.steward === person;
   const fields = key => escape((current[key] || []).join('\n'));

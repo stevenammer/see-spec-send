@@ -48,6 +48,7 @@ try {
   add(item, { type: 'decided', actor: 'admin', disposition: 'decline', reason_code: 'budget', reason: 'No budget for a new integration this quarter.', metadata: {}, spec_hash: spec, packet_hash: packet, ...bind(item) });
   add('other', { type: 'posted', actor: 'dana', original: 'Night shift export problem.', rules: 3 });
   store.close();
+  for (const [name, path] of [['feed', '/'], ['post a problem', '/items/new'], ['search results', '/search?q=handoff'], ['search empty', '/search?q=zzzz'], ['words', '/words'], ['investigate', '/intelligence'], ['mentoring', '/mentoring']]) await audit(name, `${origin}${path}`);
   await audit('spec', `${origin}/items/${item}/spec`); await audit('item (decided)', `${origin}/items/${item}`);
   const post = new Store(db).db.prepare("SELECT post_id FROM stage_posts WHERE item=? AND kind='decision'").get(item);
   if (post) { const w = new Store(db); (await import('../core/closeout.js')).runCloseoutJobs(w, {}); w.close(); await audit('closing report', `${origin}/items/${item}/closeout/${encodeURIComponent(post.post_id)}`); }

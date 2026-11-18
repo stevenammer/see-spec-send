@@ -25,3 +25,18 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/readyz     # 200
 
 Put a TLS-terminating proxy in front (the entrypoint trusts the proxy's forwarded address, so never publish port 8080 directly), and pass `--origin https://your.host` and `--oidc-config` as extra arguments for sign-in through your identity provider. Verified: build, init, start, `/readyz` 200, read-only root.
 
+
+## Putting it behind Cloudflare (or any CDN or WAF)
+
+Cloudflare gives you TLS, DDoS protection, a web application firewall and rate limiting in front of the app. It's optional. I haven't run this setup against a real Cloudflare account, so treat the steps below as a checklist to verify, not a tested recipe.
+
+The one thing that can go wrong quietly is the client address. The app rate-limits sign-ins per address (5 a minute, plus a growing lockout), and it takes that address from the **rightmost** `X-Forwarded-For` entry, and only when the connection comes from the same machine (loopback). If you chain Cloudflare to a proxy on the app's host and the proxy just appends what it sees, every visitor looks like a Cloudflare address and **everyone shares one sign-in bucket**. So:
+
+1. Run the app with `--trusted-proxy` and keep its port private (loopback or a private network only).
+2. On the proxy next to the app, **replace** `X-Forwarded-For` with the real visitor address instead of appending. With Caddy, `trusted_proxies cloudflare` (the Cloudflare module) does it. With nginx, use `real_ip_header CF-Connecting-IP;` plus `set_real_ip_from` for Cloudflare's published ranges, then `proxy_set_header X-Forwarded-For $remote_addr;`.
+3. Make the origin refuse anything that didn't come through Cloudflare: firewall the proxy to Cloudflare's published IP ranges, or use Cloudflare Tunnel (`cloudflared`) so the origin has no public port at all. A tunnel on the same host reaches the app over loopback, which is what `--trusted-proxy` expects.
+4. Set SSL/TLS mode to **Full (strict)** and pass `--origin https://your.host` so cookies and the same-origin check match the public address.
+5. Don't cache. Pages and `/api/*` are per-person. Leave Cloudflare's "Cache Everything" off and let the app's own `Cache-Control` headers stand.
+6. Turn on Cloudflare's managed WAF rules and a rate limit on `/api/login` and `/api/invite/redeem` as a second layer. The app's own limits stay on.
+
+After it's up, check it from outside: `curl -I https://your.host/signin` should show `strict-transport-security` and the app's `content-security-policy`, and two different networks should not share a sign-in limit.

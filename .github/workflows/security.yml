@@ -1,0 +1,57 @@
+name: Security checks
+# Free, open-source checks that look at things the unit tests don't: the container images, the Dockerfiles
+# and the CI workflows themselves. The app has no runtime npm dependencies, so the image layers are where
+# third-party code actually lives.
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+  schedule: [{ cron: '41 5 * * 2' }]
+permissions:
+  contents: read
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [{ name: app, context: '.', file: Dockerfile }, { name: builder, context: worker/opencode, file: worker/opencode/Dockerfile, skip: usr/local/lib/node_modules/npm }]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { persist-credentials: false }
+      - run: docker build -t sss-${{ matrix.image.name }}:scan -f ${{ matrix.image.file }} ${{ matrix.image.context }}
+      # Fails on a fixed HIGH or CRITICAL vulnerability. Ones with no fix yet are reported, not blocking.
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: sss-${{ matrix.image.name }}:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          # The builder image keeps npm only because it installed OpenCode at build time. The running container has no
+          # network and never runs npm, so npm's own bundled packages are skipped here. Removing npm from that image
+          # needs a new recorded image digest and a builder re-run, so it's a separate change.
+          skip-dirs: ${{ matrix.image.skip }}
+          format: table
+  dockerfiles:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { persist-credentials: false }
+      - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with: { dockerfile: Dockerfile, failure-threshold: warning }
+      - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with: { dockerfile: worker/opencode/Dockerfile, failure-threshold: warning }
+  workflows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.12' }
+      # Looks for injection and over-broad permissions in the workflow files themselves.
+      - run: pip install zizmor==1.32.0 && zizmor --format plain .github/workflows

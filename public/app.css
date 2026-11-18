@@ -63,7 +63,9 @@ button:focus,
 a:focus,
 input:focus,
 textarea:focus,
-select:focus {
+select:focus,
+input[type=datetime-local]:focus-within,
+input[type=date]:focus-within {
   outline: 3px solid #202f3c;
   outline-offset: 2px;
 }

@@ -185,3 +185,9 @@ test('a plain glossary is one link away, signed out or in, and the raw packet is
   assert.match(html, /href="\/words"/);
   assert.match(html, /<details><summary>The exact record that was reviewed, for auditors<\/summary><pre>/);
 });
+
+test('a spec page with no spec yet still has a page heading, and date boxes show where the keyboard is', () => {
+  assert.match(specPage({ id: 'i', ...world('see').store.read('i') }, world('see').events, 'maya'), /<h1>Spec<\/h1>/);
+  const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
+  assert.match(css, /input\[type=datetime-local\]:focus-within/);
+});

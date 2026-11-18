@@ -88,3 +88,11 @@ test('workspace research never copies a restricted item’s text into an item th
   assert.ok(toInner.includes('secret'), 'a same-audience item can still see it');
   assert.ok(workspaceRecords(store, 'sam', 'inner', 'open workspace problem').map(row => row.item).includes('open'), 'open sources still help restricted items');
 });
+
+test('the home feed page hides a restricted problem from people outside its audience, like the JSON list does', async t => {
+  const { handler, as } = await world(t);
+  const feedFor = async id => (await call(handler, 'GET', '/', { ...(await as(id)), accept: 'text/html' })).text;
+  assert.doesNotMatch(await feedFor('pat'), /Private export problem for reservations only/, 'an outsider does not see the text');
+  assert.match(await feedFor('riya'), /Private export problem for reservations only/, 'a member of the audience does');
+  assert.match(await feedFor('pat'), /An open workspace problem/, 'open items still show');
+});

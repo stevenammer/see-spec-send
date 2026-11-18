@@ -38,6 +38,7 @@ jobs:
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:decision-outcomes
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:break-it
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:try-it
+      - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:attack
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:stage-freeze
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:vision
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:reanalysis

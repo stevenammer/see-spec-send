@@ -242,6 +242,7 @@ const mutants = [
   ["audit: contribution record respects audiences", "core/memory.js", "WHERE first.item=c.item AND first.seq=1 AND json_array_length(json_extract(fb.bytes,'$.audience')) > 0)", "WHERE first.item=c.item AND first.seq=1 AND 1=0)", T(['audit-findings'])],
   ["audit: inbound rate limit is awaited", "app/integrations.js", "!(await this.allowed(source))", "!this.allowed(source)", T(['audit-findings'])],
   ["audit: workspace research respects audiences", "research/workspace.js", "row.item !== item && audienceCovers(store.readScope(row.item), target)", "row.item !== item", T(['audit-findings'])],
+  ["audit: the feed page hides restricted items", "app/http.js", "feedPage(listing.items.filter(item => readable(item.id)), listing.next)", "feedPage(listing.items, listing.next)", T(['audit-findings'])],
   ["ui: Effort skip is in plain words", "app/pages-effort.js", "this stage was closed before Effort could answer, so it was skipped", "post superseded", T(['ui-clarity'])],
   ["break: mentoring ignores a second submit", "public/mentoring.js", "if(form.dataset.busy)return;", "", T(['break-it'])],
   ["break: mentoring buttons come back after a failure", "public/mentoring.js", "}catch{\n  release();", "}catch{\n  ", T(['break-it'])],

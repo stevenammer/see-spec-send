@@ -493,7 +493,8 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       try { leader = store.actor(session.person, '').leader === true; } catch { /* unregistered session holder is not a leader */ }
       if (req.method === 'GET' && url.pathname === '/') {
         const listing = store.listPage(pageAfter(url));
-        return page(res, feedPage(listing.items, listing.next));
+        // The JSON list already hides restricted items from people outside their audience. The page has to as well.
+        return page(res, feedPage(listing.items.filter(item => readable(item.id)), listing.next));
       }
       if (req.method === 'GET' && url.pathname === '/items/new') return page(res, newItemPage());
       if (req.method === 'GET' && url.pathname === '/quest') {

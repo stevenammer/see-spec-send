@@ -620,7 +620,16 @@ export class Store {
       const eligibility = transferEligibility(report, inactivity, { person: event.actor, steward: context.steward });
       if (!eligibility.allowed) throw refused(eligibility.reason);
     }
-    if (event.type === 'erased') {
+    if (event.type === 'erased' && event.fork_copy !== undefined) {
+      // Written by the store itself, right after a source item erased the wording this fork copied. The proof is the
+      // source's own erasure record, so no person (and no import) can use it to erase a fork's text on their own say-so.
+      const first = this.eventFromRow(this.firstEventRow(item) || {});
+      const target = this.db.prepare('SELECT type FROM events WHERE item=? AND body_hash=?').get(item, event.body_hash);
+      const proof = first?.type === 'forked' && first.parent?.item
+        ? this.db.prepare(`SELECT 1 FROM events e JOIN bodies b ON b.hash=e.body_hash
+            WHERE e.item=? AND e.type='erased' AND json_extract(b.bytes,'$.body_hash')=?`).get(first.parent.item, event.fork_copy) : null;
+      if (target?.type !== 'forked' || !proof || typeof event.redacted_hash !== 'string') throw refused('fork copy erasure needs its source erasure');
+    } else if (event.type === 'erased') {
       // Every path to an erasure (the product, a direct append, an import) meets the same rules.
       const context = this.read(item).context;
       const authority = this.actor(event.actor, item);
@@ -974,6 +983,7 @@ export class Store {
   erase(item, targetHash, actor, at, { ground, note } = {}) {
     if (!targetHash || !actor || typeof at !== 'string' || !at) throw new Error('erase arguments required');
     this.db.exec('BEGIN IMMEDIATE');
+    let forkCopies = { erased: 0, unreached: 0 };
     try {
       if (this.isHeld(item)) throw refused('legal hold blocks erasure');
       const target = this.db.prepare('SELECT * FROM events WHERE item=? AND body_hash=?').get(item, targetHash);
@@ -1009,7 +1019,9 @@ export class Store {
       propagateErasure(this, targetHash, { reason: ground || 'author erased own content', at });
       rebuildLedger(this);   // the ledger table is a projection of specs: rebuild it from the now-redacted body
       syncMemory(this, item);
+      forkCopies = this.eraseForkCopies(item, JSON.parse(body.bytes), targetHash, actor, at);
       this.db.exec('COMMIT');
+      return forkCopies;
     } catch (error) {
       try { this.db.exec('ROLLBACK'); } catch {}
       throw error;
@@ -1113,6 +1125,41 @@ export class Store {
 
   // Groups, the knowledge log and delivery state, imported inside the same transaction as the events. The knowledge log
   // must be empty: its chain is one sequence, so two cannot be merged.
+  // A fork copies the source's SPEC lines into its own first event, and that event can't be erased by a person. When the
+  // source erases wording, the copies of that wording in forks go with it: only the copied lines are blanked, the fork's
+  // own SEE and everything else stay. A fork that can no longer take an erasure (it has reached a final state) is
+  // counted, not skipped silently, so the person erasing can be told.
+  eraseForkCopies(sourceItem, erasedBody, sourceHash, actor, at) {
+    const wording = [];
+    const visit = value => { if (typeof value === 'string') { if (value.length >= 8 && !/^[a-f0-9]{64}$/.test(value)) wording.push(value, JSON.stringify(value).slice(1, -1)); } else if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === 'object') Object.values(value).forEach(visit); };
+    visit(erasedBody);
+    const report = { erased: 0, unreached: 0 };
+    if (!wording.length) return report;
+    const hit = text => typeof text === 'string' && wording.some(part => text.includes(part));
+    const forks = this.db.prepare(`SELECT e.item, e.body_hash, b.bytes FROM events e JOIN bodies b ON b.hash=e.body_hash
+      WHERE e.type='forked' AND e.seq=1 AND b.erased=0 AND json_extract(b.bytes,'$.parent.item')=?`).all(sourceItem);
+    for (const fork of forks) {
+      const body = JSON.parse(fork.bytes); const seed = body.seed_spec;
+      if (!seed || ![...(seed.must || []), ...(seed.how_we_know || []), ...(seed.out_of_scope || [])].some(hit)) continue;
+      // Only a fork that copied this very SPEC. Another SPEC that happens to share a line is its own record.
+      const copiedFrom = this.db.prepare("SELECT body_hash FROM events WHERE item=? AND type='specced' AND seq<=? ORDER BY seq DESC LIMIT 1").get(sourceItem, body.parent?.seq ?? 0);
+      if (copiedFrom?.body_hash !== sourceHash) continue;
+      const scrub = list => Array.isArray(list) ? list.map(text => hit(text) ? '[erased]' : text) : list;
+      const tombstone = stable({ ...body, seed_spec: { ...seed, must: scrub(seed.must), how_we_know: scrub(seed.how_we_know), out_of_scope: scrub(seed.out_of_scope) } });
+      this.db.exec('SAVEPOINT fork_copy');
+      try {
+        const current = this.db.prepare('SELECT seq FROM items WHERE item=?').get(fork.item);
+        this.appendInTransaction(fork.item, { type: 'erased', actor, body_hash: fork.body_hash, redacted_hash: scopedBodyHash(fork.item, tombstone),
+          fork_copy: sourceHash, at }, { expectedSeq: current?.seq || 0, idem: `erase:${fork.body_hash}` });
+        this.db.prepare('UPDATE bodies SET bytes=?, erased=1 WHERE hash=?').run(tombstone, fork.body_hash);
+        this.db.exec('RELEASE fork_copy'); report.erased += 1;
+      } catch {
+        this.db.exec('ROLLBACK TO fork_copy'); this.db.exec('RELEASE fork_copy'); report.unreached += 1;
+      }
+    }
+    return report;
+  }
+
   redactStoredCopies(erasedBody, exceptHash) {
     const wording = new Set();
     const visit = value => { if (typeof value === 'string') { if (value.length >= 8 && !/^[a-f0-9]{64}$/.test(value)) { wording.add(value); wording.add(JSON.stringify(value).slice(1, -1)); } } else if (Array.isArray(value)) value.forEach(visit); else if (value && typeof value === 'object') Object.values(value).forEach(visit); };

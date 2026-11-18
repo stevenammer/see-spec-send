@@ -168,3 +168,41 @@ test('a builder that plants a link where the manifest should be is refused quick
   assert.ok(Date.now() - started < 2000, 'it did not hang reading an endless file');
   assert.notEqual(result.state, 'ready', 'a build whose manifest is a link is never accepted');
 });
+
+test('a build that fills its work folder is stopped by the host while it is still running', t => {
+  class FillDocker extends Docker {
+    run(args) {
+      this.calls.push(args);
+      const work = /src=([^,]+)/.exec(args.find(value => value.includes('dst=/work')))[1];
+      mkdirSync(join(work, 'bundle', 'deep'), { recursive: true });
+      writeFileSync(join(work, 'bundle', 'deep', 'huge.bin'), Buffer.alloc(5000));
+      this.live.set(args[args.indexOf('--name') + 1], { State: { Running: true, ExitCode: null } });
+      return 'fake';
+    }
+  }
+  const docker = new FillDocker();
+  const { a } = adapter(t, { docker, ledger: new Ledger(), limits: { workBytes: 1000, workEntries: 50 } });
+  a.start(request);
+  assert.equal(a.status(request.id).state, 'failed', 'over its byte budget it is failed');
+  assert.ok(docker.calls.some(call => call[0] === 'kill'), 'and the container is killed');
+});
+
+test('a build that creates too many files is stopped the same way, and a small build is left alone', t => {
+  class ManyDocker extends Docker {
+    constructor(count) { super(); this.count = count; }
+    run(args) {
+      this.calls.push(args);
+      const work = /src=([^,]+)/.exec(args.find(value => value.includes('dst=/work')))[1];
+      mkdirSync(join(work, 'bundle'), { recursive: true });
+      for (let i = 0; i < this.count; i += 1) writeFileSync(join(work, 'bundle', `f${i}.txt`), 'x');
+      this.live.set(args[args.indexOf('--name') + 1], { State: { Running: true, ExitCode: null } });
+      return 'fake';
+    }
+  }
+  const many = adapter(t, { docker: new ManyDocker(60), ledger: new Ledger(), limits: { workBytes: 1_000_000, workEntries: 50 } });
+  many.a.start(request);
+  assert.equal(many.a.status(request.id).state, 'failed');
+  const few = adapter(t, { docker: new ManyDocker(3), ledger: new Ledger(), limits: { workBytes: 1_000_000, workEntries: 50 } });
+  few.a.start(request);
+  assert.equal(few.a.status(request.id).state, 'running', 'a small build keeps running');
+});

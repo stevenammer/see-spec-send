@@ -13,6 +13,7 @@ import { closeoutPage, feedPage, frozenPostPage, htmlHeaders, itemPage, newItemP
 import { invalid, kindOf, refused, tooLarge as tooLargeError } from '../core/errors.js';
 import { redact } from '../provider/safe-http.js';
 import { CURRENT_RULES, validDateOnly } from '../core/machine.js';
+import { annexVisible, currentAnnexes } from '../reanalysis/read.js';
 import { buildPacket } from '../core/packet.js';
 import { specPage } from './pages-spec.js';
 import { researchRecord } from '../research/connectors.js';
@@ -596,7 +597,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         const job = store.db.prepare('SELECT state FROM closeout_jobs WHERE item=? AND post_id=? AND snapshot_hash=?').get(history[1], post.post_id, post.snapshot_hash);
         const active = store.read(history[1]).context.activePost;
         const sources = active?.kind === 'spec' ? store.db.prepare("SELECT e.body_hash FROM events e JOIN bodies b ON b.hash=e.body_hash WHERE e.item=? AND e.type='commented' AND b.erased=0").all(history[1]).map(row => row.body_hash) : [];
-        return page(res, frozenPostPage(history[1], post, store.events(history[1]), job, sources, store.knowledge.entries('annex').filter(row => row.body.parent?.item === history[1])));
+        return page(res, frozenPostPage(history[1], post, store.events(history[1]), job, sources, currentAnnexes(store, history[1])));
       }
       const specView = url.pathname.match(/^\/items\/([^/]+)\/spec$/);
       if (req.method === 'GET' && specView) {
@@ -635,7 +636,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
               .map(event => [event.packet_hash, store.artifact(view[1], event.packet_hash)])),
             effortAllowance: effortAllowance(store, session.person, view[1], clock),
             stagePosts: store.db.prepare('SELECT * FROM stage_posts WHERE item=? ORDER BY opened_seq, post_id').all(view[1]),
-            annexes: store.knowledge.entries('annex').filter(row => row.body.parent?.item === view[1]),
+            annexes: currentAnnexes(store, view[1]),
             effort: store.db.prepare('SELECT kind,state,last_error,requester,created FROM effort_jobs WHERE item=? ORDER BY created').all(view[1]) }, events, session.person, leader),
           bundleFrameUrl ? htmlHeaders.replace("frame-src 'self'", `frame-src ${new URL(bundleFrameUrl).origin}`) : htmlHeaders,
         );
@@ -643,18 +644,18 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       const updates = url.pathname.match(/^\/api\/items\/([^/]+)\/updates$/);
       if (req.method === 'GET' && updates) {
         if (!readable(updates[1])) return json(res, 403, { error: 'request refused' });
-        return json(res, 200, { annexes: store.knowledge.entries('annex').filter(row => row.body.parent?.item === updates[1]).map(row => ({ hash: row.hash, body: row.body, responses: store.knowledge.entries('annex_response').filter(response => response.body.annex === row.hash) })) });
+        return json(res, 200, { annexes: currentAnnexes(store, updates[1]).map(row => ({ hash: row.hash, body: row.body, responses: store.knowledge.entries('annex_response').filter(response => response.body.annex === row.hash) })) });
       }
       if (req.method === 'GET' && url.pathname === '/api/digest') {
         const entries = store.db.prepare('SELECT * FROM digest_entries WHERE person=? ORDER BY created_at DESC').all(session.person)
-          .filter(entry => { const annex = store.knowledge.entries('annex').find(row => row.hash === entry.annex_hash); return annex && readable(annex.body.parent.item); });
+          .filter(entry => { const annex = store.knowledge.entries('annex').find(row => row.hash === entry.annex_hash); return annex && readable(annex.body.parent.item) && annexVisible(store, annex); });
         return json(res, 200, { entries });
       }
       const annexResponse = url.pathname.match(/^\/api\/annexes\/([a-f0-9]{64})\/response$/);
       if (req.method === 'POST' && annexResponse) {
         if (!exactKeys(input, ['kind']) || !['relevant', 'not_relevant', 'mute'].includes(input.kind)) return json(res, 409, { error: 'request refused' });
         const annex = store.knowledge.entries('annex').find(row => row.hash === annexResponse[1]);
-        if (!annex || !readable(annex.body.parent.item)) return json(res, 403, { error: 'request refused' });
+        if (!annex || !readable(annex.body.parent.item) || !annexVisible(store, annex)) return json(res, 403, { error: 'request refused' });
         const at = new Date(clock()).toISOString();
         const response = store.knowledge.append('annex_response', { v: 1, annex: annex.hash, actor: session.person, kind: input.kind }, { at });
         if (input.kind === 'mute') store.db.prepare('INSERT OR IGNORE INTO reanalysis_mute(person) VALUES(?)').run(session.person);
@@ -853,9 +854,9 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         if (!exactKeys(input, ['body_hash', 'ground', 'note']) || !hex(input.body_hash)
           || (input.ground !== undefined && !['privacy', 'legal', 'safety', 'customer or employee personal data'].includes(input.ground))
           || (input.note !== undefined && !text(input.note, 2000))) return json(res, 409, { error: 'request refused' });
-        store.erase(erase[1], input.body_hash, session.person, new Date(clock()).toISOString(),
+        const copies = store.erase(erase[1], input.body_hash, session.person, new Date(clock()).toISOString(),
           input.ground ? { ground: input.ground, note: input.note } : {});
-        return json(res, 201, { erased: input.body_hash });
+        return json(res, 201, { erased: input.body_hash, ...(copies && (copies.erased || copies.unreached) ? { fork_copies: copies } : {}) });
       }
       const artifact = url.pathname.match(/^\/api\/items\/([^/]+)\/artifact\/([a-f0-9]{64})$/);
       if (req.method === 'GET' && artifact) {

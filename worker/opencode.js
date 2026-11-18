@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { DockerCli, pinnedImage, readApprovedOutput } from './container.js';
 import { Ledger, digest as capabilityDigest } from '../gateway/ledger.js';
@@ -11,12 +11,27 @@ const fail = value => { throw Error(`opencode refused: ${value}`); };
 
 // OpenCode is deliberately an opt-in profile. Its image owns /entrypoint.sh, which starts
 // a Unix-socket-to-127.0.0.1 forwarder and OpenCode. The agent receives no provider key.
+// The builder writes into a folder on the host's disk, and the container's own limits don't cover a bind mount. While it
+// runs, the host counts what is there (without following links) and stops it the moment it passes the budget.
+export function overWorkBudget(dir, maxBytes, maxEntries) {
+  let bytes = 0; let entries = 0; const stack = [dir];
+  while (stack.length) {
+    let found; try { found = readdirSync(stack.pop(), { withFileTypes: true }); } catch { continue; }
+    for (const entry of found) {
+      entries += 1; if (entries > maxEntries) return true;
+      if (entry.isDirectory()) stack.push(join(entry.parentPath ?? dir, entry.name));
+      else if (entry.isFile()) { try { bytes += lstatSync(join(entry.parentPath ?? dir, entry.name)).size; } catch { /* gone already */ } if (bytes > maxBytes) return true; }
+    }
+  }
+  return false;
+}
+
 export class OpenCodeAdapter {
   constructor(store, { docker = new DockerCli(), ledger = new Ledger(store), root = null, gatewaySocket = null, imageFile = new URL('./opencode-image.digest', import.meta.url), wallMs = 30_000, now = Date.now, providerMode = 'gateway', limits = {} } = {}) {
     if (providerMode !== 'gateway') fail('spend not enforced: agents holding their own provider key are refused for paid modes');
     // An agent needs more room than the one-shot static builder: it is a real process tree that keeps a
     // session database and logs in /tmp. Everything else about the lock-down is unchanged.
-    this.limits = { pids: '256', cpus: '1.00', memory: '1g', tmp: '128m', ...limits };
+    this.limits = { pids: '256', cpus: '1.00', memory: '1g', tmp: '128m', workBytes: 32 * 1024 * 1024, workEntries: 2000, ...limits };
     this.store = store; this.db = store.db; this.docker = docker; this.ledger = ledger; this.gatewaySocket = gatewaySocket; this.wallMs = wallMs; this.now = now;
     this.root = resolve(root || join(process.cwd(), '.sss-opencode')); this.image = pinnedImage(imageFile, /^sha256:[a-f0-9]{64}$/); this.externalStart = true; this.modelOutput = true; this.timers = new Map();
   }
@@ -36,7 +51,7 @@ export class OpenCodeAdapter {
     try { writeFileSync(paths.config, JSON.stringify(this.config(request, token)), { mode: 0o644, flag: 'wx' }); writeFileSync(paths.prompt, JSON.stringify(approvedBuildInput({ ...request.spec, ...(request.instructions?.length ? { instructions: request.instructions.map(row => row.instruction) } : {}) })), { mode: 0o644, flag: 'wx' }); const id = this.docker.run(this.withDeadline(this.dockerArgs(row, paths)), { env: { SSS_GATEWAY_TOKEN: token } }); if (!id) throw Error('docker did not return a container id'); this.update(request.id, 'running'); this.arm(this.row(request.id)); } catch (error) { this.ledger.revokeDigest(capabilityDigest(token)); this.update(request.id, 'failed', 'container did not start'); throw error; }
   }
   ready(row, manifest) { const checked = validateBundle(row.bundle_root, manifest); const bytes = new Map(checked.manifest.files.map(entry => [entry.path, readFileSync(join(row.bundle_root, entry.path))])); const read = path => bytes.get(path); return { state: 'ready', bundle: checked.manifest, html: composeBundleDocument(checked.manifest, path => read(path).toString('utf8')), bundleArtifact: bundleArtifact(checked, read) }; }
-  status(id) { const row = this.row(id); if (!row) return { state: 'missing' }; const paths = this.paths(id); if (row.state === 'ready') return this.ready(row, JSON.parse(readApprovedOutput(paths.manifest, 65_536))); if (terminal(row.state)) return { state: row.state }; if (this.expired(row)) return this.stop(id); const info = this.docker.inspect(row.container_name); if (!info?.State?.Running) { if (info?.State?.ExitCode === 0 && existsSync(paths.manifest)) { try { const result = this.ready(row, JSON.parse(readApprovedOutput(paths.manifest, 65_536))); this.disarm(id); this.revoke(row); this.update(id, 'ready'); return result; } catch (error) { if (this.repair(row, paths, error)) return { state: 'running' }; } } this.disarm(id); this.revoke(row); this.update(id, 'failed', 'container exited without a valid bundle'); return { state: 'failed' }; } return { state: 'running' }; }
+  status(id) { const row = this.row(id); if (!row) return { state: 'missing' }; const paths = this.paths(id); if (row.state === 'ready') return this.ready(row, JSON.parse(readApprovedOutput(paths.manifest, 65_536))); if (terminal(row.state)) return { state: row.state }; if (this.expired(row)) return this.stop(id); const info = this.docker.inspect(row.container_name); if (!info?.State?.Running) { if (info?.State?.ExitCode === 0 && existsSync(paths.manifest)) { try { const result = this.ready(row, JSON.parse(readApprovedOutput(paths.manifest, 65_536))); this.disarm(id); this.revoke(row); this.update(id, 'ready'); return result; } catch (error) { if (this.repair(row, paths, error)) return { state: 'running' }; } } this.disarm(id); this.revoke(row); this.update(id, 'failed', 'container exited without a valid bundle'); return { state: 'failed' }; } if (info?.State?.Running && overWorkBudget(paths.work, this.limits.workBytes, this.limits.workEntries)) { this.docker.kill(row.container_name); this.disarm(id); this.revoke(row); this.update(id, 'failed', 'the build wrote more than its work folder allows'); return { state: 'failed' }; } return { state: 'running' }; }
   // One repair pass. When the host refuses a finished build and can say exactly why, the same run gets that reason and
   // another go at the files it already wrote: same approval, same spend caps (the new capability draws on the same
   // run), and only the wall time that is left. A second refusal, an unexplained one, or too little time left falls

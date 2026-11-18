@@ -72,7 +72,8 @@ test('F4 later parent erasure does not prevent restoring an existing historical 
   store.erase('z-parent', spec1, 'op', '2026-11-15T00:00:06.000Z');
   const restored = new Store(); t.after(() => restored.close());
   restored.importJsonl(store.exportJsonl());
-  assert.deepEqual(restored.events('a-child')[0].seed_spec.must, ['First note layout']);
+  // The erasure reaches the copy inside the fork (see the fork-copy test below), and the restored fork is still valid.
+  assert.deepEqual(restored.events('a-child')[0].seed_spec.must, ['[erased]']);
   assert.ok(restored.verifyAll().every(result => result.ok));
   fork('b-after-erasure', { kind: 'spec', hash: spec1 });
   assert.deepEqual(store.events('b-after-erasure')[0].seed_spec.must, ['[erased]']);
@@ -113,4 +114,26 @@ test('F4 typed scope permits only subsets and direct steers cannot add sources o
   const target = new Store(); t.after(() => target.close()); target.importJsonl(store.exportJsonl());
   assert.ok(target.verifyAll().every(result => result.ok));
   assert.equal(target.artifact('z-parent', packet), store.artifact('z-parent', packet));
+});
+
+test('erasing a spec line also blanks the copy of it inside forks, keeps the rest, and leaves every chain valid', t => {
+  const { store, fork, spec1, spec2 } = setup(t);
+  fork('c-child', { kind: 'spec', hash: spec1 });
+  fork('d-child', { kind: 'spec', hash: spec2 });
+  assert.deepEqual(store.events('c-child')[0].seed_spec.must, ['First note layout']);
+  // The steward of the parent erases their first spec (their own text).
+  const report = store.erase('z-parent', spec1, 'op', '2026-11-18T00:00:00.000Z');
+  assert.deepEqual(report, { erased: 1, unreached: 0 }, 'one fork carried that wording; the other copied a different spec');
+  const c = store.events('c-child')[0];
+  assert.deepEqual(c.seed_spec.must, ['[erased]'], 'the copied line is gone from the fork');
+  assert.deepEqual(c.seed_spec.how_we_know, ['[erased]'], 'every line of the erased spec goes, not just one');
+  assert.equal(c.original, 'The first transfer problem.', 'the fork keeps its own SEE');
+  assert.deepEqual(store.events('d-child')[0].seed_spec.must, ['Second note layout'], 'a fork of a different spec is untouched');
+  assert.deepEqual(store.events('d-child')[0].seed_spec.how_we_know, ['Notes survive'], 'even where it shares a line with the erased one');
+  assert.equal(store.db.prepare("SELECT erased FROM bodies WHERE hash=?").get(store.events('c-child')[0].body_hash).erased, 1);
+  assert.ok(store.events('c-child').some(event => event.type === 'erased'), 'the fork has its own erasure record');
+  assert.deepEqual(store.verifyAll().filter(result => !result.ok), [], 'every hash chain still verifies');
+  assert.equal(store.read('c-child').state, 'SEEN', 'the fork still works');
+  // Nobody can use the fork-copy shortcut without a real source erasure.
+  assert.throws(() => store.append('d-child', { type: 'erased', actor: 'member', body_hash: store.events('d-child')[0].body_hash, redacted_hash: 'a'.repeat(64), fork_copy: 'b'.repeat(64), at: '2026-11-18T00:01:00.000Z' }, { idem: 'forged' }), /needs its source erasure/);
 });

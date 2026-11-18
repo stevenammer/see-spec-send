@@ -165,3 +165,28 @@ test('the chat gateway refuses image, audio and file message parts it can’t me
     await assert.doesNotReject(() => gateway.call(token, 'text-ok', chat([{ type: 'text', text: 'hi' }])));
   } finally { store.close(); }
 });
+
+test('a reanalysis update stops showing once a later group change would let people read text they couldn\u2019t read at its source', async () => {
+  const { currentAnnexes } = await import('../reanalysis/read.js');
+  const store = new Store(); const auth = new Auth(store);
+  try {
+    for (const id of ['sam', 'riya', 'pat']) await auth.createUser(id, `${id}-long-password-9x`, false);
+    store.groupCreate('Reservations', 'night shift'); store.groupAdd('Reservations', 'sam'); store.groupAdd('Reservations', 'riya');
+    store.groupCreate('Billing', 'billing team'); store.groupAdd('Billing', 'sam'); store.groupAdd('Billing', 'riya');
+    store.append('secret', { type: 'posted', actor: 'sam', rules: 3, original: 'Private export problem for reservations only', audience: ['Reservations'], at: '2026-11-17T12:00:00.000Z' }, { idem: 'p' });
+    store.append('target', { type: 'posted', actor: 'sam', rules: 3, original: 'Billing export problem seen by billing', audience: ['Billing'], at: '2026-11-17T12:04:00.000Z' }, { idem: 't' });
+    // Everyone who can read the target (sam, riya) can also read the source, so the update is allowed when it is written.
+    const at = '2026-11-17T13:00:00.000Z';
+    const delta = store.knowledge.append('delta', { v: 1, source: { item: 'secret', seq: 1, event_hash: 'e'.repeat(64), body_hash: 'b'.repeat(64) }, trigger: 'x', claims: [{ text: 'Card digits appear in the night export.' }], provenance_roots: ['e'.repeat(64)], generation: 0 }, { at });
+    store.knowledge.append('annex', { v: 1, parent: { item: 'target', post_id: 'p', snapshot_hash: 's', decision_hash: '' }, delta: delta.body_hash, what_is_new: ['Card digits appear in the night export.'], bears_on: [], why_matched: 'x', not_known: [], statement: 'Found by Effort (AI).', impact: 'x' }, { at });
+    const handler = createHandler({ store, auth, secure: false, origin: 'http://localhost' });
+    const login = await call(handler, 'POST', '/api/login', {}, { id: 'sam', password: 'sam-long-password-9x' });
+    const sam = { cookie: login.headers['set-cookie'].split(';')[0], accept: 'text/html' };
+    assert.equal(currentAnnexes(store, 'target').length, 1);
+    assert.match((await call(handler, 'GET', '/items/target', sam)).text, /Card digits appear/, 'the item page shows the update to people who may read both');
+    // An operator adds Pat to Billing. Pat can now read the target, but never could read the source.
+    store.groupAdd('Billing', 'pat');
+    assert.equal(currentAnnexes(store, 'target').length, 0, 'the update is hidden');
+    assert.doesNotMatch((await call(handler, 'GET', '/items/target', sam)).text, /Card digits appear/, 'on the item page too, for everyone');
+  } finally { store.close(); }
+});

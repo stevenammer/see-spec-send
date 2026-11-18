@@ -20,7 +20,7 @@ jobs:
       matrix:
         image: [{ name: app, context: '.', file: Dockerfile }, { name: builder, context: worker/opencode, file: worker/opencode/Dockerfile, skip: usr/local/lib/node_modules/npm }]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - run: docker build -t sss-${{ matrix.image.name }}:scan -f ${{ matrix.image.file }} ${{ matrix.image.context }}
       # Fails on a fixed HIGH or CRITICAL vulnerability. Ones with no fix yet are reported, not blocking.
@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with: { dockerfile: Dockerfile, failure-threshold: warning }
@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with: { python-version: '3.12' }

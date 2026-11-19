@@ -1,12 +1,12 @@
-staging directory: /tmp/sss-prove-cap-rLTnzM
+staging directory: /tmp/sss-prove-cap-Y2tx7s
 price (Haiku 4.5 on Bedrock): 1000000 / 5000000 micro-dollars per million input / output tokens
 
 === 1. Policy through the repo CLI ===
-$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway fixture-enable
+$ SSS_DB=/tmp/sss-prove-cap-Y2tx7s/staging.db node cli.js gateway fixture-enable
   Local fixture enabled. No real provider is configured.
-$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway policy set --file /tmp/sss-prove-cap-rLTnzM/policy.json
+$ SSS_DB=/tmp/sss-prove-cap-Y2tx7s/staging.db node cli.js gateway policy set --file /tmp/sss-prove-cap-Y2tx7s/policy.json
   gateway policy version 2 set
-$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway status
+$ SSS_DB=/tmp/sss-prove-cap-Y2tx7s/staging.db node cli.js gateway status
   {"basis":"fixture price estimates, not provider invoices","enabled":true,"policy":{"concurrency":4,"day_micros":15000000,"enabled":true,"global_micros":100000000,"input_bytes":65536,"output_tokens":4096,"response_bytes":65536,"timeout_ms":30000},"approvals":[]}
   [PASS] policy stored with day_micros 15,000,000 and global_micros 100,000,000
 
@@ -68,8 +68,18 @@ $ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway status
   [PASS] REPLACING THE DATABASE RESETS THE DAILY COUNTER: the day total is back near zero and a full-size call is admitted (day total 6 instead of 14999860)
   a brand-new empty database (no policy row): gateway disabled
   [PASS] a brand-new empty database refuses (gateway disabled until a policy is set): it fails closed
-  consequence: a hosted demo reset script must carry the gateway_* tables (receipts, integrity, policy) over, or keep its own
-  external day counter; restoring a seed or backup puts the day spend back to whatever that file recorded.
+  consequence: restoring a seed or backup puts the day spend back to whatever that file recorded, so the hosted demo
+  reset script must carry the gateway_* tables over. 2g2 re-runs this same case against the real reset script.
+
+=== 2g2. Same case (g), but through the REAL hosted-demo reset script (deploy/hosted-demo/reset.js, injected clock) ===
+  BEFORE the reset: 455 receipts, day total 14999860, lifetime 14999860, policy day_micros 15000000 / global_micros 100000000
+  [PASS] the real reset script ran (forced, mid-day) and set its kill latch
+  AFTER  the reset: 451 receipts, day total 14999860, lifetime 14999860, policy day_micros 15000000 / global_micros 100000000
+  (the receipt count can shrink: builder-lane receipts are rolled up into one sealed carry row per day; Quest, Effort and analysis receipts are copied as they are)
+  [PASS] after the real reset the day total, lifetime total and policy are exactly what they were, and every remaining seal verifies (before 14999860, after 14999860)
+  a max-size call after the real reset: day cap exceeded
+  [PASS] the exhausted day still refuses after the real reset: "day cap exceeded" (plain copy in 2g admitted it)
+  [PASS] the reset still replaced the non-ledger data with the seed roster (6 invented people) (6 people)
 
 === 2e. The day is UTC and rolls over (server local zone is America/New_York) ===
   clock = 2026-11-19T23:59:59.999Z (server local time 11/19/2026, 6:59:59 PM Eastern)
@@ -82,22 +92,22 @@ $ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway status
   [PASS] yesterday's spend is kept under its own date and still counts toward the lifetime cap
 
 === 2e2. The lifetime (global) cap still applies on a new day ===
-$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway policy set --file /tmp/sss-prove-cap-rLTnzM/policy.json
+$ SSS_DB=/tmp/sss-prove-cap-Y2tx7s/staging.db node cli.js gateway policy set --file /tmp/sss-prove-cap-Y2tx7s/policy.json
   gateway policy version 3 set
   lifetime cap set to just above what is spent; a normal call on the new day: global cap exceeded
   [PASS] a new day does not reopen a spent lifetime cap
-$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway policy set --file /tmp/sss-prove-cap-rLTnzM/policy.json
+$ SSS_DB=/tmp/sss-prove-cap-Y2tx7s/staging.db node cli.js gateway policy set --file /tmp/sss-prove-cap-Y2tx7s/policy.json
   gateway policy version 4 set
 
 === 2f. Policy switch (enabled: false) and the kill switch refuse spend immediately ===
   [PASS] control: with the policy enabled and no kill latch every lane is admitted
-$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway policy set --file /tmp/sss-prove-cap-rLTnzM/policy.json
+$ SSS_DB=/tmp/sss-prove-cap-Y2tx7s/staging.db node cli.js gateway policy set --file /tmp/sss-prove-cap-Y2tx7s/policy.json
   gateway policy version 5 set
   policy enabled:false -> builder: gateway disabled | quest: gateway disabled | effort: gateway disabled | analysis: gateway disabled
   [PASS] enabled:false refuses every lane at once, with no call to the stand-in
-$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway policy set --file /tmp/sss-prove-cap-rLTnzM/policy.json
+$ SSS_DB=/tmp/sss-prove-cap-Y2tx7s/staging.db node cli.js gateway policy set --file /tmp/sss-prove-cap-Y2tx7s/policy.json
   gateway policy version 6 set
-$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js kill set
+$ SSS_DB=/tmp/sss-prove-cap-Y2tx7s/staging.db node cli.js kill set
   file latch: set
   database latch: set
   stopped
@@ -106,7 +116,7 @@ $ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js kill set
   [PASS] after `kill set` the builder, Quest and Effort lanes refuse ("stopped run") with no stand-in call
   [PASS] after `kill set` the analysis lane ALSO refuses (stopped run)
   [PASS] the stand-in received no call after the kill switch (stand-in calls since kill: 0)
-$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js kill clear
+$ SSS_DB=/tmp/sss-prove-cap-Y2tx7s/staging.db node cli.js kill clear
   clear
 
 === 4. Worst-case and typical calls per day at $15 (from the price table above and this policy) ===
@@ -118,6 +128,4 @@ $ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js kill clear
   [PASS] every lane has a finite worst-case calls-per-day figure at $15
   people needed to spend the whole $15 through one lane at the per-person limits (worst-case): Quest 75, analysis 59 (per-person limits shape who spends it, the shared day cap is what bounds the total)
 
-45 of 45 checks passed
-(node:2483067) ExperimentalWarning: SQLite is an experimental feature and might change at any time
-(Use `node --trace-warnings ...` to show where the warning was created)
+49 of 49 checks passed

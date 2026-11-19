@@ -90,10 +90,24 @@ export function scanTree(root, denylist) {
   return findings;
 }
 
+// GitHub builds a temporary merge commit for every pull request ("Merge <sha> into <sha>"),
+// committed by GitHub and authored by whoever opened the PR, with that account's email. It
+// exists only in the checkout CI makes for the PR and never lands in the repository. Skip
+// exactly that shape, so a PR opened from a personal account doesn't fail this check. A
+// commit that merely looks similar but isn't committed by GitHub is still scanned.
+const COMMIT_MARK = '@@sss-commit@@';
+const GITHUB_PR_MERGE = /^Merge [0-9a-f]{40} into [0-9a-f]{40}$/;
+export function dropGithubPrMerge(log) {
+  return log.split(COMMIT_MARK + '\n').filter((chunk) => {
+    const [, , , committerEmail, subject] = chunk.split('\n');
+    return !(committerEmail === 'noreply@github.com' && GITHUB_PR_MERGE.test(subject ?? ''));
+  }).join('');
+}
+
 export function scanHistory(root, denylist) {
   let log;
-  try { log = execFileSync('git', ['-C', root, 'log', '--all', '-p', '--format=%H%n%an%n%ae%n%s%n%b'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }); } catch { return []; }
-  return scanText('git-history', log, denylist);
+  try { log = execFileSync('git', ['-C', root, 'log', '--all', '-p', `--format=${COMMIT_MARK}%n%H%n%an%n%ae%n%ce%n%s%n%b`], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }); } catch { return []; }
+  return scanText('git-history', dropGithubPrMerge(log), denylist);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

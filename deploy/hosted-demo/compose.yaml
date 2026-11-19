@@ -1,0 +1,74 @@
+# Hosted demo, one host. Fixture lane only: no model provider, no real builder, made-up data, wiped daily.
+# Not deployed anywhere yet. Run from this folder: `docker compose --env-file demo.env ...` (see docs/HOSTED_DEMO.md).
+#
+# Network shape: nothing is published. `cloudflared` joins the APP container's network namespace (the same trick the
+# `tls` sidecar uses in the repository's compose.yaml), so the tunnel reaches the app over loopback at
+# http://localhost:8080 and the app's --trusted-proxy rule applies to it. In the Cloudflare dashboard, set the tunnel's
+# public hostname service to http://localhost:8080.
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
+services:
+  app:
+    <<: *hardened
+    build: { context: ../.., dockerfile: Dockerfile }
+    image: sss-demo:local
+    user: "1000:1000"                      # the image's unprivileged `node` user
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    volumes: ["sss-demo-data:/data"]       # the only writable path
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    environment:
+      SSS_DB: /data/sss.db
+      SSS_DEMO_BANNER: "1"
+    # The Dockerfile entrypoint is `node cli.js serve --host 0.0.0.0 --port 8080 --trusted-proxy`; these are appended.
+    # Fixture Effort lane only (canned replies). No --oidc-config, no provider flags: `provider list` stays empty.
+    command: ["--origin", "${SSS_ORIGIN:?set SSS_ORIGIN to the public https origin, for example https://demo.example.com}", "--enable-effort", "--fixture"]
+  cloudflared:
+    <<: *hardened
+    # Pinned by digest (multi-arch: amd64 and arm64 verified read-only with `docker buildx imagetools inspect`).
+    image: ${SSS_CLOUDFLARED_IMAGE:-cloudflare/cloudflared@sha256:e613aadbc2d9511785d2e67a86b0c8ac18dd63a3f9af0d06faf04cbfdcb35f2d}
+    network_mode: "service:app"
+    command: ["tunnel", "--no-autoupdate", "run"]
+    env_file: ./tunnel.env                 # holds TUNNEL_TOKEN only; create it from tunnel.env.example, mode 0600, never commit it
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    depends_on: [app]
+  worker:
+    <<: *hardened
+    image: sss-demo:local
+    user: "1000:1000"
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    volumes: ["sss-demo-data:/data"]
+    environment: { SSS_DB: /data/sss.db }
+    healthcheck: { disable: true }         # the image's check probes the web port; the worker has none
+    entrypoint: ["node", "cli.js"]
+    # Fake builder only. No Docker socket, no gateway socket, no containers.
+    command: ["worker", "--builder", "fixture"]
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    depends_on: [app]
+  # One-off tools (profile `tools`): reset, kill switch, invites. Never started by `up`.
+  tools:
+    <<: *hardened
+    profiles: ["tools"]
+    restart: "no"
+    healthcheck: { disable: true }
+    image: sss-demo:local
+    user: "1000:1000"
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    volumes: ["sss-demo-data:/data"]
+    environment: { SSS_DB: /data/sss.db }
+    entrypoint: ["node"]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+volumes:
+  sss-demo-data:

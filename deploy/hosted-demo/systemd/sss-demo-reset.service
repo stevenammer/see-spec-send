@@ -1,0 +1,10 @@
+# Daily reset. The guards in reset.js decide whether it may run; a refusal exits 3 and leaves the app up.
+[Unit]
+Description=See Spec Send hosted demo daily reset
+After=sss-demo.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/see-spec-send/deploy/hosted-demo
+ExecStart=/opt/see-spec-send/deploy/hosted-demo/demo.sh reset
+TimeoutStartSec=300

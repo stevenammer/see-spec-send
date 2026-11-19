@@ -1,0 +1,13 @@
+[Unit]
+Description=See Spec Send hosted demo daily reset at 00:00 UTC
+
+[Timer]
+OnCalendar=*-*-* 00:00:00 UTC
+AccuracySec=1s
+RandomizedDelaySec=0
+# Persistent stays off on purpose: a missed midnight must not become a mid-day reset. reset.js would refuse it anyway.
+Persistent=false
+Unit=sss-demo-reset.service
+
+[Install]
+WantedBy=timers.target

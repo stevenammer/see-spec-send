@@ -1,0 +1,15 @@
+# Brings the demo stack up at boot. Install: see docs/HOSTED_DEMO.md. Paths assume the repo is at /opt/see-spec-send.
+[Unit]
+Description=See Spec Send hosted demo (stack)
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/see-spec-send/deploy/hosted-demo
+ExecStart=/opt/see-spec-send/deploy/hosted-demo/demo.sh up
+ExecStop=/opt/see-spec-send/deploy/hosted-demo/demo.sh down
+
+[Install]
+WantedBy=multi-user.target

@@ -8,7 +8,7 @@ A forum thread, like the real app: a post, replies from teammates, a labeled AI 
 
 A small site in `demo/` that lets anyone try the main rule without installing anything. It's plain files. There's no build step, no dependencies, no accounts and no cookies. After it loads, it makes no network requests, and a Content-Security-Policy in the page enforces that.
 
-It isn't live yet. When I publish it, it'll be at https://stevenammer.github.io/see-spec-send/.
+It's live at https://stevenammer.github.io/see-spec-send/. A GitHub Pages workflow republishes `demo/` when something lands on `main`.
 
 ## Run it locally
 

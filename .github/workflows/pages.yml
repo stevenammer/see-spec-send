@@ -1,5 +1,5 @@
-# Prepared, not enabled. It only runs once Pages is turned on for this repository
-# and the owner pushes to main. The demo is plain files, so there is no build step.
+# Publishes demo/ to GitHub Pages on every push to main (live at
+# https://stevenammer.github.io/see-spec-send/). The demo is plain files, so there is no build step.
 name: Demo site
 
 on:

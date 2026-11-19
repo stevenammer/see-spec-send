@@ -3,6 +3,10 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    # One PR per week for every Actions bump, so related pins (codeql init, analyze, upload-sarif; Pages actions) move together.
+    groups:
+      github-actions:
+        patterns: ["*"]
   # Node major versions are upgraded on purpose, after a full test run on the new version, not by bot.
   # (Node 26 showed a SQLite behavior difference in November 2026; Node 22 is supported until April 2027.)
   - package-ecosystem: docker

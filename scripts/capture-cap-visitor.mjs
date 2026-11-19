@@ -104,9 +104,12 @@ try {
     page = await (await fetch(`${origin}/items/${item}`, { headers: { cookie } })).text();
     if (/Effort \(the AI\)[^<]*(blocked|unavailable|replied|thinking)/.test(page)) break;
   }
-  for (const line of page.match(/<p>Effort \(the AI\)[^<]*<\/p>/g) || []) say(line.replace(/<[^>]+>/g, ''));
-  const allowance = /<details><summary>AI usage and limits[\s\S]*?<\/details>/.exec(page)?.[0]?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-  say(`AI usage panel: ${allowance}`);
+  // Plain text only for the printed report: split on tags instead of stripping them with a replace.
+  const textOf = html => html.split(/<[^>]*>/).join(' ').replace(/\s+/g, ' ').trim();
+  for (const line of page.match(/<p>Effort \(the AI\)[^<]*<\/p>/g) || []) say(textOf(line));
+  const allowance = /<details><summary>AI usage and limits[\s\S]*?<\/details>/.exec(page)?.[0];
+  const allowanceText = allowance ? textOf(allowance) : allowance;
+  say(`AI usage panel: ${allowanceText}`);
 
   say('\n--- Builder agent: what its HTTP gateway answers (library mapping used by /v1/messages) ---');
   for (const reason of ['day cap exceeded', 'global cap exceeded']) { const { status, body } = errorFor(Error(reason)); say(`${reason}: HTTP ${status} ${JSON.stringify(body)}`); }

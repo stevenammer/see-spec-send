@@ -7,3 +7,7 @@ node_modules/
 data/
 .claude/
 denylist.json
+
+# Hosted demo secrets and per-host settings
+deploy/hosted-demo/tunnel.env
+deploy/hosted-demo/demo.env

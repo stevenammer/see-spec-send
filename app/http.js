@@ -99,13 +99,18 @@ const headers = (res, secure = false) => {
   res.setHeader('cross-origin-opener-policy', 'same-origin');
   res.setHeader('cross-origin-resource-policy', 'same-origin');
 };
+// Hosted demo only: with SSS_DEMO_BANNER=1 every ordinary app page gets one fixed notice right after <body>. Unset, nothing changes.
+// Pages with their own policy (built artifacts) are never touched.
+export const DEMO_BANNER_TEXT = 'Demo: everything here is made-up data, wiped every day at 00:00 UTC. Don\'t type real information.';
+const withDemoBanner = (html, csp) => process.env.SSS_DEMO_BANNER === '1' && csp === htmlHeaders && typeof html === 'string'
+  ? html.replace('<body>', `<body><p class="demo-banner" role="note">${DEMO_BANNER_TEXT.replace(/'/g, '&#39;')}</p>`) : html;
 const page = (res, html, csp = htmlHeaders) => {
   res.writeHead(200, {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
     'content-security-policy': csp,
   });
-  res.end(html);
+  res.end(withDemoBanner(html, csp));
 };
 const unsafe = new Set(['__proto__', 'constructor', 'prototype']);
 const safeObject = value =>

@@ -1,0 +1,5 @@
+# Local rehearsal only: publishes the app on loopback so you can curl it. Never use this file on the real host.
+# Usage: docker compose -f compose.yaml -f compose.local.yaml up -d app worker
+services:
+  app:
+    ports: ["127.0.0.1:8787:8080"]

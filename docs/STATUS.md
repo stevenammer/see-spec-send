@@ -36,6 +36,7 @@ An honest table. A row says **Shipped and tested** only when a named test in thi
 | Nightly mutation checks | Scheduled (this machine, 02:30) | `scripts/nightly-mutants.sh`, `scripts/mutate-new.mjs`, `scripts/mutate-check.mjs --shard` | 57 scoped mutants every night plus one tenth of the 419-mutant campaign, so the whole set rotates in ten nights. Results in `~/.local/state/see-spec-send/mutation/`. Depends on that machine being on |
 | Portability: export and import of an organization | Shipped and tested | `test/export-portability.test.mjs`, `scripts/drill.mjs` | Events, artifacts, groups and read scopes, the whole knowledge log, tombstones and delivery state round-trip and verify; erased text stays out; old exports still import. Accounts and private mentoring are deliberately not exported. Tried by the drill, not at large scale |
 | Teams channel adapter | Built (synthetic payloads only) | `test/channel-teams.test.mjs` | No real Teams, Graph, Entra, tenant install, SDK, or network |
+| Hosted demo (invite-only, fixture lane, wiped daily) | Built, not deployed | `test/hosted-demo-reset.test.mjs`, `docs/HOSTED_DEMO.md`, `deploy/hosted-demo/` | Packaging, seed, guarded daily reset and a demo banner exist and ran in a local container. No hosted instance exists, and Cloudflare, the real host and the 00:00 UTC timer were not exercised |
 | Other channels | Planned | none | Nothing shipped |
 | Customer-owned storage, enterprise sign-in | Planned | none | Seams only |
 | Scoring or ranking people | Not planned | none | |

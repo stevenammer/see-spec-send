@@ -1,3 +1,13 @@
+/* Hosted demo notice (only rendered when the server runs with SSS_DEMO_BANNER=1). */
+.demo-banner {
+  margin: 0;
+  padding: .5rem 1rem;
+  background: #fff3bf;
+  color: #17212b;
+  border-bottom: 2px solid #17212b;
+  text-align: center;
+  font-size: 1rem;
+}
 :root {
   color: #17212b;
   background: #fff;

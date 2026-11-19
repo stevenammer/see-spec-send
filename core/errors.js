@@ -16,6 +16,10 @@ export const invalid = message => new AppError('invalid', message);
 // The request is larger than the fixed limit. Answers 413.
 export const tooLarge = message => new AppError('too_large', message);
 
+// The AI budget or a per-person AI limit said no (day cap, lifetime cap, per-person limit, AI switched off). Answers 429.
+// The message stays the gateway's internal reason; gateway/budget.js turns it into the sentence a person reads.
+export const budget = message => new AppError('budget', message);
+
 // SQLite lock contention is a retryable server state, never a rule refusal.
 const contention = error => error?.errcode === 5 || error?.errcode === 6;
 

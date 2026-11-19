@@ -171,6 +171,7 @@ export const errorBody = (message, type = 'api_error') => ({ type: 'error', erro
 export function errorFor(error) {
   if (error instanceof AnthropicRefusal) return { status: error.status, body: errorBody(error.message, error.type) };
   const message = String(error?.message || '');
+  if (/^(day|global) cap exceeded$/.test(message)) return { status: 402, body: errorBody(/^day/.test(message) ? "today's AI budget for this site is used up; it starts over at midnight UTC" : 'the AI budget for this site is used up', 'billing_error') };
   if (/cap exceeded/.test(message)) return { status: 402, body: errorBody('the approved budget for this build is used up', 'billing_error') };
   if (/concurrency/.test(message)) return { status: 429, body: errorBody('too many calls at once', 'rate_limit_error') };
   if (/capability|stale|stopped/.test(message)) return { status: 403, body: errorBody('this build is no longer authorized', 'permission_error') };

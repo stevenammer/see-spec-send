@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { refused } from '../core/errors.js';
+import { kindOf, refused } from '../core/errors.js';
+import { budgetSentence } from '../gateway/budget.js';
 import { evidencePackage, readAnalysisAnswer } from './evidence.js';
 import { completeAnswer, repeatsTemplate } from './prompt.js';
 
@@ -64,7 +65,16 @@ export async function runAnalysis({ store, viewer, request, askModel = null, now
     checked = { answer: refusal(packet, request.question), label: 'Fixed criteria-first refusal. Human review is still required.' };
     configuration = { mode: 'refused_reframed', provider: 'none' };
   } else if (typeof askModel === 'function') {
-    const output = await askModel(Object.freeze(structuredClone(packet)));
+    let output; let budgetUsed = null;
+    try { output = await askModel(Object.freeze(structuredClone(packet))); } catch (error) {
+      // The AI budget is used up, or AI is switched off: the person still gets the sources, and is told plainly why.
+      if (kindOf(error) !== 'budget') throw error;
+      budgetUsed = budgetSentence(error.message) || 'AI is not available right now.';
+    }
+    if (budgetUsed) {
+      checked = { answer: sourcesOnly(packet), label: `${budgetUsed} Sources-only answer shown; human review is required.` };
+      configuration = { mode: 'budget_used_sources_only', provider: 'gateway analysis', job_class: 'analysis' };
+    } else {
     if (unsafeModelOutput.test(output)) throw refused('model output attempted a people ranking or motive inference');
     try {
       checked = readAnalysisAnswer(packet, completeAnswer(packet, output));
@@ -74,6 +84,7 @@ export async function runAnalysis({ store, viewer, request, askModel = null, now
       // A malformed or hollow model answer never becomes a finding. The person still gets the sources, and is told why.
       checked = { answer: sourcesOnly(packet), label: `The model's answer was refused (${String(error.message).slice(0, 120)}). Sources-only answer shown; human review is required.` };
       configuration = { mode: 'model_refused_sources_only', provider: 'gateway analysis', job_class: 'analysis' };
+    }
     }
   } else {
     checked = { answer: sourcesOnly(packet), label: 'Sources-only deterministic answer. No finding was generated; human review is required.' };

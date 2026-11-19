@@ -1,0 +1,123 @@
+staging directory: /tmp/sss-prove-cap-rLTnzM
+price (Haiku 4.5 on Bedrock): 1000000 / 5000000 micro-dollars per million input / output tokens
+
+=== 1. Policy through the repo CLI ===
+$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway fixture-enable
+  Local fixture enabled. No real provider is configured.
+$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway policy set --file /tmp/sss-prove-cap-rLTnzM/policy.json
+  gateway policy version 2 set
+$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway status
+  {"basis":"fixture price estimates, not provider invoices","enabled":true,"policy":{"concurrency":4,"day_micros":15000000,"enabled":true,"global_micros":100000000,"input_bytes":65536,"output_tokens":4096,"response_bytes":65536,"timeout_ms":30000},"approvals":[]}
+  [PASS] policy stored with day_micros 15,000,000 and global_micros 100,000,000
+
+=== 2b. Worst case is reserved BEFORE the call; a response with no usage keeps the full hold ===
+  [PASS] builder: while the stand-in is running, the day total already includes the full worst case (before=0, during=5339, worst=5339)
+  [PASS] builder: after settling the charge drops to actual usage (charged=1773 of worst 5339)
+  [PASS] quest: while the stand-in is running, the day total already includes the full worst case (before=1773, during=6486, worst=4713)
+  [PASS] quest: after settling the charge drops to actual usage (charged=1617 of worst 4713)
+  [PASS] effort: while the stand-in is running, the day total already includes the full worst case (before=3390, during=10069, worst=6679)
+  [PASS] effort: after settling the charge drops to actual usage (charged=2108 of worst 6679)
+  [PASS] analysis: while the stand-in is running, the day total already includes the full worst case (before=5498, during=29986, worst=24488)
+  [PASS] analysis: after settling the charge drops to actual usage (charged=1600 of worst 24488)
+  [PASS] builder: a reply with no usage is not settled and the whole worst case stays counted (state=dispatched, held=5339, caller saw error "unsettled 202")
+  [PASS] quest: a reply with no usage is not settled and the whole worst case stays counted (state=dispatched, held=4713, caller saw status 202)
+  [PASS] effort: a reply with no usage is not settled and the whole worst case stays counted (state=dispatched, held=6679, caller saw status 202)
+  [PASS] analysis: a reply with no usage is not settled and the whole worst case stays counted (state=dispatched, held=24488, caller saw error "analysis provider did not return a settled answer")
+
+=== 2d. Per-person limits (each person is fresh; stand-in reports full usage so the dollars are real) ===
+  Quest, 4 small calls by one person: admitted | admitted | admitted | person daily call limit
+  [PASS] Quest allows 3 calls per person per day and refuses the 4th
+  Quest, 2 max-size calls by one person: admitted | person daily budget exceeded
+  [PASS] Quest refuses a second call that would push one person past $0.100000 for the day
+  [PASS] a different person is not affected by the first person's limit
+  Effort, 11 small calls by one person: admitted | admitted | mention daily call limit
+  [PASS] Effort allows 10 on-demand calls per person per day and refuses the 11th
+  Effort, 2 max-size calls by one person: admitted | person daily budget exceeded
+  [PASS] Effort refuses a second call that would push one person past $0.100000
+  analysis, 4 small calls by one person: admitted | admitted | admitted | analysis daily call limit
+  [PASS] analysis allows 3 calls per person per day and refuses the 4th
+  analysis, 2 max-size calls by one person: admitted | analysis daily budget exceeded
+  [PASS] analysis refuses a second call that would push one person past $0.100000
+
+=== 2a/2c. Flood: 400 simultaneous max-size calls, round robin over all four lanes, nothing settles until the end ===
+  stand-in has received 225 calls, all still waiting; day total already counted: 14945086 micro-dollars ($14.945086)
+  [PASS] while every admitted call is still in flight, the day total (worst-case holds only) is at or under the cap (14945086 <= 15000000)
+  admitted per lane: {"builder":3,"quest":65,"effort":65,"analysis":64}; refusals: {"builder: gateway concurrency exceeded":62,"analysis: day cap exceeded":36,"builder: day cap exceeded":35,"quest: day cap exceeded":35,"effort: day cap exceeded":35}
+  per-lane day subtotals: {"builder":267233,"quest":4421856,"effort":4575799,"analysis":5678622}; sum 14943510
+  [PASS] every lane contributed to the SAME day total (each lane has spend, and the lane subtotals add up to the total)
+  [PASS] the number of calls the stand-in received during the flood equals the number the gateway admitted (refused calls never reached it) (stand-in saw 197, admitted 197)
+  [PASS] day cap refusals came from the shared total in every lane (the builder was also stopped first by its own limit of 4 in flight) (builder: gateway concurrency exceeded ; analysis: day cap exceeded ; builder: day cap exceeded ; quest: day cap exceeded ; effort: day cap exceeded)
+  [PASS] the builder lane was refused too (it can also be stopped first by its own concurrency limit of 4)
+  [PASS] day total never exceeded the cap (14943510 <= 15000000)
+  after 230 small top-up calls: day total 14999860 of 15000000; headroom 140 micro-dollars
+  builder at the limit: day cap exceeded
+  quest at the limit: day cap exceeded
+  effort at the limit: day cap exceeded
+  analysis at the limit: day cap exceeded
+  [PASS] at the limit every lane refuses with the day cap
+  [PASS] Quest, Effort and analysis refusals are typed "budget" (HTTP 429 with a plain sentence); the builder lane answers its agent with 402 via gateway/anthropic.js
+  [PASS] the stand-in received NO call from any refused attempt (stand-in total calls: 455)
+  [PASS] day total stays at or under 15,000,000 at the limit ($14.999860)
+
+=== 2g. Database file replaced mid-day (a copy of the exhausted staging database is used, never the original) ===
+  copy of the exhausted database, one call: day cap exceeded
+  [PASS] the exhausted copy refuses (counter intact)
+  after copying the seed template over it: day total 0 receipts today; kill latch still set: true
+  [PASS] the stop latch (a file next to the database) survives the replacement
+  after the replacement, a max-size call is: admitted; day total now 6
+  [PASS] REPLACING THE DATABASE RESETS THE DAILY COUNTER: the day total is back near zero and a full-size call is admitted (day total 6 instead of 14999860)
+  a brand-new empty database (no policy row): gateway disabled
+  [PASS] a brand-new empty database refuses (gateway disabled until a policy is set): it fails closed
+  consequence: a hosted demo reset script must carry the gateway_* tables (receipts, integrity, policy) over, or keep its own
+  external day counter; restoring a seed or backup puts the day spend back to whatever that file recorded.
+
+=== 2e. The day is UTC and rolls over (server local zone is America/New_York) ===
+  clock = 2026-11-19T23:59:59.999Z (server local time 11/19/2026, 6:59:59 PM Eastern)
+  one millisecond before midnight UTC: builder: day cap exceeded | quest: day cap exceeded | effort: day cap exceeded | analysis: day cap exceeded
+  [PASS] one millisecond before 00:00 UTC every lane still refuses (still the old day, and the 8 PM local hour changed nothing)
+  clock = 2026-11-20T00:00:00.000Z (server local time 11/19/2026, 7:00:00 PM Eastern)
+  at 00:00:00.000 UTC: builder: admitted | quest: admitted | effort: admitted | analysis: admitted
+  [PASS] at 00:00:00.000 UTC the counter rolls over and every lane is admitted again
+  new day (2026-11-20) total 23907; yesterday's (2026-11-19) total still 14999860; lifetime 15023767
+  [PASS] yesterday's spend is kept under its own date and still counts toward the lifetime cap
+
+=== 2e2. The lifetime (global) cap still applies on a new day ===
+$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway policy set --file /tmp/sss-prove-cap-rLTnzM/policy.json
+  gateway policy version 3 set
+  lifetime cap set to just above what is spent; a normal call on the new day: global cap exceeded
+  [PASS] a new day does not reopen a spent lifetime cap
+$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway policy set --file /tmp/sss-prove-cap-rLTnzM/policy.json
+  gateway policy version 4 set
+
+=== 2f. Policy switch (enabled: false) and the kill switch refuse spend immediately ===
+  [PASS] control: with the policy enabled and no kill latch every lane is admitted
+$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway policy set --file /tmp/sss-prove-cap-rLTnzM/policy.json
+  gateway policy version 5 set
+  policy enabled:false -> builder: gateway disabled | quest: gateway disabled | effort: gateway disabled | analysis: gateway disabled
+  [PASS] enabled:false refuses every lane at once, with no call to the stand-in
+$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js gateway policy set --file /tmp/sss-prove-cap-rLTnzM/policy.json
+  gateway policy version 6 set
+$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js kill set
+  file latch: set
+  database latch: set
+  stopped
+  [PASS] `kill set` reports stopped
+  after kill set -> builder: stopped run | quest: stopped run | effort: stopped run | analysis: stopped run
+  [PASS] after `kill set` the builder, Quest and Effort lanes refuse ("stopped run") with no stand-in call
+  [PASS] after `kill set` the analysis lane ALSO refuses (stopped run)
+  [PASS] the stand-in received no call after the kill switch (stand-in calls since kill: 0)
+$ SSS_DB=/tmp/sss-prove-cap-rLTnzM/staging.db node cli.js kill clear
+  clear
+
+=== 4. Worst-case and typical calls per day at $15 (from the price table above and this policy) ===
+  Quest draft              worst-case hold  66889 micros ($0.066889) ->  224 calls fill $15 | typical   3750 micros ->  4000 calls | 3 calls/person/day, $0.100000/person
+  Effort reply             worst-case hold  68855 micros ($0.068855) ->  217 calls fill $15 | typical   2500 micros ->  6000 calls | 10 calls/person/day, $0.100000/person (worker asks for 128 out)
+  Effort SPEC draft        worst-case hold  72695 micros ($0.072695) ->  206 calls fill $15 | typical   6000 micros ->  2500 calls | output cap 1,024
+  Analysis answer          worst-case hold  86024 micros ($0.086024) ->  174 calls fill $15 | typical  15000 micros ->  1000 calls | 3 calls/person/day, $0.100000/person; docs/MODEL_EVAL.md: about 1.5 cents
+  Builder model call       worst-case hold  86024 micros ($0.086024) ->  174 calls fill $15 | typical  27500 micros ->   545 calls | a build is many calls; docs/BUILDER_EVAL.md: about 5 to 6.5 cents per build
+  [PASS] every lane has a finite worst-case calls-per-day figure at $15
+  people needed to spend the whole $15 through one lane at the per-person limits (worst-case): Quest 75, analysis 59 (per-person limits shape who spends it, the shared day cap is what bounds the total)
+
+45 of 45 checks passed
+(node:2483067) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)

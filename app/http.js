@@ -25,6 +25,7 @@ import { challengeAnalysisReceipt, readAnalysisReceipt, runAnalysis } from '../i
 import { intelligencePage } from './pages-intelligence.js';
 import { adminPage, adminRefusedPage, unavailablePage } from './pages-admin.js';
 import { effortAllowance } from '../gateway/effort.js';
+import { budgetSentence } from '../gateway/budget.js';
 import { Mentoring } from '../core/mentoring.js';
 import { mentoringHome, mentoringRequest, mentoringEvidence } from './pages-mentoring.js';
 import { emptyScope, validScope } from '../core/scope.js';
@@ -1030,6 +1031,8 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         return json(res, 503, { error: 'busy, try again in a moment' });
       }
       if (kind === 'too_large') return json(res, 413, { error: 'request too large' });
+      // The AI budget or a per-person AI limit. Say so plainly; the reason string stays internal.
+      if (kind === 'budget') return json(res, 429, { error: budgetSentence(error.message) || 'AI is not available right now.', code: 'ai_budget' });
       if (kind === 'refused') return json(res, 409, { error: error.message === 'frozen or superseded post' ? error.message : 'request refused' });
       if (kind === 'invalid') return json(res, 400, { error: 'request refused' });
       // A plain error is a defect. The client gets the request ID to quote; the stack goes to the log.

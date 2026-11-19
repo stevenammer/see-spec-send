@@ -1,0 +1,27 @@
+(node:2438791) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+$ node cli.js gateway policy set --file policy.json -> gateway policy version 2 set
+day filled with 344 stand-in calls; day cap $15.00
+$ node cli.js gateway status -> {"basis":"fixture price estimates, not provider invoices","enabled":true,"policy":{"concurrency":4,"day_micros":15000000,"enabled":true,"global_micros":10000000...
+stand-in requests received by the loopback provider so far: 0
+
+--- Quest model draft: POST /api/quest/model/draft ---
+HTTP 400 {"error":"request refused"}
+
+(posted a SEE as the visitor: HTTP 201, item ae7nMIOu-G59...; this queues the automatic Effort reply)
+
+--- Analysis lane: POST /api/intelligence/run ("Run with Effort") ---
+HTTP 500 {"error":"server error","request_id":"18f96dea-48da-4c2d-b768-5e8622510450"}
+
+--- Effort lane: the item page after the automatic reply was attempted ---
+Effort (the AI), first reply to the SEE: unavailable, retries exhausted (day cap exceeded).
+AI usage panel:  AI usage and limits for this item Effort allowance remaining UTC day 2026-11-19. AI spending enabled. You can request 10 more mention replies; this item can accept 30 more. Model calls for mentions and SPEC drafts: 10 remaining for you, 30 for this item. Automatic first replies: 50 remaining for you, 2 for this item. Metered budget headroom, including charged holds: $0.1000 for your Effort calls today, $0.0001 shared today, $85.0001 shared overall. Queued work is not reserved yet. Request size, other queued calls, provider availability and money caps can still prevent a reply. 
+
+--- Builder agent: what its HTTP gateway answers (library mapping used by /v1/messages) ---
+day cap exceeded: HTTP 402 {"type":"error","error":{"type":"billing_error","message":"the approved budget for this build is used up"}}
+global cap exceeded: HTTP 402 {"type":"error","error":{"type":"billing_error","message":"the approved budget for this build is used up"}}
+
+stand-in requests received by the loopback provider (should be 0): 0
+screenshot: docs/screens/cap-proof/effort-item-page.png
+screenshot: docs/screens/cap-proof/analysis-intelligence-page.png
+what the Investigate page shows: This could not run. Fill in every box, pick a date range in the past, and only list problems you are able to open.

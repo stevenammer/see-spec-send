@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { killed, transaction } from '../worker/control.js';
 import { canonical, Ledger } from './ledger.js';
+import { budget } from '../core/errors.js';
 
 export const EFFORT_LIMITS = Object.freeze({ calls_per_person_day: 10, calls_per_item_day: 30, automatic_calls_per_person_day: 50, automatic_calls_per_item_day: 2, output_tokens: 256, person_day_micros: 100_000 });
 const digest = value => createHash('sha256').update(value).digest('hex');
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const demand = (value, message) => { if (!value) throw Error(message); };
+const limit = (value, message) => { if (!value) throw budget(message); };
 const seal = row => { const { seal: ignored, ...body } = row; return digest(canonical(body)); };
 const isAutomatic = kind => ['see_first', 'spec_first', 'spec_draft'].includes(kind);
 
@@ -38,7 +40,7 @@ export class EffortGateway {
     demand(typeof person === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(person), 'invalid Effort person');
     demand(typeof idem === 'string' && /^[A-Za-z0-9:_-]{1,128}$/.test(idem), 'invalid idempotency key');
     return transaction(this.store, () => {
-      demand(!killed(this.store), 'stopped run'); const policy = this.ledger.policy(); demand(policy.enabled, 'gateway disabled');
+      limit(!killed(this.store), 'stopped run'); const policy = this.ledger.policy(); limit(policy.enabled, 'gateway disabled');
       const { inputBound, worst } = this.ledger.validateInput(input, policy);
       const draftJob = this.db.prepare("SELECT 1 FROM effort_jobs WHERE id=? AND item=? AND requester=? AND kind='spec_prepare'").get(job, item, person);
       demand(input.max_output_tokens <= (draftJob ? 1024 : EFFORT_LIMITS.output_tokens), 'output token limit');
@@ -51,12 +53,12 @@ export class EffortGateway {
       const receiptKind = row => this.db.prepare('SELECT kind FROM effort_jobs WHERE id=?').get(row.job)?.kind;
       const sameClass = row => automatic === isAutomatic(receiptKind(row));
       const sum = rows => rows.reduce((total, row) => total + row.charged_micros, 0);
-      demand(mine.filter(sameClass).length < (automatic ? EFFORT_LIMITS.automatic_calls_per_person_day : EFFORT_LIMITS.calls_per_person_day), automatic ? 'automatic daily call limit' : 'mention daily call limit');
-      demand(itemCalls.filter(sameClass).length < (automatic ? EFFORT_LIMITS.automatic_calls_per_item_day : EFFORT_LIMITS.calls_per_item_day), automatic ? 'automatic item call limit' : 'mention item call limit');
-      demand(sum(mine) + worst <= EFFORT_LIMITS.person_day_micros, 'person daily budget exceeded');
+      limit(mine.filter(sameClass).length < (automatic ? EFFORT_LIMITS.automatic_calls_per_person_day : EFFORT_LIMITS.calls_per_person_day), automatic ? 'automatic daily call limit' : 'mention daily call limit');
+      limit(itemCalls.filter(sameClass).length < (automatic ? EFFORT_LIMITS.automatic_calls_per_item_day : EFFORT_LIMITS.calls_per_item_day), automatic ? 'automatic item call limit' : 'mention item call limit');
+      limit(sum(mine) + worst <= EFFORT_LIMITS.person_day_micros, 'person daily budget exceeded');
       const combined = this.ledger.allMeteredReceipts();
-      demand(sum(combined) + worst <= policy.global_micros, 'global cap exceeded');
-      demand(sum(combined.filter(row => row.day === day)) + worst <= policy.day_micros, 'day cap exceeded');
+      limit(sum(combined) + worst <= policy.global_micros, 'global cap exceeded');
+      limit(sum(combined.filter(row => row.day === day)) + worst <= policy.day_micros, 'day cap exceeded');
       const row = { id: digest(canonical(['effort', person, idem])), person, idem, payload_hash: hash, policy: canonical(policy), day, input_bound: inputBound, output_bound: input.max_output_tokens, worst_micros: worst, charged_micros: worst, state: 'reserved', usage: null, outcome: null, item, job };
       row.seal = seal(row); this.db.prepare(`INSERT INTO gateway_effort_receipts(${Object.keys(row).join(',')}) VALUES(${Object.keys(row).map(() => '?').join(',')})`).run(...Object.values(row));
       return { row, fresh: true };

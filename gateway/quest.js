@@ -1,13 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { killed, transaction } from '../worker/control.js';
 import { canonical } from './ledger.js';
-import { invalid } from '../core/errors.js';
+import { budget, invalid } from '../core/errors.js';
 
 export const QUEST_LIMITS = Object.freeze({ calls_per_person_day: 3, output_tokens: 256, person_day_micros: 100_000 });
 const digest = value => createHash('sha256').update(value).digest('hex');
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 // Input and state refusals are typed. A failed integrity check is a bug, so it is not typed.
 const demand = (value, message) => { if (!value) throw invalid(message); };
+// Budget and switch refusals are their own kind, so a visitor is told the budget is used up instead of "request refused".
+const limit = (value, message) => { if (!value) throw budget(message); };
 const integrity = (value, message) => { if (!value) throw Error(message); };
 const seal = row => { const { seal: _seal, ...body } = row; return digest(canonical(body)); };
 
@@ -33,8 +35,8 @@ export class QuestGateway {
     demand(typeof person === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(person), 'invalid Quest person');
     demand(typeof idem === 'string' && /^[A-Za-z0-9:_-]{1,128}$/.test(idem), 'invalid idempotency key');
     return transaction(this.store, () => {
-      demand(!killed(this.store), 'stopped run');
-      const policy = this.ledger.policy(); demand(policy.enabled, 'gateway disabled');
+      limit(!killed(this.store), 'stopped run');
+      const policy = this.ledger.policy(); limit(policy.enabled, 'gateway disabled');
       demand(input && typeof input === 'object' && !Array.isArray(input), 'invalid Quest payload');
       demand(input.model === this.ledger.rate.model && typeof input.input === 'string', 'model has no reviewed price');
       demand(Buffer.byteLength(input.input) <= policy.input_bytes, 'input byte limit');
@@ -44,17 +46,17 @@ export class QuestGateway {
       if (existing) { demand(existing.payload_hash === hash, 'idempotency payload conflict'); return { row: existing, fresh: false }; }
       const day = new Date(this.clock()).toISOString().slice(0, 10);
       const all = this.receipts(); const mine = all.filter(row => row.person === person && row.day === day);
-      demand(mine.length < QUEST_LIMITS.calls_per_person_day, 'person daily call limit');
+      limit(mine.length < QUEST_LIMITS.calls_per_person_day, 'person daily call limit');
       const inputBound = Buffer.byteLength(input.input) + this.ledger.rate.framing_tokens;
       const worst = Number.isSafeInteger(this.ledger.rate.input_micros)
         ? inputBound * this.ledger.rate.input_micros + input.max_output_tokens * this.ledger.rate.output_micros
         : Math.ceil((inputBound * this.ledger.rate.input_micros_per_million + input.max_output_tokens * this.ledger.rate.output_micros_per_million) / 1_000_000);
       demand(integer(worst), 'unsafe accounting integer');
       const sum = rows => rows.reduce((total, row) => total + row.charged_micros, 0);
-      demand(sum(mine) + worst <= QUEST_LIMITS.person_day_micros, 'person daily budget exceeded');
+      limit(sum(mine) + worst <= QUEST_LIMITS.person_day_micros, 'person daily budget exceeded');
       const combined = this.ledger.receipts().concat(all, this.ledger.effortReceipts(), this.ledger.analysisReceipts());
-      demand(sum(combined) + worst <= policy.global_micros, 'global cap exceeded');
-      demand(sum(combined.filter(row => row.day === day)) + worst <= policy.day_micros, 'day cap exceeded');
+      limit(sum(combined) + worst <= policy.global_micros, 'global cap exceeded');
+      limit(sum(combined.filter(row => row.day === day)) + worst <= policy.day_micros, 'day cap exceeded');
       const row = { id: digest(canonical(['quest', person, idem])), person, idem, payload_hash: hash, policy: canonical(policy), day,
         input_bound: inputBound, output_bound: input.max_output_tokens, worst_micros: worst, charged_micros: worst,
         state: 'reserved', usage: null, outcome: null };

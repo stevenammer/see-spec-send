@@ -89,7 +89,7 @@ export class EffortWorker {
         this.db.prepare("UPDATE effort_jobs SET last_error=? WHERE id=? AND state='running' AND next_at=?").run(UNKNOWN_PROVIDER_STATUS, job.id, job.lease);
         return false;
       }
-      const message = String(error.message || error); const blocked = /gateway disabled|stopped run|daily|superseded|frozen/.test(message);
+      const message = String(error.message || error); const blocked = /gateway disabled|stopped run|daily|day cap|global cap|call limit|superseded|frozen/.test(message);
       this.db.prepare("UPDATE effort_jobs SET state=?,last_error=?,next_at=? WHERE id=? AND state='running' AND next_at=?").run(blocked ? 'blocked' : job.attempts >= 3 ? 'failed' : 'queued', message, this.clock(), job.id, job.lease);
       return false;
     }

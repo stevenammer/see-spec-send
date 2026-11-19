@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "global_micros": 100000000,
+  "day_micros": 15000000,
+  "concurrency": 2,
+  "input_bytes": 16384,
+  "output_tokens": 512,
+  "response_bytes": 65536,
+  "timeout_ms": 30000
+}

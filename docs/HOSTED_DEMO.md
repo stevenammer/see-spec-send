@@ -51,9 +51,29 @@ To build an arm64 image on an x86 machine instead: `PLATFORM=linux/arm64 ./demo.
 - It refuses a second reset in the same UTC day, forced or not. To redo a day's reset, wait for the next day or restore by hand.
 - A forced reset outside the window sets the kill latch until the next UTC day, because replacing the database also wipes that day's spend counter. The next scheduled reset clears a latch it set itself. A latch you set with `kill set` is never cleared by the reset.
 - `demo.sh reset` checks the guards before it stops anything, so a refusal causes no downtime. It always starts the stack again afterwards.
-- The new database is built beside the old one and swapped in, so a failed seed leaves yesterday's data in place.
+- The new database is built beside the old one and swapped in, so a failed seed or a failed ledger copy leaves yesterday's data in place.
+- **The money ledger survives every reset.** Before the swap, the reset copies the gateway policy, the policy versions, the ledger counters and the Quest, Effort and analysis receipts from the old database into the new one, inside one transaction, then runs `PRAGMA integrity_check` and re-reads every receipt through the gateway code (so a bad seal or a short copy stops the reset and the old database stays). The lifetime cap (`global_micros`), the per-person counters and the day totals therefore keep counting across resets. Everything else (people, posts, accounts, invites, sessions, events) is replaced by the seed.
+  - Builder-lane receipts (`gateway_receipts`) are tied to a run and an approval that the reset deletes, so a verbatim copy would fail the gateway's own check and stop every lane. They are rolled up instead: one sealed row per day, person `reset-carry`, in the analysis receipts table, with the same charged total. Day and lifetime totals are unchanged; the per-receipt detail of old builder calls is not kept.
+  - Run tokens (`gateway_capabilities`) are not carried: they belong to runs that no longer exist.
+  - Before this change a reset also reset the lifetime counter (`scripts/prove-daily-cap.mjs` case 2g shows a plain file replacement doing exactly that). `--init` on a first install has no earlier ledger, so nothing is carried.
+  - The forced mid-day kill latch stays as before, as a second guard.
+
+Proof: `test/hosted-demo-reset.test.mjs` (day and lifetime totals, policy, seals, wiped demo content, a failure mid-copy, a tampered receipt, a lifetime cap exhausted before the reset still refusing after it) and case 2g2 of `node scripts/prove-daily-cap.mjs`, which runs the real reset script on a copy of an exhausted database and shows the counters unchanged and the gateway still refusing with "day cap exceeded".
 
 The timer has `Persistent=false` on purpose: a missed midnight must not turn into a mid-day reset.
+
+## Optional later: a real model lane through Vertex AI (documentation only; nothing here is enabled or has been run)
+
+The hosted demo ships with the fixture lane only. If the owner later decides to let the demo's Quest, Effort and analysis lanes call a real model, this is the shape. Nothing below was run, no credential exists in this repository, and no call was made.
+
+Honest scope: Gemini has only been evaluated in this repository as a **builder** (`docs/BUILDER_EVAL.md`). It has not been evaluated in the Quest, Effort or ask lanes, so its answers there are untested here, and the demo's reviewers would be the first to see them.
+
+1. **Provider entry.** `deploy/hosted-demo/vertex.provider.example.json` is a template (kind `vertex`, signed in with a service account that lives on the host, never in the file). Use a Google Cloud project of its own, give the service account only the Vertex AI User role, set a budget alert, and keep the key file mode 0600 and owned by the service user. The provider file also supports Vertex express mode (an API key read from an environment variable or private file, through the Gemini native endpoint), but the service-account form is the one documented here. Add a filled-in copy with `node cli.js provider add --file vertex.provider.json`.
+2. **Price table: UNVERIFIED.** The entry carries 300000 input and 2500000 output micro-dollars per million tokens, the figures already in `docs/PROVIDERS.md` for Gemini 2.5 Flash. I could not confirm them against Google's current price page (it did not render its table when fetched), so treat them as unconfirmed. Before any call the operator must read the current Vertex AI price for the exact model and region and set the entry to that price or higher. The gateway meters with this table; a table below the real price makes the cap undercount.
+3. **Gateway policy.** `deploy/hosted-demo/gateway-policy.vertex.example.json`: `day_micros` 15000000 ($15 per UTC day) and `global_micros` 100000000 as a **placeholder** for the lifetime tranche. The owner decides the real number; the reset now keeps it, so it bounds spend across every day. Apply with `node cli.js gateway policy set --file policy.json`. Keep the kill latch ready (`./demo.sh kill set`).
+4. **Wiring.** The compose file runs the app with `--enable-effort --fixture`. A real lane needs the provider file and key mounted into the app container and flags such as `--enable-quest-model --quest-provider vertex-flash` and `--analysis-provider vertex-flash`. That change to `compose.yaml` is deliberately not made here; it would break the "no provider flags, `provider list` stays empty" promise the compose file makes today, so decide it on purpose.
+5. **First test: one tiny approved smoke test, at most a few cents.** After the owner approves in writing, run `node cli.js provider test --name vertex-flash --max-output 1` once on the host. It prints its worst-case reservation first and makes exactly one call. Then, with the day cap temporarily at about 50000 micro-dollars ($0.05), make one Quest draft as the reviewer, read the answer, and check `node cli.js gateway status` shows the charge. Only after that raise the cap to its planned value. Stop at the first surprise.
+6. **Not done:** no live call, no price check against the vendor, no Quest/Effort/ask-lane quality evaluation for Gemini, no test of the token exchange against Google.
 
 ## Cloudflare settings to apply (a checklist to verify, not a tested recipe)
 
@@ -91,5 +111,6 @@ Do these from a phone on mobile data and from one other network.
 
 - Cloudflare's real-address behavior with this setup. The app takes the rightmost `X-Forwarded-For` entry and only from a loopback connection; `cloudflared` shares the app's network namespace so the connection is loopback, but whether the header it carries holds the visitor's address was not observed. The two-network test above is how you find out.
 - Anything on the real host: Docker version, systemd timer firing, the host's arm64 build and run.
+- The ledger carry against a database that a real app and worker have written to for days. It is tested on throwaway databases with receipts made through the Quest and analysis gateways, and in the cap proof with all four lanes.
 - The 00:00 UTC reset on a real clock. Tests inject the clock; the container run used `--force` because it was mid-day.
 - No outside party has tested this. It inherits the open items in `docs/SECURITY_WATCH.md` and `docs/THREAT_MODEL.md`.

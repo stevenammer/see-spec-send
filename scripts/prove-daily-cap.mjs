@@ -19,6 +19,7 @@ import { QuestGateway, QUEST_LIMITS } from '../gateway/quest.js';
 import { EffortGateway, EFFORT_LIMITS } from '../gateway/effort.js';
 import { AnalysisGateway, ANALYSIS_LIMITS } from '../gateway/analysis.js';
 import { killed } from '../worker/control.js';
+import { runReset } from '../deploy/hosted-demo/reset.js';
 import { SYSTEM_PROMPT } from '../worker/builder/index.js';
 import { EFFORT_SYSTEM } from '../effort/prompt.js';
 import { SPEC_INSTRUCTIONS } from '../effort/spec.js';
@@ -307,8 +308,36 @@ export async function proveDailyCap({ log = console.log, keep = false } = {}) {
       log(`  a brand-new empty database (no policy row): ${msg(emptyTry)}`);
       check('a brand-new empty database refuses (gateway disabled until a policy is set): it fails closed', !emptyTry.ok && /gateway disabled/.test(emptyTry.message));
       empty.close(); open.splice(open.indexOf(empty), 1);
-      log('  consequence: a hosted demo reset script must carry the gateway_* tables (receipts, integrity, policy) over, or keep its own');
-      log('  external day counter; restoring a seed or backup puts the day spend back to whatever that file recorded.');
+      log('  consequence: restoring a seed or backup puts the day spend back to whatever that file recorded, so the hosted demo');
+      log('  reset script must carry the gateway_* tables over. 2g2 re-runs this same case against the real reset script.');
+    }
+
+    // ---------------------------------------------------------------------------------------------------------------
+    section('2g2. Same case (g), but through the REAL hosted-demo reset script (deploy/hosted-demo/reset.js, injected clock)');
+    {
+      const scenario = join(dir, 'scenario-real-reset.db');
+      store.db.exec(`VACUUM INTO '${scenario}'`);
+      const peek = file => { const s = track(new Store(file)); const l = new Ledger(s, { clock }); const rows = l.allMeteredReceipts();
+        const out = { receipts: rows.length, day: rows.filter(row => row.day === day()).reduce((n, row) => n + row.charged_micros, 0), lifetime: rows.reduce((n, row) => n + row.charged_micros, 0), policy: l.policy() };
+        s.close(); open.splice(open.indexOf(s), 1); return out; };
+      const beforeReset = peek(scenario);
+      log(`  BEFORE the reset: ${beforeReset.receipts} receipts, day total ${beforeReset.day}, lifetime ${beforeReset.lifetime}, policy day_micros ${beforeReset.policy.day_micros} / global_micros ${beforeReset.policy.global_micros}`);
+      // The real script, a forced mid-day reset (the worst case: the counter's own day is still running). It sets the kill latch.
+      const result = runReset({ db: scenario, now: () => new Date(clock()), force: true });
+      check('the real reset script ran (forced, mid-day) and set its kill latch', result.done === true && result.killed === true && killed(track(new Store(scenario))) === true);
+      cliAt(scenario, 'kill', 'clear');
+      const afterReset = peek(scenario);
+      log(`  AFTER  the reset: ${afterReset.receipts} receipts, day total ${afterReset.day}, lifetime ${afterReset.lifetime}, policy day_micros ${afterReset.policy.day_micros} / global_micros ${afterReset.policy.global_micros}`);
+      log('  (the receipt count can shrink: builder-lane receipts are rolled up into one sealed carry row per day; Quest, Effort and analysis receipts are copied as they are)');
+      check('after the real reset the day total, lifetime total and policy are exactly what they were, and every remaining seal verifies', afterReset.day === beforeReset.day && afterReset.lifetime === beforeReset.lifetime && afterReset.receipts <= beforeReset.receipts && JSON.stringify(afterReset.policy) === JSON.stringify(beforeReset.policy), `before ${beforeReset.day}, after ${afterReset.day}`);
+      const s2 = track(new Store(scenario));
+      const g = new QuestGateway(new Ledger(s2, { clock, rate: rateWithSystemText(base, QUEST_SYSTEM) }), async () => ({ output: 'x', usage: { input_tokens: 1, output_tokens: 1 } }), { clock });
+      const again = await attempt(() => g.call('g-person', 'g4', { model: HAIKU.model, input: bigText(BIG), max_output_tokens: 256 }));
+      log(`  a max-size call after the real reset: ${msg(again)}`);
+      check('the exhausted day still refuses after the real reset: "day cap exceeded" (plain copy in 2g admitted it)', !again.ok && /day cap exceeded/.test(again.message));
+      const demoRows = s2.db.prepare("SELECT count(*) n FROM actors WHERE kind='person'").get().n;
+      check('the reset still replaced the non-ledger data with the seed roster (6 invented people)', demoRows === 6, `${demoRows} people`);
+      s2.close(); open.splice(open.indexOf(s2), 1);
     }
 
     // ---------------------------------------------------------------------------------------------------------------

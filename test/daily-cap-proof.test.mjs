@@ -22,6 +22,8 @@ test('the repeatable proof passes every check: one UTC-day cap across all lanes,
   const text = lines.join('\n');
   assert.match(text, /"day_micros":15000000/);
   assert.match(text, /REPLACING THE DATABASE RESETS THE DAILY COUNTER/);
+  assert.match(text, /2g2\. Same case \(g\), but through the REAL hosted-demo reset script/);
+  assert.match(text, /\[PASS\] the exhausted day still refuses after the real reset/);
   assert.equal(DAY_CAP, 15_000_000);
 });
 

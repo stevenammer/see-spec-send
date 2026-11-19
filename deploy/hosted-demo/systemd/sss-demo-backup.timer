@@ -1,0 +1,11 @@
+[Unit]
+Description=See Spec Send hosted demo backup at 23:30 UTC (before the 00:00 reset)
+
+[Timer]
+OnCalendar=*-*-* 23:30:00 UTC
+AccuracySec=1s
+Persistent=false
+Unit=sss-demo-backup.service
+
+[Install]
+WantedBy=timers.target

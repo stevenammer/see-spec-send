@@ -1,0 +1,93 @@
+# Hosted demo, FREE path: Cloudflare QUICK tunnel (no Cloudflare account, no domain, no token). Fixture lane only.
+# Not deployed anywhere. Used instead of compose.yaml, never together with it. demo.sh picks it when demo.env holds
+# SSS_MODE=quicktunnel; docs/HOSTED_DEMO.md has the steps. Run from this folder.
+#
+# Why three containers share one network namespace: a quick tunnel gets a NEW random https://<words>.trycloudflare.com
+# address every time cloudflared starts, and the app must be started with that exact address as --origin (it checks the
+# origin of every state-changing request and cannot change it while running). If cloudflared lived in the app's own
+# namespace, restarting the app to apply the new origin would also restart the tunnel and mint yet another address.
+# So a tiny holder service ("netns") owns the namespace; the app and cloudflared both join it. The app can then be
+# restarted without touching the tunnel, and the tunnel still reaches the app over loopback (http://localhost:8080),
+# which is what --trusted-proxy requires. Nothing is published to the host.
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
+services:
+  netns:
+    <<: *hardened
+    image: sss-demo:local                  # built by `demo.sh build`; used only to idle and hold the namespace
+    user: "1000:1000"
+    entrypoint: ["node", "-e", "setInterval(() => {}, 1 << 30)"]
+    healthcheck: { disable: true }
+    mem_limit: 48m
+    cpus: 0.1
+    pids_limit: 16
+  app:
+    <<: *hardened
+    build: { context: ../.., dockerfile: Dockerfile }
+    image: sss-demo:local
+    network_mode: "service:netns"
+    user: "1000:1000"
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    volumes: ["sss-demo-data:/data"]
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    environment:
+      SSS_DB: /data/sss.db
+      SSS_DEMO_BANNER: "1"
+    # Entrypoint is `node cli.js serve --host 0.0.0.0 --port 8080 --trusted-proxy`; these are appended.
+    # SSS_ORIGIN is written by tunnel-url.sh into demo.env. The placeholder keeps an early `up` from serving a wrong origin.
+    command: ["--origin", "${SSS_ORIGIN:-https://tunnel-not-ready.invalid}", "--enable-effort", "--fixture"]
+    depends_on: [netns]
+  cloudflared:
+    <<: *hardened
+    # Same pinned digest as compose.yaml (multi-arch). Quick tunnel: no TUNNEL_TOKEN, no env_file, no account.
+    image: ${SSS_CLOUDFLARED_IMAGE:-cloudflare/cloudflared@sha256:e613aadbc2d9511785d2e67a86b0c8ac18dd63a3f9af0d06faf04cbfdcb35f2d}
+    network_mode: "service:netns"
+    # --metrics pins the local metrics listener (loopback inside the shared namespace); its /quicktunnel route reports the hostname.
+    command: ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:20241", "--url", "http://localhost:8080"]
+    tmpfs: ["/tmp:size=8m,mode=1777"]
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    depends_on: [netns]
+  worker:
+    <<: *hardened
+    image: sss-demo:local
+    user: "1000:1000"
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    volumes: ["sss-demo-data:/data"]
+    environment: { SSS_DB: /data/sss.db }
+    healthcheck: { disable: true }
+    entrypoint: ["node", "cli.js"]
+    # Fake builder only. No Docker socket, no gateway socket, no containers.
+    command: ["worker", "--builder", "fixture"]
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    depends_on: [app]
+  # One-off tools (profile `tools`): reset, kill switch, invites, nightly backup. Never started by `up`.
+  tools:
+    <<: *hardened
+    profiles: ["tools"]
+    restart: "no"
+    healthcheck: { disable: true }
+    image: sss-demo:local
+    user: "1000:1000"
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    volumes:
+      - "sss-demo-data:/data"
+      # Second directory for backups. Create it first and give it to uid 1000 (see docs/HOSTED_DEMO.md).
+      - "${SSS_BACKUP_DIR:-./backups}:/backup"
+    environment: { SSS_DB: /data/sss.db }
+    entrypoint: ["node"]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+volumes:
+  sss-demo-data:

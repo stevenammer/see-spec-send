@@ -1,0 +1,10 @@
+[Unit]
+Description=See Spec Send hosted demo: check the quick-tunnel address every minute
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=60s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

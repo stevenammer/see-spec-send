@@ -1,0 +1,12 @@
+# Nightly backup. The demo's people and posts are disposable; the spend ledger and gateway policy are not.
+[Unit]
+Description=See Spec Send hosted demo nightly backup
+After=sss-demo.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/see-spec-send/deploy/hosted-demo
+# The backup directory must exist and be owned by uid 1000 (see docs/HOSTED_DEMO.md). Keeps 7 copies.
+Environment=SSS_BACKUP_DIR=/var/backups/sss-demo SSS_BACKUP_KEEP=7
+ExecStart=/opt/see-spec-send/deploy/hosted-demo/backup.sh
+TimeoutStartSec=300

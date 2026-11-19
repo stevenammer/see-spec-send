@@ -1,0 +1,10 @@
+# Quick tunnel only. Re-reads the tunnel address and, if it changed, writes it to demo.env and restarts the app with it.
+[Unit]
+Description=See Spec Send hosted demo: follow the quick-tunnel address
+After=sss-demo.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/see-spec-send/deploy/hosted-demo
+ExecStart=/opt/see-spec-send/deploy/hosted-demo/demo.sh sync-origin
+TimeoutStartSec=120

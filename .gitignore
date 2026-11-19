@@ -11,3 +11,8 @@ denylist.json
 # Hosted demo secrets and per-host settings
 deploy/hosted-demo/tunnel.env
 deploy/hosted-demo/demo.env
+
+# Quick-tunnel variant
+deploy/hosted-demo/tunnel-url.txt
+deploy/hosted-demo/.demo.lock
+deploy/hosted-demo/backups/

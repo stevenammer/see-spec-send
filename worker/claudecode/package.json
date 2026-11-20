@@ -1,0 +1,9 @@
+{
+  "name": "sss-claudecode-cli",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pinned install manifest for the agent CLI baked into this image. Not a published package.",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.326"
+  }
+}

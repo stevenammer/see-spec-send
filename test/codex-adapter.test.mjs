@@ -27,7 +27,12 @@ test('Codex is a registered builder that reuses the OpenCode adapter\'s locked c
 test('the Codex image is pinned, and its entrypoint holds no key, speaks only to the local gateway pipe, and gives Codex no web', () => {
   assert.match(read('worker/codex-image.digest').trim(), /^sha256:[a-f0-9]{64}$/);
   const dockerfile = read('worker/codex/Dockerfile');
-  assert.match(dockerfile, /@openai\/codex@\d+\.\d+\.\d+ /, 'the CLI version is pinned');
+  const manifest = JSON.parse(read('worker/codex/package.json'));
+  assert.match(manifest.dependencies['@openai/codex'], /^\d+\.\d+\.\d+$/, 'the CLI version is pinned exactly');
+  assert.match(dockerfile, /npm ci /, 'installed from the lockfile, not an unpinned npm install');
+  assert.doesNotMatch(dockerfile, /npm install/);
+  const lock = JSON.parse(read('worker/codex/package-lock.json'));
+  assert.ok(Object.entries(lock.packages).filter(([k]) => k).every(([, v]) => /^sha512-/.test(v.integrity)), 'every locked package has an integrity hash');
   assert.match(dockerfile, /^FROM node:22-bookworm-slim@sha256:[a-f0-9]{64}$/m);
   assert.match(dockerfile, /^USER 65532:65532$/m);
   const entry = read('worker/codex/entrypoint.sh');

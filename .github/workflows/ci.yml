@@ -33,8 +33,9 @@ jobs:
           node-version: 22
       - name: Install Playwright outside the repo (the repo itself has no dependencies)
         run: |
-          mkdir -p "$RUNNER_TEMP/pw" && cd "$RUNNER_TEMP/pw"
-          npm init -y >/dev/null && npm install playwright@1.62.1 axe-core@4.14.1 oidc-provider@9.15.0 --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/pw"
+          cp ci/package.json ci/package-lock.json "$RUNNER_TEMP/pw/"
+          npm ci --prefix "$RUNNER_TEMP/pw" --no-audit --no-fund
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:decision-outcomes
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:break-it
       - run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw/node_modules" CHROME_PATH=/usr/bin/google-chrome npm run test:try-it

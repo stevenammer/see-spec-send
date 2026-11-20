@@ -1,0 +1,11 @@
+{
+  "name": "sss-ci-tooling",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Browser and interop test tooling for CI only. The app itself has no dependencies.",
+  "dependencies": {
+    "axe-core": "4.14.1",
+    "oidc-provider": "9.15.0",
+    "playwright": "1.62.1"
+  }
+}

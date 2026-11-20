@@ -26,7 +26,12 @@ test('Claude Code is a registered builder that reuses the OpenCode adapter\'s lo
 test('the Claude Code image is pinned by digest and its entrypoint holds no key, allows only file tools, and talks only to the local gateway pipe', () => {
   assert.match(read('worker/claudecode-image.digest').trim(), /^sha256:[a-f0-9]{64}$/);
   const dockerfile = read('worker/claudecode/Dockerfile');
-  assert.match(dockerfile, /@anthropic-ai\/claude-code@\d+\.\d+\.\d+ /, 'the CLI version is pinned');
+  const manifest = JSON.parse(read('worker/claudecode/package.json'));
+  assert.match(manifest.dependencies['@anthropic-ai/claude-code'], /^\d+\.\d+\.\d+$/, 'the CLI version is pinned exactly');
+  assert.match(dockerfile, /npm ci /, 'installed from the lockfile, not an unpinned npm install');
+  assert.doesNotMatch(dockerfile, /npm install/);
+  const lock = JSON.parse(read('worker/claudecode/package-lock.json'));
+  assert.ok(Object.entries(lock.packages).filter(([k]) => k).every(([, v]) => /^sha512-/.test(v.integrity)), 'every locked package has an integrity hash');
   assert.match(dockerfile, /^FROM node:22-bookworm-slim@sha256:[a-f0-9]{64}$/m);
   assert.match(dockerfile, /^USER 65532:65532$/m);
   const entry = read('worker/claudecode/entrypoint.sh');

@@ -81,6 +81,7 @@ The app checks that the `Origin` or `Referer` of every state-changing request eq
 ### Owner steps
 
 1. Oracle: Always Free VM (Ampere A1 arm64 or the small x86), Ubuntu. Install Docker Engine with Compose v2 and `flock` (util-linux, usually present). Reach it over Tailscale. Open **no** inbound ports in the Oracle security list for this demo (the tunnel only goes outbound).
+   If Docker was installed without the Compose plugin (it was on the first real deployment, Docker 29 on Ubuntu 24.04 arm64), the plugin can live in the user's home without touching system packages: download the official `docker-compose-linux-aarch64` (or `-x86_64`) binary from the Docker Compose releases page, verify it against the release's `checksums.txt` with `sha256sum -c`, and put it at `~/.docker/cli-plugins/docker-compose` (mode 755). A user-local plugin is invisible to root, so add `User=<your user>` as the first line under `[Service]` in each `.service` file before installing the units.
 2. Clone the repo to `/opt/see-spec-send` (or change the paths in the unit files).
 3. In `/opt/see-spec-send/deploy/hosted-demo`:
    ```sh
@@ -200,9 +201,9 @@ Do these from a phone on mobile data and from one other network.
 
 ## Not verified
 
-- Quick tunnels, end to end: nothing in the free path was run against a real tunnel, a real address, or Oracle. The loopback test proves the app's rate limit follows the rightmost `X-Forwarded-For` entry behind a proxy that appends; it does not prove Cloudflare's quick tunnel sends the visitor's address that way. `compose.quicktunnel.yaml` was written and statically checked, not started; the metrics and log reads in `tunnel-url.sh`, the sync timer and `demo.sh up` in quick-tunnel mode ran only through the test hook, never with Docker.
+- Quick tunnels, end to end, beyond one run: the free path was deployed once to an Oracle Always Free ARM VM (Ubuntu 24.04, Docker 29.1, user-local Compose v5.8) and checked from outside, with no invites issued and no link shared. It showed `GET /signin` and `/readyz` at 200 with HSTS and the app's CSP, the demo banner, an empty `provider list`, about 60 MiB of memory for the four containers, and the sign-in limiter bucketing by the true visitor address (the laptop's own IPv6 address, spoofed `X-Forwarded-For` values ignored, a separate bucket for the VM's own public address). One deliberate `cloudflared` restart gave a new address and the app's origin followed it in about 7 seconds with the timer. The first real run also showed that `tunnel-url.sh` and `backup.sh` were not executable in git (fixed). One run on one VM is not a track record.
 - Cloudflare's real-address behavior with this setup. The app takes the rightmost `X-Forwarded-For` entry and only from a loopback connection; `cloudflared` shares the app's network namespace so the connection is loopback, but whether the header it carries holds the visitor's address was not observed. The two-network test above is how you find out.
-- Anything on the real host: Docker version, systemd timer firing, the host's arm64 build and run.
+- Still not run on the real host: the 00:00 UTC reset and the 23:30 backup on their schedules (the first scheduled runs are the night after deployment), a reboot test of the stack, a sign-in from one network while another is rate-limited (needs a real account), and anything over days.
 - The ledger carry against a database that a real app and worker have written to for days. It is tested on throwaway databases with receipts made through the Quest and analysis gateways, and in the cap proof with all four lanes.
 - The 00:00 UTC reset on a real clock. Tests inject the clock; the container run used `--force` because it was mid-day.
 - No outside party has tested this. It inherits the open items in `docs/SECURITY_WATCH.md` and `docs/THREAT_MODEL.md`.

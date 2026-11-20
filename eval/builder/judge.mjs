@@ -3,14 +3,15 @@
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { extname, join, relative } from 'node:path';
 
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.txt': 'text/plain', '.md': 'text/markdown' };
 
 export function manifestFor(root) {
   const files = [];
-  const walk = dir => { for (const name of readdirSync(dir).sort()) { const path = join(dir, name); if (statSync(path).isDirectory()) walk(path); else { const bytes = readFileSync(path); files.push({ path: relative(root, path), bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }); } } };
+  // lstat, and skip anything that is not a plain file or folder: a symlink in a builder's output must not pull a host file into the judge.
+  const walk = dir => { for (const name of readdirSync(dir).sort()) { const path = join(dir, name), info = lstatSync(path); if (info.isDirectory()) walk(path); else if (info.isFile()) { const bytes = readFileSync(path); files.push({ path: relative(root, path), bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }); } } };
   walk(root);
   return { version: 1, files };
 }

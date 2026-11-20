@@ -2,7 +2,11 @@
 
 ## Report a vulnerability
 
-Use GitHub's private reporting: **Security tab, then "Report a vulnerability"** on this repository. Please do not open a public issue or post details first. This is a one-person project, so there is no staffed response time; I read reports and fix real problems as quickly as I can, and I will credit you if you want that.
+Use GitHub's private reporting: **Security tab, then "Report a vulnerability"** on this repository, or go straight to <https://github.com/stevenammer/see-spec-send/security/advisories/new>. Please do not open a public issue or post details first. This is a one-person project, so there is no staffed response time and no promised fix date; I read reports and fix real problems as quickly as I can, and I will credit you if you want that.
+
+Disclosure: I would like a reasonable chance to fix a problem before details are public, and I will tell you what I decided and why. If I cannot fix something, I will say so in the open once you have had your say.
+
+In scope: the code in this repository (the app, gateway, worker and deploy files) as it runs from `main`. Out of scope: your own deployment's configuration, third-party services (identity providers, model vendors), and findings that need an already-compromised host or operator account. Reports of the second kind are still welcome as hardening ideas, just not as vulnerabilities.
 
 ## Supported versions
 

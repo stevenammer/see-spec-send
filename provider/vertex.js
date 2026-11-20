@@ -2,17 +2,23 @@
 // No Google library: the sign-in is a signed JWT exchanged for a short-lived token, using only node:crypto.
 // The key file is read once, must be readable by its owner only, and is never logged or put in an error.
 import { createSign } from 'node:crypto';
-import { readFileSync, statSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readFileSync } from 'node:fs';
 import { pinnedFetch, redact, resolvePinned } from './safe-http.js';
 
 const b64 = value => Buffer.from(value).toString('base64url');
 
 export function readServiceAccount(keyFile) {
   if (typeof keyFile !== 'string' || !keyFile.startsWith('/')) throw Error('service account file must be an absolute path');
-  const stat = statSync(keyFile);
-  if (stat.mode & 0o077) throw Error('service account file is readable by others; refusing to use it');
-  if (stat.uid !== process.getuid()) throw Error('service account file is not owned by the service user; refusing to use it');
-  let parsed; try { parsed = JSON.parse(readFileSync(keyFile, 'utf8')); } catch { throw Error('invalid service account file'); }
+  // Open once, then check and read the same open file, so the file cannot be swapped between the check and the read.
+  const fd = openSync(keyFile, 'r');
+  let text;
+  try {
+    const stat = fstatSync(fd);
+    if (stat.mode & 0o077) throw Error('service account file is readable by others; refusing to use it');
+    if (stat.uid !== process.getuid()) throw Error('service account file is not owned by the service user; refusing to use it');
+    try { text = readFileSync(fd, 'utf8'); } catch { throw Error('invalid service account file'); }
+  } finally { closeSync(fd); }
+  let parsed; try { parsed = JSON.parse(text); } catch { throw Error('invalid service account file'); }
   if (parsed?.type !== 'service_account' || typeof parsed.client_email !== 'string' || typeof parsed.private_key !== 'string') throw Error('invalid service account file');
   return { email: parsed.client_email, key: parsed.private_key, tokenUri: typeof parsed.token_uri === 'string' ? parsed.token_uri : 'https://oauth2.googleapis.com/token' };
 }

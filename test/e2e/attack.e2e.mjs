@@ -295,7 +295,7 @@ async function main() {
     for (const next of ['https://evil.example/', '//evil.example/', '/\\evil.example', 'javascript:alert(1)']) {
       const r = await fetch(`${origin}/api/oidc/stepup/start?next=${encodeURIComponent(next)}`, { headers: { cookie: S.nick.cookie }, redirect: 'manual' });
       const loc = r.headers.get('location') || '';
-      check(`no open redirect via next=${next.slice(0, 20)}`, !/evil\.example/.test(loc) && !loc.startsWith('javascript:'), loc);
+      check(`no open redirect via next=${next.slice(0, 20)}`, !/evil\.example/.test(loc) && !/^\s*(javascript|data|vbscript):/i.test(loc), loc);
     }
     const r302 = await fetch(`${origin}/items/new?next=https://evil.example`, { redirect: 'manual' });
     check('sign-in redirect never carries a foreign target', !/evil/.test(r302.headers.get('location') || ''));

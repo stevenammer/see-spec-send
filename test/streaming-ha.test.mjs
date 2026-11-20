@@ -6,7 +6,7 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'
 
 test('the streaming override pins Litestream by digest, hardens it and shares the live data volume', () => {
   const compose = read('compose.streaming.yaml'), digest = read('deploy/litestream.digest').trim();
-  assert.match(compose, new RegExp(`image: ${digest.replace(/[.]/g, '\\.')}$`, 'm'), 'the image is the pinned digest file');
+  assert.match(compose, new RegExp(`image: ${digest.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), 'the image is the pinned digest file');
   assert.match(digest, /^litestream\/litestream:\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/);
   assert.match(compose, /^ {4}read_only: true$/m);
   assert.match(compose, /^ {4}user: "1000:1000"$/m);

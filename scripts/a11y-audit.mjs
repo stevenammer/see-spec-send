@@ -18,7 +18,7 @@ const initial = await cli(['init', '--id', 'admin']);
 const initialPassword = initial.replace('one-time password: ', '');
 const port = 25000 + Math.floor(Math.random() * 1500), origin = `http://127.0.0.1:${port}`;
 const server = spawn(process.execPath, ['cli.js', 'serve', '--port', String(port), '--origin', origin, '--insecure-cookies'], { cwd: root, env, stdio: 'ignore' });
-const results = []; let browser;
+const results = []; let browser; let pageViews = 0;
 try {
   for (let i = 0; i < 100; i += 1) { try { if ((await fetch(`${origin}/signin`)).ok) break; } catch {} await new Promise(r => setTimeout(r, 100)); }
   browser = await playwright.chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', args: ['--no-sandbox'] });
@@ -28,6 +28,7 @@ try {
     for (const [label, size] of [['desktop', { width: 1280, height: 900 }], ['phone', { width: 390, height: 844 }]]) {
       await page.setViewportSize(size); await page.goto(url); await page.waitForLoadState('networkidle').catch(() => {});
       await page.evaluate(axe); const r = await page.evaluate(() => axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] } }));
+      pageViews += 1;
       for (const v of r.violations) results.push({ page: name, viewport: label, rule: v.id, impact: v.impact, nodes: v.nodes.length, help: v.help, sample: v.nodes[0]?.html.slice(0, 120) });
     }
   };
@@ -54,7 +55,7 @@ try {
   if (post) { const w = new Store(db); (await import('../core/closeout.js')).runCloseoutJobs(w, {}); w.close(); await audit('closing report', `${origin}/items/${item}/closeout/${encodeURIComponent(post.post_id)}`); }
 } finally { await browser?.close(); server.kill(); }
 const byRule = new Map(); for (const r of results) { const k = `${r.rule} (${r.impact})`; byRule.set(k, [...(byRule.get(k) || []), r]); }
-console.log(`${results.length} violation records across ${new Set(results.map(r => `${r.page}/${r.viewport}`)).size} page views`);
+console.log(`${results.length} violation records across ${pageViews} audited page views`);
 for (const [rule, rows] of [...byRule].sort((a, b) => b[1].length - a[1].length)) console.log(`\n${rule}: ${rows.length}x  pages: ${[...new Set(rows.map(r => r.page))].join(', ')}\n   ${rows[0].help}\n   e.g. ${rows[0].sample}`);
 if (!results.length) console.log('No WCAG 2.1 A/AA violations found by axe-core on the audited pages.');
 process.exitCode = results.length ? 1 : 0;

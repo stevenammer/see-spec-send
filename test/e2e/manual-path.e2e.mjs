@@ -1,5 +1,7 @@
 // Real-browser walkthrough of the whole manual path. Run outside any sandbox:
 //   PLAYWRIGHT_DIR=/path/to/node_modules npm run test:e2e
+// Set BROWSER=webkit or BROWSER=firefox for the corresponding Playwright browser.
+// Set SSS_SCREENSHOT_DIR to keep screenshots outside the default location.
 // It starts the real server, signs four different people in through the real screens,
 // and drives one item to Helps and another to Shelved. It is skipped under `node --test`.
 import assert from 'node:assert/strict';
@@ -14,10 +16,16 @@ if (!process.env.NODE_TEST_CONTEXT) await main();
 async function main() {
   const require = createRequire(import.meta.url);
   const playwright = require(join(process.env.PLAYWRIGHT_DIR || '', 'playwright'));
+  const engine = process.env.BROWSER || 'chromium';
+  if (!['chromium', 'firefox', 'webkit'].includes(engine)) {
+    throw new Error(`Unknown BROWSER ${engine}. Choose chromium, firefox or webkit.`);
+  }
   const root = new URL('../..', import.meta.url).pathname;
-  const shots = join(root, 'docs/screens');
+  const scratch = mkdtempSync(join(tmpdir(), 'sss-e2e-'));
+  const shots = process.env.SSS_SCREENSHOT_DIR ||
+    (engine === 'chromium' ? join(root, 'docs/screens') : join(scratch, 'screens'));
   mkdirSync(shots, { recursive: true });
-  const db = join(mkdtempSync(join(tmpdir(), 'sss-e2e-')), 'sss.db');
+  const db = join(scratch, 'sss.db');
   const port = 18000 + Math.floor(Math.random() * 2000);
   const origin = `http://127.0.0.1:${port}`;
   const env = { ...process.env, SSS_DB: db };
@@ -45,13 +53,7 @@ async function main() {
     ['cli.js', 'serve', '--port', String(port), '--origin', origin, '--insecure-cookies', '--enable-effort', '--fixture'],
     { cwd: root, env },
   );
-  const browser = await (process.env.BROWSER === 'firefox'
-    ? playwright.firefox.launch({ headless: true })
-    : playwright.chromium.launch({
-        headless: true,
-        executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
-        args: ['--no-sandbox'],
-      }));
+  let browser;
   const problems = [];
   const people = {};
 
@@ -126,6 +128,10 @@ async function main() {
   };
 
   try {
+    const options = engine === 'chromium'
+      ? { headless: true, executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', args: ['--no-sandbox'] }
+      : { headless: true };
+    browser = await playwright[engine].launch(options);
     await waitForServer();
 
     // The leader signs in through the real screen.
@@ -273,10 +279,10 @@ async function main() {
 
     assert.deepEqual(problems, [], `browser problems:\n${problems.join('\n')}`);
     console.log(
-      'PASS: manual path to Helps and to Shelved in a real browser, roles enforced, hostile text inert.',
+      `PASS (${engine}): manual path to Helps and to Shelved, roles enforced, hostile text inert.`,
     );
   } finally {
-    await browser.close();
-    server.kill('SIGTERM');
+    try { await browser?.close(); }
+    finally { server.kill('SIGTERM'); }
   }
 }

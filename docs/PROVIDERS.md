@@ -150,16 +150,18 @@ Vertex uses `"kind": "vertex"` and signs in with a service account, not an API k
 {
   "name": "vertex-flash",
   "kind": "vertex",
-  "enabled": true,
+  "enabled": false,
   "project": "your-project-id",
-  "location": "us-central1",
-  "model": "google/gemini-2.5-flash",
+  "location": "global",
+  "model": "google/gemini-3.5-flash-lite",
   "serviceAccountFile": "/etc/see-spec-send/vertex-sa.json",
   "price": { "inputMicrosPerMillion": 300000, "outputMicrosPerMillion": 2500000 }
 }
 ```
 
-It talks to Vertex's OpenAI-compatible chat endpoint (`https://<location>-aiplatform.googleapis.com/v1/projects/<project>/locations/<location>/endpoints/openapi/chat/completions`), so it works for analysis lanes and, through the gateway, for the builder. The sign-in is a signed token exchanged with Google for a short-lived access token, using only Node's built-in crypto, and the token is reused until it's nearly out. The prices above are list prices set at or above the real ones so a cap holds. Check Google's current price page before you rely on them. It is tested against a stand-in server, and the first real run is the builder eval (`scripts/builder-eval.mjs --provider vertex`).
+The service-account adapter uses Vertex's OpenAI-compatible Chat Completions endpoint. The global endpoint uses `aiplatform.googleapis.com`. Regional endpoints use the location-prefixed hostname. The adapter exchanges a signed assertion for a short-lived access token and refreshes it when needed.
+
+The disabled example prices standard global Gemini 3.5 Flash-Lite at the November 22, 2026 list rates. Check the actual project, region and pricing tier before enabling it. The adapter has stand-in tests and the repository has prior Gemini builder results. The model in this example has yet to be tried live in this setup. [Google Cloud pricing](https://cloud.google.com/model-garden/pricing), [hosted setup and evidence](HOSTED_DEMO.md#optional-later-a-real-model-lane-through-vertex-ai-documentation-only-nothing-here-is-enabled-or-has-been-run).
 
 ## Network boundary
 

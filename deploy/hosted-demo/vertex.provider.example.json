@@ -1,10 +1,10 @@
 {
   "name": "vertex-flash",
   "kind": "vertex",
-  "enabled": true,
+  "enabled": false,
   "project": "replace-with-project-id",
-  "location": "us-central1",
-  "model": "google/gemini-2.5-flash",
+  "location": "global",
+  "model": "google/gemini-3.5-flash-lite",
   "serviceAccountFile": "/etc/see-spec-send/vertex-sa.json",
   "price": { "inputMicrosPerMillion": 300000, "outputMicrosPerMillion": 2500000 }
 }

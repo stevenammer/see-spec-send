@@ -272,6 +272,7 @@ test('the Vertex example files are valid, carry no credential, and are labelled 
   const policyText = readFileSync(new URL('gateway-policy.vertex.example.json', dir), 'utf8');
   const provider = JSON.parse(providerText); validateProvider(provider);
   assert.equal(provider.kind, 'vertex'); assert.equal(Object.hasOwn(provider, 'apiKey'), false);
+  assert.equal(provider.enabled, false);
   assert.doesNotMatch(providerText + policyText, /BEGIN PRIVATE KEY|private_key|AIza|ya29\.|\/home\//);
   const store = new Store();
   try { new Ledger(store).configure(JSON.parse(policyText)); assert.equal(new Ledger(store).policy().day_micros, 15_000_000); } finally { store.close(); }

@@ -126,6 +126,14 @@ async function main() {
     await page.screenshot({ path: join(shots, `${name}-${width}.png`), fullPage: true });
     await page.setViewportSize({ width: 1280, height: 900 });
   };
+  async function checkSkipLink(page) {
+    await page.keyboard.press('Tab');
+    assert.equal(await page.locator(':focus').textContent(), 'Skip to main content');
+    await page.keyboard.press('Enter');
+    assert.equal(await page.locator(':focus').getAttribute('id'), 'main-content');
+    await page.keyboard.press('Tab');
+    assert.equal(await page.locator('main :focus').count(), 1, 'Tab continues inside main content');
+  }
 
   try {
     const options = engine === 'chromium'
@@ -137,6 +145,7 @@ async function main() {
     // The leader signs in through the real screen.
     const leader = await open('leader');
     await leader.goto(`${origin}/signin`);
+    await checkSkipLink(leader);
     await leader.locator('[name=id]').fill('leader');
     await leader.locator('[name=password]').fill(leaderPassword);
     await leader.getByRole('button', { name: 'Sign in' }).click();
@@ -169,6 +178,7 @@ async function main() {
     await nick.getByRole('button', { name: 'SPEC IT!' }).click();
     await nick.getByRole('link', { name: 'Open the spec' }).waitFor();
     await nick.goto(`${itemUrl}/spec`);
+    await checkSkipLink(nick);
     await nick.getByRole('button', { name: 'SEND IT!' }).click();
     await nick.waitForFunction(() => !document.querySelector('form[data-send]'));
     await nick.goto(itemUrl);

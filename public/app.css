@@ -27,6 +27,17 @@ main {
 header {
   border-bottom: 1px solid #ccd5dd;
 }
+.skip-link {
+  position: absolute;
+  inset-block-start: .5rem;
+  inset-inline-start: .5rem;
+  z-index: 10;
+  padding: .5rem .75rem;
+  background: #fff;
+}
+.skip-link:not(:focus) {
+  clip-path: inset(50%);
+}
 a {
   color: #064f9e;
   display: inline-block;

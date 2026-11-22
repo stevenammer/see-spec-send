@@ -1,10 +1,10 @@
 # Hosted demo (runbook for the owner)
 
-Status: **built, not deployed.** No hosted demo exists yet. Everything here was run on a laptop with Docker, with no Cloudflare account, no domain and no second machine. Parts that could not be checked there are listed at the end under "Not verified". There are two ways to publish it: the Cloudflare-account path (named tunnel, your domain) and, further down, the free path (Oracle Always Free plus a quick tunnel, no account, no domain). The free path is also built and not deployed, and its quick-tunnel behavior is unverified live.
+Status: **the free Oracle quick-tunnel demo is running in fixture mode.** See [live evidence and pending checks](#observed-on-oracle). The named-tunnel setup below uses a Cloudflare account and your own domain. It has been exercised locally with Docker; the live deployment used the [free path](#free-path-oracle-always-free--cloudflare-quick-tunnel).
 
 What it is: one invite-only instance, fixture lane only (canned Effort replies, a fake worker, no model provider, no builder containers), seeded with an invented roster and four invented stories, wiped and re-seeded every day at 00:00 UTC. Every page carries a banner saying so. It exists so a named reviewer can click through the real app without anyone's real data being near it.
 
-## What you must supply
+## What you must supply for a named tunnel
 
 | Thing | Notes |
 | --- | --- |
@@ -64,7 +64,7 @@ The timer has `Persistent=false` on purpose: a missed midnight must not turn int
 
 ## Free path: Oracle Always Free + Cloudflare quick tunnel
 
-Status: **built, not deployed, quick-tunnel behavior unverified live.** Use this when you have no domain and no Cloudflare account. It costs nothing, and it is the weaker option: Cloudflare describes quick tunnels as for testing, with no uptime guarantee, a limit of 200 in-flight requests, and no Server-Sent Events (this app does not send SSE to browsers). The address is a random `https://<words>.trycloudflare.com` and it **changes every time the tunnel restarts**.
+Status: **running on one Oracle VM in fixture mode.** The signed-out HTTPS checks and two scheduled backup and reset cycles passed through November 22, 2026. Use this when you have no domain and no Cloudflare account. It costs nothing, and it is the weaker option: Cloudflare describes quick tunnels as for testing, with no uptime guarantee, a limit of 200 in-flight requests, and no Server-Sent Events (this app does not send SSE to browsers). The address is a random `https://<words>.trycloudflare.com` and it **changes every time the tunnel restarts**.
 
 Files: `deploy/hosted-demo/compose.quicktunnel.yaml` (instead of `compose.yaml`, never both), `tunnel-url.sh`, `backup.sh`, `systemd/sss-tunnel-sync.{service,timer}`, `systemd/sss-demo-backup.{service,timer}`. The token variant above is untouched.
 
@@ -73,7 +73,7 @@ Files: `deploy/hosted-demo/compose.quicktunnel.yaml` (instead of `compose.yaml`,
 The app checks that the `Origin` or `Referer` of every state-changing request equals the `--origin` it was started with, and it reads that once at startup. It cannot follow a new address while running, and I did not change that: loosening an origin check to accept whatever host arrives would weaken a security check for a convenience. So the safe approach is to restart the app with the new origin:
 
 - `cloudflared` and the app both join a tiny holder container's network namespace (`netns`). Restarting the app does not restart the tunnel, so applying a new origin does not mint another address. (If `cloudflared` shared the app's own namespace, as in the token variant, restarting the app would restart the tunnel and chase its own tail.)
-- `tunnel-url.sh` reads the address from cloudflared's metrics endpoint (`/quicktunnel`, pinned to `127.0.0.1:20241` with `--metrics`), falls back to the last `trycloudflare.com` log line, accepts nothing but a strict `<words>.trycloudflare.com` hostname, writes it to `deploy/hosted-demo/tunnel-url.txt`, and prints it. The `/quicktunnel` route is in cloudflared's source but I found no official Cloudflare page documenting it, so the log fallback exists; both are unverified against the pinned cloudflared version.
+- `tunnel-url.sh` reads the address from cloudflared's metrics endpoint (`/quicktunnel`, pinned to `127.0.0.1:20241` with `--metrics`), falls back to the last `trycloudflare.com` log line, accepts nothing but a strict `<words>.trycloudflare.com` hostname, writes it to `deploy/hosted-demo/tunnel-url.txt`, and prints it. The `/quicktunnel` route is in cloudflared's source but I found no official Cloudflare page documenting it, so the log fallback exists. The first Oracle run verified the address change. It did not isolate which lookup supplied the new address.
 - `demo.sh sync-origin` (run every minute by `sss-tunnel-sync.timer`) writes a changed address into `demo.env` and recreates the app and worker with it. Between a tunnel restart and the next sync (up to about a minute) the app refuses state-changing requests from the new address with 403. That fails closed; it is not a security hole. Sign-in and invite redemption are exempt from the origin check in the app, so they keep working.
 - Every session cookie belongs to the old address, so after a restart each reviewer signs in again at the new one. You must re-send links: `cat deploy/hosted-demo/tunnel-url.txt`, and `./demo.sh invite NAME` for anyone who never redeemed. The invite page is `<address>/redeem`.
 - The daily reset leaves the tunnel running, so the address survives midnight. It changes only if cloudflared restarts (a crash, a host reboot, a Docker restart) or you stop the stack.
@@ -94,14 +94,14 @@ The app checks that the `Origin` or `Referer` of every state-changing request eq
    ./demo.sh up      # starts the tunnel, waits for the address, starts app + worker on it, prints the address
    ```
 4. Units: `sudo cp systemd/sss-demo.service systemd/sss-demo-reset.service systemd/sss-demo-reset.timer systemd/sss-tunnel-sync.service systemd/sss-tunnel-sync.timer systemd/sss-demo-backup.service systemd/sss-demo-backup.timer /etc/systemd/system/`, then `sudo systemctl daemon-reload && sudo systemctl enable --now sss-demo.service sss-demo-reset.timer sss-tunnel-sync.timer sss-demo-backup.timer`. The existing `sss-demo.service` and reset service work unchanged: `demo.sh` switches behavior on `SSS_MODE=quicktunnel` in `demo.env`.
-5. Run the two-network test below. **Do not invite anyone until it passes.**
+5. Run the two-network test below with a throwaway account. Invite reviewers only after it passes.
 6. Then `./demo.sh invite reviewer-ada`, and send the code with the current address from `tunnel-url.txt`.
 
 Kill ladder for this path: `./demo.sh kill set`; then `docker compose -f compose.quicktunnel.yaml stop cloudflared` (a restarted quick tunnel is a different address, so every old link stays dead); then `./demo.sh down`.
 
 ### Two-network test of the real visitor address (copy and paste)
 
-The app buckets sign-in attempts by the rightmost `X-Forwarded-For` entry, believed only from a loopback peer. Cloudflare appends the visitor's address as the rightmost entry, and `cloudflared` reaches the app over loopback. `test/hosted-demo-quicktunnel.test.mjs` proves the app's half of that with a loopback stand-in proxy that appends the visitor (including a spoofed incoming header). Whether the real quick tunnel sends the visitor's address that way is exactly what this test checks; I have not observed it.
+The app buckets sign-in attempts by the rightmost `X-Forwarded-For` entry, believed only from a loopback peer. Cloudflare appends the visitor's address as the rightmost entry, and `cloudflared` reaches the app over loopback. `test/hosted-demo-quicktunnel.test.mjs` proves the app's half of that with a loopback stand-in proxy that appends the visitor (including a spoofed incoming header). The first Oracle deployment recorded separate failure buckets for two real networks and ignored spoofed header values. This procedure goes one step further and checks that an invited reviewer can still sign in from the second network while the first is limited.
 
 Setup, once: make a throwaway account and redeem it (the daily reset deletes it). `./demo.sh invite reviewer-test` prints a code; open `<address>/redeem` in a browser and choose a test password. Then, on **network A** (for example your laptop on home Wi-Fi), with `URL` set to the address from `tunnel-url.sh` and `PW` the test password:
 
@@ -144,7 +144,7 @@ What it protects: **the demo's people, posts and accounts are disposable** (the 
 - **Oracle may reclaim an idle Always Free VM.** Oracle's documentation says idle Always Free instances can be reclaimed. I have not confirmed whether upgrading the account to Pay As You Go prevents that, so do not rely on it.
 - **Shared VM.** This VM also runs your other apps. Use only this locked-down compose file: no Docker socket in any container, no volumes shared with your other apps, no host networking, nothing published. `tunnel-url.sh` and `demo.sh` call `docker` from the host (root under systemd); no container gets that power.
 - **No Cloudflare Access, WAF or rate-limit rules** on a quick tunnel (those need an account). Only the app's own limits stand, plus invite-only sign-in.
-- **Not run here:** that cloudflared starts with a read-only filesystem and an 8 MB tmpfs, that its metrics route answers at the pinned address, and that a restarted app is back before anyone notices.
+- **Recovery window.** During the live midnight resets, the app and worker took about 12 seconds to stop and start. Recovery after a VM reboot is still untested.
 
 ### Don't deploy if
 
@@ -199,11 +199,15 @@ Do these from a phone on mobile data and from one other network.
 - [ ] After midnight UTC: the reviewer's account is gone, the four stories are back, `./demo.sh kill status` reads `clear` (unless you set it), and `systemctl status sss-demo-reset.service` shows a clean run.
 - [ ] Tell the reviewer what the banner says, in words, before they start.
 
-## Not verified
+## Observed on Oracle
 
-- Quick tunnels, end to end, beyond one run: the free path was deployed once to an Oracle Always Free ARM VM (Ubuntu 24.04, Docker 29.1, user-local Compose v5.8) and checked from outside, with no invites issued and no link shared. It showed `GET /signin` and `/readyz` at 200 with HSTS and the app's CSP, the demo banner, an empty `provider list`, about 60 MiB of memory for the four containers, and the sign-in limiter bucketing by the true visitor address (the laptop's own IPv6 address, spoofed `X-Forwarded-For` values ignored, a separate bucket for the VM's own public address). One deliberate `cloudflared` restart gave a new address and the app's origin followed it in about 7 seconds with the timer. The first real run also showed that `tunnel-url.sh` and `backup.sh` were not executable in git (fixed). One run on one VM is not a track record.
-- Cloudflare's real-address behavior with this setup. The app takes the rightmost `X-Forwarded-For` entry and only from a loopback connection; `cloudflared` shares the app's network namespace so the connection is loopback, but whether the header it carries holds the visitor's address was not observed. The two-network test above is how you find out.
-- Still not run on the real host: the 00:00 UTC reset and the 23:30 backup on their schedules (the first scheduled runs are the night after deployment), a reboot test of the stack, a sign-in from one network while another is rate-limited (needs a real account), and anything over days.
-- The ledger carry against a database that a real app and worker have written to for days. It is tested on throwaway databases with receipts made through the Quest and analysis gateways, and in the cap proof with all four lanes.
-- The 00:00 UTC reset on a real clock. Tests inject the clock; the container run used `--force` because it was mid-day.
-- No outside party has tested this. It inherits the open items in `docs/SECURITY_WATCH.md` and `docs/THREAT_MODEL.md`.
+- The free path was deployed on one Always Free ARM VM (Ubuntu 24.04, Docker 29.1, user-local Compose v5.8). The initial external sign-in and readiness checks returned HTTP 200. The sign-in page showed the demo banner and returned HSTS and CSP headers. The provider list was empty. The sign-in logs showed two separate network buckets and ignored spoofed forwarding addresses.
+- One deliberate tunnel restart changed the address. The app followed the new origin in about seven seconds. The deployment also exposed two scripts with missing executable bits, fixed in `da426d8`.
+- The scheduled 23:30 UTC backups on November 20 and 21 completed. The verification command reported 16 events in each backup, and both files matched the SHA-256 hashes in their manifests. The scheduled midnight resets on November 21 and 22 finished in about 12 seconds. Both logs showed the fixture gateway ledger carried forward, the kill latch clear, and the app and worker started again. The live `/signin` and `/readyz` still returned HTTP 200 on November 22.
+
+## Pending checks
+
+- A reviewer successfully signs in from one network while another is limited. The initial live check used failure logs and did not issue an invite. Complete the reviewer sign-in check in the two-network procedure before handing the demo to reviewers.
+- Recovery after a VM reboot and a longer availability record.
+- Ledger carry after sustained real provider use. The live demo uses fixtures. The automated cap proof covers simulated receipts and all four model lanes.
+- An independent review. The demo inherits the open items in [SECURITY_WATCH.md](SECURITY_WATCH.md) and [THREAT_MODEL.md](THREAT_MODEL.md).

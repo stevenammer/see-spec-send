@@ -18,11 +18,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [{ name: app, context: '.', file: Dockerfile }, { name: builder, context: worker/opencode, file: worker/opencode/Dockerfile, skip: usr/local/lib/node_modules/npm }]
+        image:
+          - { name: app, context: '.', file: Dockerfile }
+          - { name: builder, context: worker/opencode, file: worker/opencode/Dockerfile, cli: opencode, skip: usr/local/lib/node_modules/npm }
+          - { name: claudecode, context: worker/claudecode, file: worker/claudecode/Dockerfile, cli: claude, skip: usr/local/lib/node_modules/npm }
+          - { name: codex, context: worker/codex, file: worker/codex/Dockerfile, cli: codex, skip: usr/local/lib/node_modules/npm }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - run: docker build -t sss-${{ matrix.image.name }}:scan -f ${{ matrix.image.file }} ${{ matrix.image.context }}
+      - name: Check the installed worker CLI
+        if: matrix.image.cli
+        env:
+          SSS_IMAGE: sss-${{ matrix.image.name }}:scan
+          SSS_CLI: ${{ matrix.image.cli }}
+        run: docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp --env HOME=/tmp "$SSS_IMAGE" "$SSS_CLI" --version
       # Fails on a fixed HIGH or CRITICAL vulnerability. Ones with no fix yet are reported, not blocking.
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -30,7 +40,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: '1'
-          # The builder image keeps npm only because it installed OpenCode at build time. The running container has no
+          # Worker images keep npm only because they installed their CLI at build time. The running container has no
           # network and never runs npm, so npm's own bundled packages are skipped here. Removing npm from that image
           # needs a new recorded image digest and a builder re-run, so it's a separate change.
           skip-dirs: ${{ matrix.image.skip }}
@@ -38,13 +48,15 @@ jobs:
   dockerfiles:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        file: [Dockerfile, worker/opencode/Dockerfile, worker/claudecode/Dockerfile, worker/codex/Dockerfile]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
-        with: { dockerfile: Dockerfile, failure-threshold: warning }
-      - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
-        with: { dockerfile: worker/opencode/Dockerfile, failure-threshold: warning }
+        with: { dockerfile: '${{ matrix.file }}', failure-threshold: warning }
   workflows:
     runs-on: ubuntu-latest
     timeout-minutes: 10

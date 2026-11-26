@@ -38,7 +38,7 @@ for (const [name, file, before, after, args] of selected) {
   }
   const temp = mkdtempSync(join(tmpdir(), 'sss-review-mutant-'));
   try {
-    cpSync(root, temp, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
+    cpSync(root, temp, { recursive: true, filter: path => !/\/(\.git|node_modules)(\/|$)/.test(path) });
     const path = join(temp, file);
     const source = readFileSync(path, 'utf8');
     if (!source.includes(before)) throw Error(`Mutant source missing: ${name}`);

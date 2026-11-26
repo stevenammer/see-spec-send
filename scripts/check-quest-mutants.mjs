@@ -39,7 +39,7 @@ for (const [name, file, before, after] of mutations) {
   const copy = mkdtempSync(join(tmpdir(), 'sss-quest-mutant-'));
   try {
     cpSync(root, copy, { recursive: true,
-      filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
+      filter: path => !/\/(\.git|node_modules)(\/|$)/.test(path) });
     const target = join(copy, file);
     const original = readFileSync(target, 'utf8');
     if (!original.includes(before)) throw Error(`Mutation source missing: ${name}`);

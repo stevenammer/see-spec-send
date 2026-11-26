@@ -299,7 +299,7 @@ for (const [index, [name, file, find, replace, tests]] of mutants.entries()) {
   if (only && !name.includes(only)) continue;
   if (shard && index % shard[1] !== shard[0]) continue;
   const copy = mkdtempSync(join(tmpdir(), 'sss-mutant-'));
-  cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') && !path.includes('/docs/screens') });
+  cpSync(root, copy, { recursive: true, filter: path => !/\/(\.git|node_modules)(\/|$)/.test(path) && !path.includes('/docs/screens') });
   const path = join(copy, file); const source = readFileSync(path, 'utf8');
   if (!source.includes(find)) throw new Error(`mutant source missing: ${name}`);
   writeFileSync(path, source.replace(find, replace));

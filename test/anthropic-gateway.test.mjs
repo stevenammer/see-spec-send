@@ -113,7 +113,7 @@ test('a gateway refusal mid-stream ends with an error event and nothing after it
 
 async function serve(t, options = {}) {
   const made = fixture(':memory:', options.policy || {}, options.cap ?? 0.1); t.after(() => made.store.close());
-  const server = createGatewayServer(new Gateway(made.ledger, fixtureProvider), new ChatGateway(made.ledger, options.provider || fixtureChatProvider));
+  const server = createGatewayServer(new Gateway(made.ledger, fixtureProvider), options.chat?.(made.ledger) || new ChatGateway(made.ledger, options.provider || fixtureChatProvider));
   server.listen(0, '127.0.0.1');
   try { await once(server, 'listening'); } catch (error) { if (error.code === 'EPERM') return null; throw error; }
   t.after(() => { server.closeAllConnections(); server.close(); });
@@ -146,6 +146,21 @@ test('POST /v1/messages streams Anthropic events and settles the stream\'s usage
   assert.deepEqual(names(events), ['message_start', 'ping', 'content_block_start', 'content_block_delta', 'content_block_stop', 'message_delta', 'message_stop']);
   assert.equal(setup.ledger.receipts().at(-1).state, 'settled');
   assert.ok(events.at(-2)[1].usage.output_tokens >= 1);
+});
+
+// A chat gateway that opens the event stream, sends one chunk, then fails. ChatGateway.stream turns provider failures into
+// an error event itself, so this is the path left: something after the stream began throws (an accounting or settle fault).
+const failsMidStream = ledger => ({ ledger, async stream(token, idem, chat, send, begin) {
+  begin(); send({ id: 'chatcmpl-x', object: 'chat.completion.chunk', model: chat.model, choices: [{ index: 0, delta: { content: 'part' }, finish_reason: null }] });
+  throw new Error('accounting failed after the stream began');
+} });
+test('a failure after the stream began ends the response, so the agent is not left waiting on an open stream', async t => {
+  const setup = await serve(t, { chat: failsMidStream }); if (!setup) return t.skip('sandbox blocks loopback listeners');
+  const response = await fetch(`${setup.base}/v1/messages`, { method: 'POST', signal: AbortSignal.timeout(5000),
+    headers: { 'content-type': 'application/json', 'x-api-key': setup.token }, body: JSON.stringify(body({ stream: true })) });
+  assert.equal(response.status, 200); assert.equal(response.headers.get('content-type'), 'text/event-stream');
+  const text = await response.text();   // resolves only once the server ends the response
+  assert.match(text, /event: content_block_delta/);
 });
 
 test('the endpoint refuses without a capability, with the wrong model, and past the budget, in Anthropic error shape', async t => {

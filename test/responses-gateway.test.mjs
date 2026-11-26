@@ -120,13 +120,28 @@ test('a token limit ends the stream as incomplete, a gateway refusal as failed, 
 
 async function serve(t, options = {}) {
   const made = fixture(':memory:', options.policy || {}, options.cap ?? 0.1); t.after(() => made.store.close());
-  const server = createGatewayServer(new Gateway(made.ledger, fixtureProvider), new ChatGateway(made.ledger, fixtureChatProvider));
+  const server = createGatewayServer(new Gateway(made.ledger, fixtureProvider), options.chat?.(made.ledger) || new ChatGateway(made.ledger, fixtureChatProvider));
   server.listen(0, '127.0.0.1');
   try { await once(server, 'listening'); } catch (error) { if (error.code === 'EPERM') return null; throw error; }
   t.after(() => { server.closeAllConnections(); server.close(); });
   return { ...made, base: `http://127.0.0.1:${server.address().port}` };
 }
 const post = (setup, input, headers = {}) => fetch(`${setup.base}/v1/responses`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${setup.token}`, ...headers }, body: JSON.stringify(input) });
+
+// A chat gateway that opens the event stream, sends one chunk, then fails. ChatGateway.stream turns provider failures into
+// an error event itself, so this is the path left: something after the stream began throws (an accounting or settle fault).
+const failsMidStream = ledger => ({ ledger, async stream(token, idem, chat, send, begin) {
+  begin(); send({ id: 'chatcmpl-x', object: 'chat.completion.chunk', model: chat.model, choices: [{ index: 0, delta: { content: 'part' }, finish_reason: null }] });
+  throw new Error('accounting failed after the stream began');
+} });
+test('a failure after the stream began ends the response, so the agent is not left waiting on an open stream', async t => {
+  const setup = await serve(t, { chat: failsMidStream }); if (!setup) return t.skip('sandbox blocks loopback listeners');
+  const response = await fetch(`${setup.base}/v1/responses`, { method: 'POST', signal: AbortSignal.timeout(5000),
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${setup.token}` }, body: JSON.stringify(body({ stream: true })) });
+  assert.equal(response.status, 200); assert.equal(response.headers.get('content-type'), 'text/event-stream');
+  const text = await response.text();   // resolves only once the server ends the response
+  assert.match(text, /^event: /m);
+});
 
 test('POST /v1/responses answers in Responses format and is metered on the same ledger as chat completions', async t => {
   const setup = await serve(t); if (!setup) return t.skip('sandbox blocks loopback listeners');

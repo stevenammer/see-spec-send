@@ -27,7 +27,10 @@ const mutants = [
   ['gateway: per-run token limit', 'gateway/ledger.js', "<= policy.max_tokens_per_run, 'run token limit exceeded'", "<= Infinity, 'run token limit exceeded'", T(['gateway-run-limits'])],
   ['proxy: output limit is clamped to policy', 'gateway/http.js', 'request.max_tokens = Math.min(asked, policy.output_tokens);', 'request.max_tokens = asked;', T(['proxy-chat'])],
   ['proxy: provider usage is normalized', 'gateway/http.js', 'Number.isSafeInteger(usage.prompt_tokens) && Number.isSafeInteger(usage.completion_tokens)', 'false', T(['proxy-chat'])],
-  ['proxy: a refusal after the stream began ends it', 'gateway/http.js', 'if (res.headersSent) res.end();', 'if (false) res.end();', T(['proxy-chat'])],
+  ["proxy: a refusal after the stream began ends it", "gateway/http.js", "// After the stream has started, the status line is already sent: end it.\n      if (res.headersSent) res.end();", "// After the stream has started, the status line is already sent: end it.\n      if (false) res.end();", T(["proxy-chat"])],
+  // No mutant for the same line in handleMessages and handleResponses: without it, reply() throws (headers already sent)
+  // and the server's outer catch, pinned by the proxy mutant above, ends the stream anyway. That makes them equivalent
+  // mutants. The end-to-end behavior is still tested in anthropic-gateway and responses-gateway (failure after the stream began).
   ['proxy: unknown request keys are refused', 'gateway/http.js', "if (Object.keys(raw).some(key => !chatKeys.includes(key) && !ignorableKeys.includes(key))) throw Error('invalid chat payload');", '', T(['proxy-chat'])],
   ['provider: pinned address prefers IPv4', 'provider/safe-http.js', 'answers.find(answer => isIP(answer.address) === 4) || answers[0]', 'answers[0]', T(['provider'])],
   ['bedrock: session token is signed', 'provider/bedrock.js', "...(sessionToken ? { 'x-amz-security-token': sessionToken } : {})", '', T(['bedrock'])],
@@ -73,7 +76,7 @@ const mutants = [
   ['oidc: discovery issuer must match exactly', 'app/oidc-provider.js', 'metadata.issuer !== this.config.issuer', 'false', T(['oidc-provider'])],
   ['oidc: password login really disabled', 'app/http.js', "if (disablePasswordLogin) return json(res, 404, { error: 'not found' });", '', T(['oidc-provider'])],
   ['oidc: nobody is provisioned by default', 'app/auth.js', "if (!this.oidc.autoProvision) throw new Error('OIDC person is not provisioned');", '', T(['oidc-provider'])],
-  ['oidc: a state can be used once', 'app/oidc.js', 'this.pending.delete(state);', '', T(['oidc-provider'])],
+  ["oidc: a state can be used once", "app/oidc.js", "// Consume before exchanging, so a provider retry is never a local replay.\n    this.pending.delete(state);", "// Consume before exchanging, so a provider retry is never a local replay.\n", T(["oidc-provider"])],
   ['oidc: the browser binding is checked', 'app/oidc.js', '|| pending.binderHash !== sha256(binder)', '', T(['oidc-provider'])],
   ['fuzz: a JSON null or array body is refused', 'app/http.js', "|| value === null || typeof value !== 'object' || Array.isArray(value)) throw invalid('bad json'); return value;", ") throw invalid('bad json'); return value;", T(['fuzz-routes'])],
   ['fuzz: a missing password never reaches the hash function', 'app/auth.js', "if (typeof password !== 'string') return false;          // a missing or non-text password never reaches the hash function", '', T(['fuzz-routes'])],
@@ -155,7 +158,8 @@ const mutants = [
   ["anthropic provider: required means any", "gateway/anthropic.js", "else if (choice === 'required') body.tool_choice = { type: 'any' };", "else if (choice === 'required') body.tool_choice = { type: 'auto' };", T(['anthropic-provider'])],
   ["anthropic provider: system text goes in the system field", "gateway/anthropic.js", "if (systems.length) body.system = systems.join('\\n\\n');", "", T(['anthropic-provider'])],
   ["anthropic provider: a tool_use stop is tool_calls", "gateway/anthropic.js", "tool_use: 'tool_calls', pause_turn", "tool_use: 'stop', pause_turn", T(['anthropic-provider'])],
-  ["anthropic provider: a stream ends with usage for settlement", "gateway/anthropic.js", "usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output } };\n}", "};\n}", T(['anthropic-provider'])],
+  ["anthropic provider: a stream ends with usage for settlement", "gateway/anthropic.js", "finish_reason: finish }], usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output } };", "finish_reason: finish }] };", T(["anthropic-provider"])],
+  ["anthropic provider: a finished message carries usage", "gateway/anthropic.js", "finishReason(message?.stop_reason) }],\n    usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output } };", "finishReason(message?.stop_reason) }] };", T(["anthropic-provider"])],
   ["anthropic provider: tool arguments stream on the right call", "gateway/anthropic.js", "yield chunk({ tool_calls: [{ index: blocks.get(event.index), function:", "yield chunk({ tool_calls: [{ index: 0, function:", T(['anthropic-provider'])],
   ["anthropic provider: output tokens come from message_delta", "gateway/anthropic.js", "if (u.output_tokens) output = u.output_tokens;", "", T(['anthropic-provider'])],
   ["anthropic provider: a provider stream error is raised", "gateway/anthropic.js", "else if (event?.type === 'error') throw new Error(`provider stream error: ${String(event.error?.type || 'error').slice(0, 60)}`);", "", T(['anthropic-provider'])],
@@ -291,6 +295,9 @@ if (shard && (shard.length !== 2 || !Number.isInteger(shard[0]) || !Number.isInt
 if (process.argv.includes('--check-sources')) {
   const missing = mutants.filter(([, file, find]) => !readFileSync(join(root, file), 'utf8').includes(find)).map(([name]) => name);
   if (missing.length) { console.error(`mutant source missing: ${missing.join('; ')}`); process.exit(1); }
+  // A mutant changes only the first match. If the text appears twice, it can quietly land on code its tests don't cover.
+  const ambiguous = mutants.filter(([, file, find]) => readFileSync(join(root, file), 'utf8').split(find).length > 2).map(([name]) => name);
+  if (ambiguous.length) { console.error(`mutant source appears more than once: ${ambiguous.join('; ')}`); process.exit(1); }
   console.log(`OK ${mutants.length} mutant find strings found`); process.exit(0);
 }
 const run = (cwd, tests) => spawnSync(process.execPath, ['--test', '--test-concurrency=1', ...tests], { cwd, encoding: 'utf8', timeout: 600_000 });

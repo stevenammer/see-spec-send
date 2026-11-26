@@ -1,38 +1,13 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const root = new URL('..', import.meta.url).pathname;
-const fullSuite = ['--test', '--test-concurrency=1', 'test/auth.test.mjs', 'test/hardening.test.mjs', 'test/store.test.mjs',
-  'test/machine.test.mjs', 'test/oracle.test.mjs', 'test/web.test.mjs', 'test/web-pages.test.mjs',
-  'test/stage-freeze.test.mjs', 'test/review-regressions.test.mjs', 'test/legacy-migration.test.mjs', 'test/vision-quest.test.mjs', 'test/quest-http.test.mjs',
-  'test/quest-storage-faults.test.mjs', 'test/quest-attack.test.mjs', 'test/quest-spec.test.mjs',
-  'test/quest-review-regressions.test.mjs', 'test/worker.test.mjs', 'test/container.test.mjs',
-  'test/worker-path.test.mjs', 'test/gateway.test.mjs', 'test/slice9.test.mjs', 'test/slice7.test.mjs', 'test/slice8.test.mjs',
-  'test/provider.test.mjs', 'test/builder.test.mjs',
-  'test/slice13.test.mjs',
-  'test/slice14.test.mjs',
-  'test/slice16.test.mjs',
-  'test/slice17.test.mjs',
-  'test/slice18.test.mjs',
-  'test/slice21.test.mjs',
-  'test/slice22.test.mjs',
-  'test/slice20.test.mjs',
-  'test/redteam-evidence-forgery.test.mjs', 'test/redteam-oidc-login-csrf.test.mjs',
-  'test/mutation-security.test.mjs', 'test/slice23.test.mjs', 'test/slice24.test.mjs',
-  'test/slice19.test.mjs', 'test/slice25.test.mjs', 'test/slice26.test.mjs', 'test/slice27.test.mjs', 'test/password-screen.test.mjs',
-  'test/vision-01.test.mjs', 'test/vision-02.test.mjs', 'test/vision-03.test.mjs', 'test/vision-04.test.mjs', 'test/sliceR.test.mjs', 'test/sliceR2.test.mjs', 'test/sliceF3.test.mjs', 'test/sliceF3-worker.test.mjs', 'test/pagesF3.test.mjs', 'test/sliceF3-http.test.mjs', 'test/sliceF3-gateway.test.mjs', 'test/sliceF4-builder.test.mjs', 'test/sliceF4-forks.test.mjs', 'test/sliceF4-http.test.mjs', 'test/sliceF4-pages.test.mjs'];
-fullSuite.push('test/sliceF5-memory.test.mjs', 'test/sliceF5-pages.test.mjs');
-fullSuite.push('test/sliceF6-mentoring.test.mjs', 'test/sliceF6-pages.test.mjs', 'test/sliceF6-demo.test.mjs');
-fullSuite.push('test/sliceF7-spec.test.mjs');
-fullSuite.push('test/sliceF8-evidence.test.mjs', 'test/sliceF8-http.test.mjs');
-fullSuite.push('test/decision-outcomes.test.mjs', 'test/builder-adapter-contract.test.mjs');
-// Tests written to kill mutants the CI mutation run found. A test file that is not in this list is invisible to the
-// mutation job, so every test that pins a mutant must be added here.
-fullSuite.push('test/bundle-html.test.mjs', 'test/backup-mode.test.mjs', 'test/reset-code.test.mjs', 'test/no-outside-requests.test.mjs',
-  'test/event-route-refusals.test.mjs', 'test/comment-anchor-http.test.mjs', 'test/reanalysis-delivery.test.mjs');
-fullSuite.push('test/sliceF9.test.mjs', 'test/trusted-system-metering.test.mjs', 'test/effort-lease.test.mjs');
+// Every test file runs against every mutant, the same set `npm test` runs. This used to be a hand-kept list that had
+// fallen to 78 of 145 files, so a test outside it (including the security regression tests) could never kill a mutant.
+const fullSuite = ['--test', '--test-concurrency=1', ...readdirSync(join(root, 'test'))
+  .filter(name => name.endsWith('.test.mjs')).sort().map(name => `test/${name}`)];
 const workerOnly = process.argv.includes('--worker');
 const suite = workerOnly ? ['--test', '--test-concurrency=1',
   'test/worker.test.mjs', 'test/worker-path.test.mjs', 'test/container.test.mjs'] : fullSuite;
@@ -481,8 +456,10 @@ function run(cwd, args) {
   // The serial security baseline can take several minutes on a constrained
   // runner. Keep a finite ceiling, but leave enough room for normal coverage
   // and for its complete TAP output.
+  // The whole suite takes about 6.5 minutes on a 4-core laptop. A run that hits the ceiling is reported as TIMEOUT
+  // and fails the shard: a killed process proves nothing about whether a test noticed the mutant.
   return spawnSync(process.execPath, args, {
-    cwd, stdio: 'pipe', encoding: 'utf8', timeout: 600_000, maxBuffer: 16 * 1024 * 1024,
+    cwd, stdio: 'pipe', encoding: 'utf8', timeout: 1_800_000, maxBuffer: 64 * 1024 * 1024,
   });
 }
 
@@ -504,17 +481,27 @@ const selected = mutants.filter(([name], index) => (!shard || index % shard[1] =
 if (!selected.length) throw new Error('no mutant matches the requested name');
 console.log(`running ${selected.length} of ${mutants.length} mutants${shard ? ` (shard ${shard[0]}/${shard[1]})` : ''}`);
 
-const baseline = run(root, [...suite, 'test/check-public.test.mjs']);
-if (baseline.status !== 0 || /# skipped [^0]/.test(baseline.stdout)) {
-  console.error('Baseline suite is not fully green with zero skipped tests.');
-  process.stderr.write(baseline.stdout + baseline.stderr);
+const copyTree = () => {
+  const copy = mkdtempSync(join(tmpdir(), 'sss-mutant-'));
+  cpSync(root, copy, { recursive: true, filter: path => !/\/(\.git|node_modules)(\/|$)/.test(path) });
+  return copy;
+};
+const timedOut = result => Boolean(result.error) || result.signal !== null;
+// The baseline runs in an unmutated copy made exactly like the mutant copies, so a test that only fails in a copy
+// (for example one that needs git) shows up here instead of quietly killing every mutant.
+const control = copyTree();
+const baseline = run(control, suite);
+rmSync(control, { recursive: true, force: true });
+if (timedOut(baseline) || baseline.status !== 0 || /# skipped [^0]/.test(baseline.stdout)) {
+  console.error(`Baseline suite (unmutated copy) is not fully green with zero skipped tests${timedOut(baseline) ? ' (it timed out)' : ''}.`);
+  // Synchronous: process.exit would otherwise cut off a long asynchronous write to a pipe.
+  writeFileSync(2, baseline.stdout + baseline.stderr);
   process.exit(1);
 }
 
 let failed = false;
 for (const [name, find, replace] of selected) {
-  const copy = mkdtempSync(join(tmpdir(), 'sss-mutant-'));
-  cpSync(root, copy, { recursive: true, filter: path => !path.includes('/.git') && !path.includes('/node_modules') });
+  const copy = copyTree();
   let changed = false;
   let changedFile = '';
   for (const file of files) {
@@ -528,9 +515,9 @@ for (const [name, find, replace] of selected) {
   }
   if (!changed) throw new Error(`mutant source missing: ${name}`);
   const result = run(copy, suite);
-  const killed = result.status !== 0;
-  console.log(`${killed ? 'KILLED' : 'SURVIVED'} ${name}`);
-  failed ||= !killed;
+  const verdict = timedOut(result) ? 'TIMEOUT' : result.status !== 0 ? 'KILLED' : 'SURVIVED';
+  console.log(`${verdict} ${name}`);
+  failed ||= verdict !== 'KILLED';
   rmSync(copy, { recursive: true, force: true });
 }
 if (failed) process.exitCode = 1;

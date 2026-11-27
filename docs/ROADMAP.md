@@ -12,6 +12,7 @@ No dates. Status words are defined in [STATUS.md](STATUS.md). Items under Next a
 - A working ledger (assumptions, questions, sourced estimates) and private on-device reflection after decisions.
 - Private, opt-in mentoring, a guided problem-discovery flow, a labeled AI participant and a metered model gateway, including a chat-style proxy that counts every call.
 - Opt-in OpenCode, Claude Code and Codex builders with a metered gateway and isolated preview for try artifacts. The [status table](STATUS.md) lists the tests and limits.
+- Mutation testing (a nightly run against the widened suite) and load testing on one machine, with numbers in the [runbook](RUNBOOK.md).
 - Synthetic browser walkthroughs, a matching browser demo, and a fixture-only hosted demo. The [hosted demo runbook](HOSTED_DEMO.md) records the live checks.
 
 ## Next, in order
@@ -23,7 +24,7 @@ No dates. Status words are defined in [STATUS.md](STATUS.md). Items under Next a
 
 Enterprise sign-in against a real tenant, an outside security review, and a real Microsoft Teams connector (the synthetic adapter and its rules are built; a tenant, Graph and Entra sign-in are not), a larger model-quality evaluation in the reanalysis and question lanes.
 
-Mutation and load testing, real-tenant enterprise sign-in validation and rollout, PostgreSQL, a Microsoft Teams adapter, customer-owned storage, comparison of other coding agents, an optional external release watcher and SMS.
+Real-tenant enterprise sign-in validation and rollout, PostgreSQL, a Microsoft Teams adapter, customer-owned storage, comparison of other coding agents, an optional external release watcher and SMS.
 
 ## Not planned
 

@@ -107,6 +107,7 @@ Measured with `scripts/load.mjs` on one machine, SQLite, one server process:
 - 40 concurrent workers with no pauses: about 160 requests per second, median about 220 ms, 99th percentile under 0.7 s, no errors apart from the per-member write limit (HTTP 429), which is working as designed.
 - First reanalysis pass over 1,000 items: about 5.5 s. A pass with nothing new: about 0.1 s.
 - Sign-in is rate limited per address, so a burst of sign-ins from one place is refused.
+- Rechecked November 27, 2026 on a busy laptop (load average about 3 on 4 cores). With 300 seeded items, 40 workers: about 147 requests per second, median about 250 ms, 99th percentile under 0.6 s for reads; posting's 99th percentile was 2.6 s (one SQLite writer). With 1,000 seeded items the same load gave about 95 requests per second, median about 380 ms, reads' 99th percentile about 1 s and posting's about 5 s. The feed's cost grows with the number of items, so a long-running workspace should be measured again before it grows past a department.
 
 Limits you should know: one SQLite writer on one machine, no clustering, no replication. Measure your own hardware with `node scripts/load.mjs` before growing, and look at the 99th percentile and the 429 rate, not only the average.
 

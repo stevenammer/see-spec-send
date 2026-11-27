@@ -225,3 +225,22 @@ test('a try can be marked as not helping, in words and as a comment, without it 
   assert.match(source, /<form data-event="commented" class="didnt-help">/);
   assert.match(source, /name="kind" value="concern"><input type="hidden" name="anchor_kind" value="artifact">/);
 });
+
+test('account fields tell the browser what they hold, so password managers can fill and save them', () => {
+  const redeem = redeemPage();
+  assert.match(redeem, /name="invite" required autocomplete="one-time-code"/);
+  assert.match(redeem, /name="id" required autocomplete="username"/);
+  assert.match(redeem, /name="password" type="password" required minlength="12" autocomplete="new-password"/);
+  const source = readFileSync(new URL('../app/pages.js', import.meta.url), 'utf8');
+  assert.match(source, /Re-enter your password<input name="password" type="password" required autocomplete="current-password">/);
+  const passwordInputs = source.match(/<input[^>]*type="password"[^>]*>/g) || [];
+  assert.ok(passwordInputs.length >= 3);
+  for (const input of passwordInputs) assert.match(input, /autocomplete="(current|new)-password"/, input);
+});
+
+test('comment boxes grow with the text, and a field only looks wrong after someone has touched it', () => {
+  const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
+  assert.match(css, /textarea \{[^}]*field-sizing: content;[^}]*max-block-size: 60vh;/);
+  assert.match(css, /input:user-invalid,\s*textarea:user-invalid,\s*select:user-invalid \{/);
+  assert.doesNotMatch(css, /input:invalid|textarea:invalid/, 'plain :invalid would mark untouched required fields red');
+});

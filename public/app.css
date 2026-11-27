@@ -68,6 +68,16 @@ button {
 }
 textarea {
   min-height: 7rem;
+  /* Grows with what you write instead of scrolling inside a small box (Baseline 2026; older browsers keep the fixed box). */
+  field-sizing: content;
+  max-block-size: 60vh;
+}
+/* Only after someone has touched a field and left it wrong, never on a fresh form (:user-invalid, Baseline since 2023). */
+input:user-invalid,
+textarea:user-invalid,
+select:user-invalid {
+  border: 2px solid #a4262c;
+  box-shadow: inset 4px 0 0 #a4262c;
 }
 button,
 .button {

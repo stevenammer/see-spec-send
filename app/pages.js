@@ -95,7 +95,7 @@ export function passwordPage() {
 export function redeemPage() {
   return shell(
     'Redeem invite',
-    `<h1>Redeem an invite</h1><p>An invite comes from someone who runs this workspace. Your ID is the name other people will see. Choose a password of at least 12 characters.</p><form data-api="/api/invite/redeem" data-next="/"><label>Invite<input name="invite" required></label><label>Your ID<input name="id" required></label><label>Password (12 or more characters)<input name="password" type="password" required minlength="12" autocomplete="new-password"></label><button>Join</button></form><p>Already have an account? <a href="/signin">Sign in</a>.</p>`,
+    `<h1>Redeem an invite</h1><p>An invite comes from someone who runs this workspace. Your ID is the name other people will see. Choose a password of at least 12 characters.</p><form data-api="/api/invite/redeem" data-next="/"><label>Invite<input name="invite" required autocomplete="one-time-code" spellcheck="false"></label><label>Your ID<input name="id" required autocomplete="username" autocapitalize="none" spellcheck="false"></label><label>Password (12 or more characters)<input name="password" type="password" required minlength="12" autocomplete="new-password"></label><button>Join</button></form><p>Already have an account? <a href="/signin">Sign in</a>.</p>`,
     { signedOut: true },
   );
 }
@@ -187,7 +187,7 @@ const stepupField = item => (item.ssoStepup
   ? (item.ssoStepupFresh
     ? '<p data-sso-ready="true">You signed in again just now. Press the button to approve.</p>'
     : '<p>Approving asks you to sign in again with your organization account first. You will come back to this page.</p>')
-  : '<label>Re-enter your password<input name="password" type="password" required></label>');
+  : '<label>Re-enter your password<input name="password" type="password" required autocomplete="current-password"></label>');
 
 export function itemPage(item, events, person, leader) {
   const context = item.context;

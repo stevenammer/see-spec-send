@@ -59,7 +59,7 @@ function redactBody(type, body) {
   const tombstone = {};
   const structural = ['verdict', 'quorum', 'cap_usd', 'approval', 'spec_hash',
     'artifact_hash', 'usd', 'steward', 'body_hash', 'redacted_hash', 'delivered_by',
-    'anchor_kind', 'anchor_hash', 'parent', 'kind', 'base_hash', 'rules', 'post_id', 'post_version', 'source_label', 'honesty_label',
+    'anchor_kind', 'anchor_hash', 'parent', 'kind', 'base_hash', 'steward_left', 'rules', 'post_id', 'post_version', 'source_label', 'honesty_label',
     'see_hash', 'spec_hash', 'base_spec_hash', 'packet_hash', 'approval', 'iteration', 'job', 'receipt', 'model', 'mode', 'credits', 'questMemo', 'consent', 'absent', 'ground', 'max_iterations', 'window_minutes', 'restricted_evidence', 'pivot_note', 'from', 'scope', 'person', 'source', 'seed_policy'];
   const textFields = ['problem', 'looked', 'found', 'must', 'how_we_know', 'out_of_scope',
     'note', 'reason', 'comment', 'original', 'text', 'assumptions', 'open_questions', 'instruction'];
@@ -595,8 +595,15 @@ export class Store {
     if (event.type === 'steward_changed') {
       const next = this.db.prepare('SELECT kind FROM actors WHERE id=?').get(event.steward);
       if (!next || next.kind !== 'person') throw invalid('steward must be a registered person');
+      if (event.steward_left !== undefined && event.steward_left !== true) throw invalid('steward_left can only be true');
       const context = this.read(item).context;
-      if (context.rules >= 2) {
+      // The steward has left the organization: a leader disabled their account, so the handoff need not wait out their
+      // inactivity. The server records that basis on the event. Live, it must still be true now; an import trusts the
+      // recorded basis, because account state isn't part of an export and the event hash covers the field.
+      const left = event.steward_left === true && (importing
+        || this.db.prepare('SELECT disabled FROM person_state WHERE id=?').get(context.steward ?? '')?.disabled === 1);
+      if (event.steward_left === true && !left) throw refused('the current steward has not left: their account is not disabled');
+      if (context.rules >= 2 && !left) {
         const consented = this.events(item).some(entry => entry.type === 'checked_in'
           && entry.actor === context.steward && entry.consent === true);
         const events = this.events(item);

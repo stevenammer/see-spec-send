@@ -21,7 +21,7 @@ No dates. Status words are defined in [STATUS.md](STATUS.md). Items under Next a
 
 ## Later
 
-Enterprise sign-in against a real tenant, an outside security review, and a real Microsoft Teams connector (the synthetic adapter and its rules are built; a tenant, Graph and Entra sign-in are not), a larger model-quality evaluation in the reanalysis and question lanes, and the unavailable-author path for forks.
+Enterprise sign-in against a real tenant, an outside security review, and a real Microsoft Teams connector (the synthetic adapter and its rules are built; a tenant, Graph and Entra sign-in are not), a larger model-quality evaluation in the reanalysis and question lanes.
 
 Mutation and load testing, real-tenant enterprise sign-in validation and rollout, PostgreSQL, a Microsoft Teams adapter, customer-owned storage, comparison of other coding agents, an optional external release watcher and SMS.
 

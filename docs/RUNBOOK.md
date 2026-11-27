@@ -66,6 +66,7 @@ Recovery point objective equals your backup interval. Recovery time is the time 
 
 - **Stop everything now:** `node cli.js kill set`. It sets a file latch and a database latch, stops running builds, and refuses new spend. `kill status` shows it; `kill clear` is deliberate.
 - **A capability or token leaked:** `node cli.js gateway revoke ...` for model capabilities; end sessions with `node cli.js session revoke`; disable a person with `node cli.js person disable`.
+- **Someone left the organization:** disable them (`node cli.js person disable`, or the administration page). A leader can then reassign any post they were stewarding at once, with a note, instead of waiting 14 days; the handoff records that the steward had left. Their credit stays on the work.
 - **Rotate secrets:** the bundle-origin signing secret is random per process, so a restart rotates it. Provider credentials live in the service environment only; rotate them there and restart. Replace any key file you used for backups.
 - **Remove content:** `node cli.js erase --item ... --body-hash ... --actor ... --reason ...`. Derived records built from it are tombstoned in the same step. Backups are not changed.
 - **After any incident:** run `node cli.js verify` and `node cli.js doctor`, keep the logs, and write down the timeline.

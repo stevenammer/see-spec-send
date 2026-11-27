@@ -27,6 +27,12 @@ const mutants = [
   ['gateway: per-run token limit', 'gateway/ledger.js', "<= policy.max_tokens_per_run, 'run token limit exceeded'", "<= Infinity, 'run token limit exceeded'", T(['gateway-run-limits'])],
   ['proxy: output limit is clamped to policy', 'gateway/http.js', 'request.max_tokens = Math.min(asked, policy.output_tokens);', 'request.max_tokens = asked;', T(['proxy-chat'])],
   ['proxy: provider usage is normalized', 'gateway/http.js', 'Number.isSafeInteger(usage.prompt_tokens) && Number.isSafeInteger(usage.completion_tokens)', 'false', T(['proxy-chat'])],
+  ["steward left: the account must really be disabled", "core/store.js", "|| this.db.prepare('SELECT disabled FROM person_state WHERE id=?').get(context.steward ?? '')?.disabled === 1);", "|| true);", T(['steward-left'])],
+  ["steward left: a left steward skips the inactivity wait", "core/store.js", "if (context.rules >= 2 && !left) {", "if (context.rules >= 2) {", T(['steward-left'])],
+  ["steward left: an import trusts the recorded basis", "core/store.js", "const left = event.steward_left === true && (importing\n", "const left = event.steward_left === true && (false\n", T(['steward-left'])],
+  ["steward left: only true is accepted", "core/store.js", "if (event.steward_left !== undefined && event.steward_left !== true) throw invalid('steward_left can only be true');", "", T(['steward-left'])],
+  ["steward left: the server records the basis", "app/http.js", "if (steward && auth.isDisabled(steward)) input = { ...input, steward_left: true };", "if (false) input = { ...input, steward_left: true };", T(['steward-left'])],
+  ["steward left: erasure keeps the basis", "core/store.js", "'base_hash', 'steward_left', 'rules',", "'base_hash', 'rules',", T(['steward-left'])],
   ["proxy: a refusal after the stream began ends it", "gateway/http.js", "// After the stream has started, the status line is already sent: end it.\n      if (res.headersSent) res.end();", "// After the stream has started, the status line is already sent: end it.\n      if (false) res.end();", T(["proxy-chat"])],
   // No mutant for the same line in handleMessages and handleResponses: without it, reply() throws (headers already sent)
   // and the server's outer catch, pinned by the proxy mutant above, ends the stream anyway. That makes them equivalent

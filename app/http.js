@@ -987,6 +987,11 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         const state = store.read(match[1]);
         input = { ...input, spec_hash: state.context.specHash, expected_seq: store.eventRows(match[1]).length };
       }
+      if (input.type === 'steward_changed') {
+        // A steward whose account a leader has disabled has left: record that as the handoff's basis.
+        const steward = store.read(match[1]).context.steward;
+        if (steward && auth.isDisabled(steward)) input = { ...input, steward_left: true };
+      }
       const eventAt = new Date(clock()).toISOString();
       if (input.type === 'approved' && input.spec_hash !== undefined) {
         const minutes = input.window_minutes ?? 7 * 24 * 60;

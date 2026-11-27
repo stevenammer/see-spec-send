@@ -677,12 +677,12 @@ export function createHandler({ auth, store, integrations, questModel = null, an
       if (req.method === 'POST' && renew) {
         if (!exactKeys(input, ['annex', 'what_is_new', 'reason']) || !hex(input.annex) || !text(input.what_is_new, 2000) || !text(input.reason, 2000)) return json(res, 409, { error: 'request refused' });
         if (!readable(renew[1])) return json(res, 403, { error: 'request refused' });
-        // Like a fork, a renewal copies the SEE text into a new item with no audience, so a restricted item can't be renewed yet.
-        if (store.readScope(renew[1])?.audience?.length) return json(res, 409, { error: 'request refused', reason: 'restricted items cannot be renewed yet' });
+        // Like a fork, a renewal copies the SEE text, so it keeps the parent's audience.
+        const renewAudience = store.readScope(renew[1])?.audience || [];
         const key = req.headers['idempotency-key'] || randomUUID();
         const id = createHash('sha256').update(canonical(['renewal', session.person, renew[1], input.annex, key])).digest('hex');
         const point = store.forkPoint(renew[1], undefined, undefined, { extended: true });
-        const result = store.append(id, { type: 'forked', actor: session.person, ...point, seed_policy: 2, rules: CURRENT_RULES, relation: 'renewal', basis: { annex: input.annex, what_is_new: input.what_is_new }, reason: input.reason, at: new Date(clock()).toISOString() }, { idem: key });
+        const result = store.append(id, { type: 'forked', actor: session.person, ...point, seed_policy: 2, rules: CURRENT_RULES, relation: 'renewal', basis: { annex: input.annex, what_is_new: input.what_is_new }, reason: input.reason, ...(renewAudience.length ? { audience: renewAudience } : {}), at: new Date(clock()).toISOString() }, { idem: key });
         return json(res, 201, { id, ...result });
       }
       if (req.method === 'GET' && url.pathname === '/api/items') {
@@ -828,10 +828,9 @@ export function createHandler({ auth, store, integrations, questModel = null, an
           || (input.from !== undefined && (!input.from || !exactKeys(input.from, ['kind', 'hash', 'post_id'])
             || !['see', 'spec', 'artifact', 'snapshot'].includes(input.from.kind) || !hex(input.from.hash)
             || (input.from.kind === 'snapshot' ? !text(input.from.post_id, 160) : input.from.post_id !== undefined)))) return json(res, 409, { error: 'request refused' });
-        // A fork copies the SEE text into a new item that has no audience of its own, so forking a restricted item would
-        // hand its text to the whole workspace. Until a fork can inherit the audience, restricted items refuse it.
+        // A fork copies the SEE text, so it keeps the parent's audience: forking restricted work never widens who can read it.
         if (store.readScope(fork[1]) && !readable(fork[1])) return json(res, 403, { error: 'request refused' });
-        if (store.readScope(fork[1])?.audience?.length) return json(res, 409, { error: 'request refused', reason: 'restricted items cannot be forked yet' });
+        const forkAudience = store.readScope(fork[1])?.audience || [];
         const key = req.headers['idempotency-key'] || randomUUID();
         const id = createHash('sha256').update(canonical(['fork-request', session.person, fork[1], key])).digest('hex');
         const existing = store.events(id)[0];
@@ -844,7 +843,7 @@ export function createHandler({ auth, store, integrations, questModel = null, an
         const eligibility = forkEligibility(report, { person: session.person, steward: parentState.context.steward });
         if (!eligibility.allowed) return json(res, 409, { error: 'request refused', reason: eligibility.reason, ...(eligibility.not_before ? { not_before: eligibility.not_before } : {}) });
         const result = store.append(id, { type: 'forked', actor: session.person, ...point, seed_policy: 2, rules: CURRENT_RULES, reason: input.reason,
-          ...(input.from ? { from: input.from } : {}), at: new Date(clock()).toISOString() }, { idem: key });
+          ...(input.from ? { from: input.from } : {}), ...(forkAudience.length ? { audience: forkAudience } : {}), at: new Date(clock()).toISOString() }, { idem: key });
         return json(res, 201, { id, ...result });
       }
       const steer = url.pathname.match(/^\/api\/items\/([^/]+)\/steer$/);

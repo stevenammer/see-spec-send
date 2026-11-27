@@ -45,13 +45,15 @@ test('the reconciliation report and transfer request follow the read scope like 
 
 test('a restricted item cannot be forked into a workspace-wide copy', async t => {
   const { handler, store, as } = await world(t);
-  const pat = await as('pat'), riya = await as('riya');
+  const pat = await as('pat'), sam = await as('sam');
   const before = store.listItems().length;
   assert.equal((await call(handler, 'POST', '/api/items/secret/fork', pat, { reason: 'I want my own copy of this' })).status, 403, 'an outsider is refused');
-  const insider = await call(handler, 'POST', '/api/items/secret/fork', riya, { reason: 'I want my own copy of this' });
-  assert.equal(insider.status, 409, 'even a member is refused until a fork can keep the audience');
-  assert.match(insider.text, /restricted items cannot be forked yet/);
   assert.equal(store.listItems().length, before, 'no copy of the private text was created');
+  const made = await call(handler, 'POST', '/api/items/secret/fork', sam, { reason: 'I want my own copy of this' });
+  assert.equal(made.status, 201, 'the steward can fork their own branch');
+  const child = JSON.parse(made.text).id;
+  assert.deepEqual(store.readScope(child).audience, ['Reservations'], 'the copy keeps the audience');
+  assert.equal((await call(handler, 'GET', `/api/items/${child}`, pat)).status, 403, 'an outsider cannot read the copy');
 });
 
 test('a person’s contribution record leaves out work in groups the viewer is not in', async t => {
@@ -97,11 +99,8 @@ test('the home feed page hides a restricted problem from people outside its audi
   assert.match(await feedFor('pat'), /An open workspace problem/, 'open items still show');
 });
 
-test('a steward who has left the audience can no longer steer, send, research or draft on a restricted item, and a restricted item cannot be renewed into an open copy', async t => {
+test('a steward who has left the audience can no longer steer, send, research or draft on a restricted item', async t => {
   const { handler, store, as } = await world(t);
-  const riya = await as('riya');
-  const renewal = await call(handler, 'POST', '/api/items/secret/renew', riya, { annex: 'a'.repeat(64), what_is_new: 'Something new came in.', reason: 'The facts changed since then.' });
-  assert.equal(renewal.status, 409); assert.match(renewal.text, /restricted items cannot be renewed yet/);
   store.groupRemove('Reservations', 'sam');
   const sam = await as('sam');
   for (const [path, body] of [['research', {}], ['spec-draft', {}], ['send', {}], ['steer', { instruction: 'Do something else entirely please' }], ['artifact', { html: '<p>x</p>' }]]) {

@@ -33,6 +33,11 @@ const mutants = [
   ["steward left: only true is accepted", "core/store.js", "if (event.steward_left !== undefined && event.steward_left !== true) throw invalid('steward_left can only be true');", "", T(['steward-left'])],
   ["steward left: the server records the basis", "app/http.js", "if (steward && auth.isDisabled(steward)) input = { ...input, steward_left: true };", "if (false) input = { ...input, steward_left: true };", T(['steward-left'])],
   ["steward left: erasure keeps the basis", "core/store.js", "'base_hash', 'steward_left', 'rules',", "'base_hash', 'rules',", T(['steward-left'])],
+  ["restricted fork: a fork must carry the parent audience", "core/store.js", ": (inherited.length && !importing))\n        throw refused('a fork keeps its parent audience exactly');", ": false)\n        throw refused('a fork keeps its parent audience exactly');", T(['restricted-fork'])],
+  ["restricted fork: a fork audience must equal the parent", "core/store.js", "? stable(event.audience) !== stable(inherited)", "? false", T(['restricted-fork'])],
+  ["restricted fork: forked events may carry an audience", "core/store.js", "if (!['posted', 'forked'].includes(event.type) || event.rules !== 3 || !Array.isArray(event.audience)", "if (!['posted'].includes(event.type) || event.rules !== 3 || !Array.isArray(event.audience)", T(['restricted-fork'])],
+  ["restricted fork: the fork route copies the audience", "app/http.js", "...(forkAudience.length ? { audience: forkAudience } : {}),", "", T(['restricted-fork'])],
+  ["restricted fork: the renewal route copies the audience", "app/http.js", "...(renewAudience.length ? { audience: renewAudience } : {}),", "", T(['restricted-fork'])],
   ["proxy: a refusal after the stream began ends it", "gateway/http.js", "// After the stream has started, the status line is already sent: end it.\n      if (res.headersSent) res.end();", "// After the stream has started, the status line is already sent: end it.\n      if (false) res.end();", T(["proxy-chat"])],
   // No mutant for the same line in handleMessages and handleResponses: without it, reply() throws (headers already sent)
   // and the server's outer catch, pinned by the proxy mutant above, ends the stream anyway. That makes them equivalent
@@ -248,12 +253,11 @@ const mutants = [
   ["audit: reconciliation report follows the read scope", "app/http.js", "if (store.readScope(recon[1]) && !readable(recon[1])) return json(res, 403, { error: 'request refused' });", "", T(['audit-findings'])],
   ["audit: transfer request follows the read scope", "app/http.js", "if (store.readScope(transferRequest[1]) && !readable(transferRequest[1])) return json(res, 403, { error: 'request refused' });", "", T(['audit-findings'])],
   ["audit: fork refuses an unreadable item", "app/http.js", "if (store.readScope(fork[1]) && !readable(fork[1])) return json(res, 403, { error: 'request refused' });", "", T(['audit-findings'])],
-  ["audit: fork refuses a restricted item", "app/http.js", "if (store.readScope(fork[1])?.audience?.length) return json(res, 409,", "if (false) return json(res, 409,", T(['audit-findings'])],
+  // The two audit refusals of restricted forks and renewals were replaced by audience inheritance: see the restricted fork mutants.
   ["audit: contribution record respects audiences", "core/memory.js", "WHERE first.item=c.item AND first.seq=1 AND json_array_length(json_extract(fb.bytes,'$.audience')) > 0)", "WHERE first.item=c.item AND first.seq=1 AND 1=0)", T(['audit-findings'])],
   ["audit: inbound rate limit is awaited", "app/integrations.js", "!(await this.allowed(source))", "!this.allowed(source)", T(['audit-findings'])],
   ["audit: workspace research respects audiences", "research/workspace.js", "row.item !== item && audienceCovers(store.readScope(row.item), target)", "row.item !== item", T(['audit-findings'])],
   ["audit: the feed page hides restricted items", "app/http.js", "feedPage(listing.items.filter(item => readable(item.id)), listing.next, { person: session.person, leader })", "feedPage(listing.items, listing.next, { person: session.person, leader })", T(['audit-findings'])],
-  ["audit: renew refuses a restricted item", "app/http.js", "if (store.readScope(renew[1])?.audience?.length) return json(res, 409,", "if (false) return json(res, 409,", T(['audit-findings'])],
   ["audit: steward write routes follow the read scope", "app/http.js", "scopedWrite && store.readScope(scopedWrite[1]) && !readable(scopedWrite[1])", "false && scopedWrite", T(['audit-findings'])],
   ["audit: a stuck hold stops occupying a concurrency slot after its timeout", "gateway/ledger.js", "now - this.started.get(row.id) <= (JSON.parse(row.policy).timeout_ms ?? 60_000) + 1000", "true", T(['audit-findings'])],
   ["audit: Quest cap includes analysis spend", "gateway/quest.js", "this.ledger.effortReceipts(), this.ledger.analysisReceipts())", "this.ledger.effortReceipts())", T(['audit-findings'])],

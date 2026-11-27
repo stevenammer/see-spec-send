@@ -572,8 +572,8 @@ export class Store {
     if (Object.hasOwn(event, 'role')) throw refused('event role is forbidden');
     if (typeof event.at !== 'string' || !event.at) throw refused('event.at required');
     if (Object.hasOwn(event, 'audience')) {
-      if (event.type !== 'posted' || event.rules !== 3 || !Array.isArray(event.audience) || new Set(event.audience).size !== event.audience.length
-        || !event.audience.every(name => typeof name === 'string' && this.db.prepare('SELECT 1 FROM groups WHERE name=?').get(name))) throw refused('audience is only allowed on a rules 3 posted event and must name existing groups');
+      if (!['posted', 'forked'].includes(event.type) || event.rules !== 3 || !Array.isArray(event.audience) || new Set(event.audience).size !== event.audience.length
+        || !event.audience.every(name => typeof name === 'string' && this.db.prepare('SELECT 1 FROM groups WHERE name=?').get(name))) throw refused('audience is only allowed on a rules 3 posted or forked event and must name existing groups');
     }
     if (Object.hasOwn(event, 'related')) {
       if (event.type !== 'posted' || event.rules !== 3 || !Array.isArray(event.related) || !event.related.every(ref => ref && Object.keys(ref).length === 4
@@ -665,6 +665,11 @@ export class Store {
         ? this.db.prepare('SELECT hash FROM events WHERE item=? AND seq=?').get(parent.item, parent.seq)
         : null;
       if (!row || row.hash !== parent.hash) throw refused('fork parent does not match');
+      // A fork copies its parent's text, so restricted work stays restricted: the fork carries the parent's audience,
+      // exactly. A fork of open work has no audience. Older histories predate the rule, so an import keeps what it has.
+      const inherited = this.readScope(parent.item)?.audience || [];
+      if (Object.hasOwn(event, 'audience') ? stable(event.audience) !== stable(inherited) : (inherited.length && !importing))
+        throw refused('a fork keeps its parent audience exactly');
       if (event.relation === 'renewal') {
         if (!event.basis || typeof event.basis.annex !== 'string' || typeof event.basis.what_is_new !== 'string' || !event.basis.what_is_new.trim() || event.basis.what_is_new.length > 2000) throw refused('renewal annex and what is new required');
         const annex = this.knowledge.entries('annex').find(entry => entry.hash === event.basis.annex);

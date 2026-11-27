@@ -2,8 +2,10 @@
 #   docker build -t sss-opencode:0 worker/opencode
 FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee
 # Unpinned apt packages are deliberate: the base image is pinned by digest and the package set is two small tools.
+# Security fixes Debian published after the pinned base image (Nov 27 2026: libpam CVE-2025-6020 failed the scan).
 # hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+ && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 # The CLI is installed from a committed lockfile (package.json pins the version, package-lock.json carries the
 # integrity hashes), so the build cannot pick up different bytes than the ones reviewed.

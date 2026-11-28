@@ -99,20 +99,28 @@ export async function findings(packages, { fetchJson, cache = {} }) {
   return out.filter(f => !f.withdrawn);
 }
 
+// Feed text is written by strangers. In a See it's one quoted line with no control characters or markup marks, so it
+// can't add lines, links or instructions of its own (see docs/PROMPT_INJECTION.md).
+export const cleanText = (text, limit = 200) => {
+  const t = String(text ?? '').replace(/[\u0000-\u001f\u007f`<>]/g, ' ').replace(/\s+/g, ' ').trim();
+  return t.length > limit ? `${t.slice(0, limit)}...` : t;
+};
+
 export const keyOf = f => `${f.id}|${f.ecosystem}|${f.name}|${f.version}|${f.where}`;
 
 // The See text. Plain facts from the advisory; it says what was checked and leaves the decision to people.
 export function seeText(f) {
-  const ids = [f.id, ...f.aliases.filter(a => a !== f.id)].slice(0, 4).join(', ');
+  const ids = [f.id, ...f.aliases.filter(a => a !== f.id)].slice(0, 4).map(i => cleanText(i, 60)).join(', ');
+  const name = cleanText(f.name, 120); const version = cleanText(f.version, 60); const where = cleanText(f.where, 200);
   const lines = [
-    `${f.exploited ? 'Exploited now: ' : ''}${f.name} ${f.version} in ${f.where} has a known ${f.severity === 'unknown' ? '' : f.severity + ' '}vulnerability.`,
+    `${f.exploited ? 'Exploited now: ' : ''}${name} ${version} in ${where} has a known ${f.severity === 'unknown' ? '' : f.severity + ' '}vulnerability.`,
     '',
-    `What's wrong: ${f.summary}.`,
-    `Where: ${f.name} ${f.version} in ${f.where}${f.dev ? ' (development only)' : ''}. ${ids}.`,
+    `What's wrong (the advisory's own words, not checked): "${cleanText(f.summary)}"`,
+    `Where: ${name} ${version} in ${where}${f.dev ? ' (development only)' : ''}. ${ids}.`,
   ];
   if (f.exploited) lines.push('CISA lists this as exploited in the wild.');
-  lines.push(`What was checked: the advisory's fixed version is ${f.fixed || 'not published yet'}.`,
-    `Source: ${f.link}`);
+  lines.push(`What was checked: the advisory's fixed version is ${f.fixed ? cleanText(f.fixed, 60) : 'not published yet'}.`,
+    `Source: https://osv.dev/vulnerability/${encodeURIComponent(f.id)}`);
   return lines.join('\n').slice(0, MAX_PROBLEM);
 }
 

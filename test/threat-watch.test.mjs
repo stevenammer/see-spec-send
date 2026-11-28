@@ -16,7 +16,7 @@ const VULNS = { 'GHSA-aaaa': vuln('GHSA-aaaa', 'left-pad', 'npm', '1.3.0', 'HIGH
   'GHSA-bbbb': vuln('GHSA-bbbb', 'tiny', 'npm', '2.0.1', 'LOW'), 'PYSEC-cccc': vuln('PYSEC-cccc', 'Some_Lib', 'PyPI', '2.0', 'MODERATE') };
 const fetchJson = async (url, body) => {
   if (body) return { results: body.queries.map(q => ({ vulns: { 'left-pad': [{ id: 'GHSA-aaaa' }], tiny: [{ id: 'GHSA-bbbb' }], 'some-lib': [{ id: 'PYSEC-cccc' }] }[q.package.name] || [] })) };
-  if (url.includes('cisa.gov')) return { vulnerabilities: [{ cveID: 'CVE-2099-0001' }] };
+  if (new URL(url).hostname === 'www.cisa.gov') return { vulnerabilities: [{ cveID: 'CVE-2099-0001' }] };
   return VULNS[decodeURIComponent(url.split('/').pop())];
 };
 const LOCK = JSON.stringify({ packages: { '': { name: 'app', version: '1.0.0' }, 'node_modules/left-pad': { version: '1.2.0' },

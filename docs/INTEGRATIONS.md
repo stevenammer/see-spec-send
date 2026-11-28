@@ -21,6 +21,8 @@ SSS_HOOK_SECRET='another-random-secret' node cli.js integration destination add 
 
 ## Inbound
 
+An example inbound source ships with the repo: [Threat Watch](THREAT_WATCH.md) files a See for each new known vulnerability in your lockfiles.
+
 POST JSON to `/api/integrations/inbound/SOURCE`. Sign the exact UTF-8 bytes and send:
 
 ```text

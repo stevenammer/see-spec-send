@@ -2,6 +2,7 @@
 import { createVisionDemo } from './lib/vision.js';
 import { people } from './lib/roster.js';
 import { story } from './lib/story.js';
+import { AFTER_REFUSAL_MS, AFTER_STEP_MS, readMs } from './lib/pace.js';
 import { answerQuest, deriveQuest, emptyQuest } from './lib/vision-quest.js';
 import { avatar, h, renderCan, renderQuorum, renderStages, renderThread, who, whyRefused } from './lib/ui.js';
 
@@ -11,8 +12,16 @@ let refusals = [];
 let busy = false;
 let current = 'nick';
 let freshSeq = 0;
+let paused = false;
 const quiet = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
-const pause = ms => new Promise(resolve => setTimeout(resolve, quiet() ? Math.min(ms, 250) : ms));
+// Waits ms of unpaused time. Reduced motion turns off smooth scrolling, never reading time: a caption still needs
+// to be read. The clock stops while the visitor has pressed Pause.
+const pause = ms => new Promise(resolve => {
+  let left = ms;
+  const tick = () => { if (!paused) left -= 100; if (left <= 0) resolve(); else setTimeout(tick, 100); };
+  setTimeout(tick, 100);
+});
+
 
 const seeText = events => [...events].reverse().find(event => event.type === 'revised')?.text ?? events[0]?.original ?? '';
 const split = text => {
@@ -51,7 +60,7 @@ function paint(kind = null) {
   const newest = state.events.length;
   if (newest > freshSeq) { for (const node of $('thread').querySelectorAll('[data-seq]')) if (Number(node.getAttribute('data-seq')) > freshSeq) node.classList.add('fresh'); freshSeq = newest; }
   $('result').textContent = kind === 'refused' ? 'Refused. See the red card in the thread.' : '';
-  $('play').disabled = busy; $('reset').disabled = busy; $('viewer').disabled = busy;
+  $('play').disabled = busy; $('reset').disabled = busy; $('viewer').disabled = busy; $('pause').hidden = !busy;
 }
 
 function renderPeople() {
@@ -109,17 +118,24 @@ async function play() {
   for (const step of story) {
     setViewer(step.who === 'effort' ? current : step.who);
     $('caption').textContent = step.say; paint();
-    await pause(1500);
+    await pause(readMs(step.say));
     const out = await step.run(demo);
     if (step.refuse) refusals.push({ after: demo.state().events.length, actor: step.who, attempt: step.refuse, reason: whyRefused(step.action, demo.state(), step.who), action: 'tour' });
     else if (!out.ok) { $('caption').textContent = `The demo stopped at a step it didn't expect: ${out.error}`; break; }
     paint(step.refuse ? 'refused' : 'ok');
     const last = $('thread').lastElementChild;
     last?.scrollIntoView?.({ block: 'center', behavior: quiet() ? 'auto' : 'smooth' });
-    await pause(900);
+    await pause(step.refuse ? AFTER_REFUSAL_MS : AFTER_STEP_MS);
   }
   $('caption').textContent = 'That\'s the whole rule. Two people who didn\'t shape it said it helps, and only then did it count. Now try it yourself. Start over, switch who you\'re viewing as, and try to cheat.';
-  busy = false; paint();
+  busy = false; setPaused(false); paint();
+}
+
+function setPaused(value) {
+  paused = value;
+  const button = $('pause');
+  button.textContent = paused ? 'Resume' : 'Pause';
+  button.setAttribute('aria-pressed', String(paused));
 }
 
 function reset() {
@@ -162,7 +178,12 @@ function start() {
     const seq = demo.tamper();
     $('verify-out').textContent = seq ? `Event ${seq} was edited in memory. Press "Verify the chain" to see it caught.` : 'There are no events to edit yet.';
   });
+  // The header wraps to two rows on a phone. Keep the narration caption just below it, never underneath it.
+  const header = document.querySelector('header.top');
+  const fitCaption = () => document.documentElement.style.setProperty('--top-h', `${header?.offsetHeight ?? 58}px`);
+  fitCaption(); window.addEventListener('resize', fitCaption);
   $('play').addEventListener('click', play);
+  $('pause').addEventListener('click', () => setPaused(!paused));
   $('reset').addEventListener('click', reset);
   paint();
 }

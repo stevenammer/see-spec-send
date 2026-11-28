@@ -2,7 +2,7 @@
 
 ## What the page is
 
-A forum thread, like the real app: a post, replies from teammates, a labeled AI reply, decision and try cards, and a "helps" count. Pick who you're viewing as at the top, or press "Watch it play out" and a team does the whole thing in about half a minute: Nick posts a problem, Steven and Cleo add what they know, Nick brings Steven's comment in with credit and writes the spec, Jose (a leader who didn't write it) spends on a small try, and then Nick and Jose both try to say it helps and are refused, someone tries to mark it done by hand and is refused, and Steven and Cleo say it helps.
+A forum thread, like the real app: a post, replies from teammates, a labeled AI reply, decision and try cards, and a "helps" count. Pick who you're viewing as at the top, or press "Watch it play out" and a team does the whole thing in about a minute and a half (each caption stays up long enough to read, and Pause stops the clock): Nick posts a problem, Steven and Cleo add what they know, Nick brings Steven's comment in with credit and writes the spec, Jose (a leader who didn't write it) spends on a small try, and then Nick and Jose both try to say it helps and are refused, someone tries to mark it done by hand and is refused, and Steven and Cleo say it helps.
 
 `PLAYWRIGHT_DIR=/path/to/node_modules npm run test:demo-vision` drives the page in real Chrome at phone width, including the scripted story, and checks hostile text stays inert.
 

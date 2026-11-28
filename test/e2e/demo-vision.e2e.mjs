@@ -74,7 +74,7 @@ async function main(){
   // The scripted play-through runs end to end with the same engine.
   await page.getByRole('button',{name:'Start over'}).click();
   await page.getByRole('button',{name:'Watch it play out'}).click();
-  await page.waitForFunction(()=>document.querySelector('#caption')?.textContent.startsWith("That's the whole rule"),null,{timeout:90000});
+  await page.waitForFunction(()=>document.querySelector('#caption')?.textContent.startsWith("That's the whole rule"),null,{timeout:150000});
   assert.equal(await page.locator('.card.refused').count(),3,'three refusals in the story');
   assert.equal(await page.locator('#vote-count').textContent(),'2');
   assert.equal(await page.locator('img').count(),0);assert.deepEqual(errors,[]);
